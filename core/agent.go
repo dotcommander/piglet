@@ -75,6 +75,9 @@ type Agent struct {
 	steerQ   []Message
 	followQ  []Message
 
+	// Ephemeral turn context (injected by message hooks, cleared after use)
+	turnContext []string
+
 	// Step mode
 	stepMode bool
 	stepGate chan StepAction
@@ -200,6 +203,14 @@ func (a *Agent) SetProvider(p StreamProvider) {
 func (a *Agent) SetSystem(s string) {
 	a.mu.Lock()
 	a.cfg.System = s
+	a.mu.Unlock()
+}
+
+// SetTurnContext sets ephemeral context strings that are injected as system
+// messages for the next turn only. Cleared after use by streamOnce.
+func (a *Agent) SetTurnContext(ctx []string) {
+	a.mu.Lock()
+	a.turnContext = ctx
 	a.mu.Unlock()
 }
 

@@ -134,6 +134,22 @@ type PickerItem struct {
 }
 
 // ---------------------------------------------------------------------------
+// Message hooks
+// ---------------------------------------------------------------------------
+
+// MessageHook runs before a user message is sent to the LLM.
+// Lower priority runs first (same convention as prompt sections).
+type MessageHook struct {
+	Name     string
+	Priority int
+
+	// OnMessage sees the user message before the LLM call.
+	// Returns additional context to inject for this turn only (ephemeral).
+	// Empty string = no injection. Error = abort the message.
+	OnMessage func(ctx context.Context, msg string) (string, error)
+}
+
+// ---------------------------------------------------------------------------
 // Prompt sections
 // ---------------------------------------------------------------------------
 

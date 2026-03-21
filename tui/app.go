@@ -532,6 +532,13 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.refreshViewport()
 	m.viewport.GotoBottom()
 
+	// Run message hooks for ephemeral turn context
+	if m.cfg.App != nil {
+		if injections, err := m.cfg.App.RunMessageHooks(context.Background(), text); err == nil && len(injections) > 0 {
+			m.cfg.Agent.SetTurnContext(injections)
+		}
+	}
+
 	// Start agent
 	ch := m.cfg.Agent.Start(context.Background(), text)
 	m.eventCh = ch

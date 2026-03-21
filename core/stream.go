@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -40,7 +41,7 @@ func (a *Agent) streamWithRetry(ctx context.Context) (*AssistantMessage, error) 
 }
 
 func (a *Agent) streamOnce(ctx context.Context) (*AssistantMessage, error) {
-	a.mu.RLock()
+	a.mu.Lock()
 	msgs := make([]Message, len(a.messages))
 	copy(msgs, a.messages)
 	tools := make([]ToolSchema, len(a.cfg.Tools))
@@ -48,9 +49,22 @@ func (a *Agent) streamOnce(ctx context.Context) (*AssistantMessage, error) {
 		tools[i] = t.ToolSchema
 	}
 	system := a.cfg.System
+	turnCtx := a.turnContext
+	a.turnContext = nil
 	opts := a.cfg.Options
 	model := a.cfg.Model
-	a.mu.RUnlock()
+	a.mu.Unlock()
+
+	// Append ephemeral turn context to system prompt
+	if len(turnCtx) > 0 {
+		var b strings.Builder
+		b.WriteString(system)
+		for _, ctx := range turnCtx {
+			b.WriteString("\n\n")
+			b.WriteString(ctx)
+		}
+		system = b.String()
+	}
 
 	if opts.APIKeyFunc != nil {
 		// Validate key is available
