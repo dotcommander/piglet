@@ -19,6 +19,7 @@ import (
 	"github.com/dotcommander/piglet/memory"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
+	"github.com/dotcommander/piglet/rtk"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 	"github.com/dotcommander/piglet/tui"
@@ -32,12 +33,27 @@ func main() {
 }
 
 func run() error {
+	// Handle flags before anything else
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--help", "-h":
+			printHelp()
+			return nil
+		case "--version", "-v":
+			fmt.Println("piglet dev")
+			return nil
+		}
+	}
+
 	// Determine prompt: args after flags or stdin
 	userPrompt := strings.Join(os.Args[1:], " ")
 	interactive := userPrompt == ""
 
 	// Load config
-	settings, _ := config.Load() // best effort
+	settings, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 
 	// Auth
 	auth, err := config.NewAuthDefault()
@@ -47,7 +63,13 @@ func run() error {
 
 	// Registry and model resolution
 	registry := provider.NewRegistry()
-	modelQuery := config.Resolve("DEFAULT_MODEL", settings.DefaultModel, "gpt-4o")
+	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
+	if modelQuery == "" {
+		modelQuery = settings.DefaultModel
+	}
+	if modelQuery == "" {
+		return fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet /config --setup")
+	}
 
 	model, ok := registry.Resolve(modelQuery)
 	if !ok {
@@ -79,6 +101,9 @@ func run() error {
 		MaxTimeout:     settings.Bash.MaxTimeout,
 		MaxStdout:      settings.Bash.MaxStdout,
 		MaxStderr:      settings.Bash.MaxStderr,
+	}, tool.ToolConfig{
+		ReadLimit: settings.Tools.ReadLimit,
+		GrepLimit: settings.Tools.GrepLimit,
 	})
 	command.RegisterBuiltins(app, settings.Shortcuts)
 	app.RegisterExtInfo(ext.ExtInfo{
@@ -91,6 +116,12 @@ func run() error {
 
 	// Project memory (tools, /memory command, prompt section)
 	memory.Register(app)
+
+	// Project docs (configurable context files → system prompt)
+	prompt.RegisterProjectDocs(app, settings.ProjectDocs)
+
+	// RTK token optimization (auto-detects rtk in PATH)
+	rtk.Register(app, settings.RTK)
 
 	// Git context (diff + recent commits in system prompt)
 	prompt.RegisterGitContext(app, prompt.GitContextConfig{
@@ -105,6 +136,9 @@ func run() error {
 	defer cancel()
 	extCleanup, _ := external.LoadAll(ctx, app)
 	defer extCleanup()
+
+	// Self-knowledge (dynamic tools/commands/shortcuts listing)
+	prompt.RegisterSelfKnowledge(app)
 
 	// System prompt: config.yaml systemPrompt → fallback default
 	basePrompt := settings.SystemPrompt
@@ -134,12 +168,20 @@ func run() error {
 	command.RegisterCompactor(app, prov, compactAt)
 
 	// Build agent config, pulling compactor from ext if registered
+	var opts core.StreamOptions
+	if settings.Agent.MaxTokens > 0 {
+		mt := settings.Agent.MaxTokens
+		opts.MaxTokens = &mt
+	}
 	agCfg := core.AgentConfig{
 		Provider:    prov,
 		System:      system,
 		Tools:       coreTools,
-		MaxTurns:    config.IntOr(settings.Agent.MaxTurns, 10),
-		MaxMessages: config.IntOr(settings.Agent.MaxMessages, 200),
+		Options:     opts,
+		MaxTurns:        config.IntOr(settings.Agent.MaxTurns, 10),
+		MaxMessages:     config.IntOr(settings.Agent.MaxMessages, 200),
+		MaxRetries:      settings.Agent.MaxRetries,
+		ToolConcurrency: settings.Agent.ToolConcurrency,
 	}
 	if c := app.Compactor(); c != nil {
 		agCfg.CompactAt = c.Threshold
@@ -202,12 +244,21 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 		}
 
 		if e, ok := evt.(core.EventTurnEnd); ok {
-			if e.Assistant != nil && (e.Assistant.StopReason == core.StopReasonError || e.Assistant.StopReason == core.StopReasonAborted) {
-				msg := e.Assistant.Error
-				if msg == "" {
-					msg = string(e.Assistant.StopReason)
+			if e.Assistant != nil {
+				u := e.Assistant.Usage
+				fmt.Fprintf(os.Stderr, "[tokens: in=%d out=%d", u.InputTokens, u.OutputTokens)
+				if u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+					fmt.Fprintf(os.Stderr, " cache_read=%d cache_write=%d", u.CacheReadTokens, u.CacheWriteTokens)
 				}
-				agentErr = fmt.Errorf("agent error: %s", msg)
+				fmt.Fprintln(os.Stderr, "]")
+
+				if e.Assistant.StopReason == core.StopReasonError || e.Assistant.StopReason == core.StopReasonAborted {
+					msg := e.Assistant.Error
+					if msg == "" {
+						msg = string(e.Assistant.StopReason)
+					}
+					agentErr = fmt.Errorf("agent error: %s", msg)
+				}
 			}
 			if sess != nil {
 				if e.Assistant != nil {
@@ -221,5 +272,35 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 	}
 
 	return agentErr
+}
+
+func printHelp() {
+	fmt.Print(`piglet — minimalist coding assistant
+
+Usage:
+  piglet                  Interactive TUI mode
+  piglet <prompt>         Single-shot mode (prints response and exits)
+  piglet --help           Show this help
+  piglet --version        Show version
+
+Interactive commands:
+  /help                   List all commands
+  /model                  Switch LLM model          (ctrl+p)
+  /session                Switch sessions            (ctrl+s)
+  /clear                  Clear conversation
+  /compact                Compact conversation history
+  /config                 Show config paths
+  /config --setup         Create default config
+  /undo                   Restore files to pre-edit state
+
+Config:
+  ~/.config/piglet/config.yaml    Settings
+  ~/.config/piglet/auth.json      API keys
+  ~/.config/piglet/prompt.md      System prompt
+  ~/.config/piglet/models.yaml    Model catalog
+
+Environment:
+  PIGLET_DEFAULT_MODEL    Override default model
+`)
 }
 
