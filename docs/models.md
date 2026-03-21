@@ -9,13 +9,14 @@ Piglet includes a built-in model catalog. Switch models at any time with `/model
 | OpenAI | `gpt-4o` | GPT-4o | 128K | 16K |
 | OpenAI | `gpt-4o-mini` | GPT-4o Mini | 128K | 16K |
 | OpenAI | `o3-mini` | o3-mini | 200K | 100K |
-| Anthropic | `claude-sonnet-4-20250514` | Claude Sonnet 4 | 200K | 8K |
-| Anthropic | `claude-opus-4-20250514` | Claude Opus 4 | 200K | 8K |
-| Anthropic | `claude-haiku-3-5-20241022` | Claude 3.5 Haiku | 200K | 8K |
+| Anthropic | `claude-sonnet-4-20250514` | Claude Sonnet 4 | 200K | 64K |
+| Anthropic | `claude-opus-4-20250514` | Claude Opus 4 | 200K | 32K |
+| Anthropic | `claude-3-5-haiku-20241022` | Claude Haiku 3.5 | 200K | 8K |
+| Anthropic | `claude-haiku-4-5-20251001` | Claude Haiku 4.5 | 200K | 64K |
 | Google | `gemini-2.5-pro` | Gemini 2.5 Pro | 1M | 64K |
 | Google | `gemini-2.5-flash` | Gemini 2.5 Flash | 1M | 64K |
-| xAI | `grok-3` | Grok 3 | 128K | 16K |
-| Groq | `llama-3.3-70b-versatile` | Llama 3.3 70B | 128K | 8K |
+| xAI | `grok-3` | Grok 3 | 128K | 8K |
+| Groq | `llama-3.3-70b-versatile` | Llama 3.3 70B | 128K | 32K |
 | OpenRouter | `auto` | Auto | 200K | 16K |
 
 ## Selecting a Model
