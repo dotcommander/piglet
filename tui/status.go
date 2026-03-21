@@ -13,6 +13,7 @@ type StatusBar struct {
 	tokens   string
 	thinking bool
 	spinning bool
+	bgTask   string
 	width    int
 	styles   Styles
 }
@@ -36,6 +37,9 @@ func (s *StatusBar) SetThinking(on bool) { s.thinking = on }
 // SetSpinning updates the spinner state.
 func (s *StatusBar) SetSpinning(on bool) { s.spinning = on }
 
+// SetBgTask updates the background task indicator. Empty string clears it.
+func (s *StatusBar) SetBgTask(task string) { s.bgTask = task }
+
 // SetWidth updates the available width.
 func (s *StatusBar) SetWidth(w int) { s.width = w }
 
@@ -44,6 +48,13 @@ func (s StatusBar) View() string {
 	left := s.styles.Muted.Render("piglet")
 	if s.model != "" {
 		left += s.styles.Muted.Render(" | " + s.model)
+	}
+	if s.bgTask != "" {
+		task := s.bgTask
+		if len([]rune(task)) > 20 {
+			task = string([]rune(task)[:20]) + "..."
+		}
+		left += s.styles.Spinner.Render(" | bg: " + task)
 	}
 
 	var right string

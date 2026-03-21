@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/session"
@@ -24,8 +25,9 @@ type Config struct {
 	Model   core.Model
 	Models  []core.Model // available models from registry
 	SessDir string       // session directory path
-	Theme   Theme
-	App     *ext.App // extension API surface
+	Theme    Theme
+	App      *ext.App         // extension API surface
+	Settings *config.Settings // user settings (nil-safe)
 }
 
 // eventMsg wraps agent events for the Bubble Tea message loop.
@@ -33,6 +35,12 @@ type eventMsg struct{ event core.Event }
 
 // tickMsg drives periodic refresh during streaming.
 type tickMsg struct{}
+
+// bgEventMsg wraps background agent events for the Bubble Tea message loop.
+type bgEventMsg struct{ event core.Event }
+
+// titleGeneratedMsg carries an auto-generated session title.
+type titleGeneratedMsg struct{ title string }
 
 // cmdResult captures what a command handler wants the TUI to do.
 // Callbacks write here; runCommand reads after handler returns.
@@ -43,6 +51,8 @@ type cmdResult struct {
 	pickerTitle string
 	pickerItems []ModalItem
 	pickerCB    func(ext.PickerItem)
+	newSession  *session.Session
+	bgStartCh  <-chan core.Event // set when background agent starts
 }
 
 // Model is the Bubble Tea model for the TUI.
@@ -77,6 +87,15 @@ type Model struct {
 
 	// Event channel
 	eventCh <-chan core.Event
+
+	// Background agent state
+	bgAgent   *core.Agent
+	bgEventCh <-chan core.Event
+	bgTask    string
+	bgResult  *strings.Builder
+
+	// Auto-title: generate after first exchange
+	titleGenerated bool
 }
 
 // New creates a TUI model.
@@ -88,11 +107,12 @@ func New(cfg Config) Model {
 	status.SetModel(cfg.Model.DisplayName())
 
 	return Model{
-		cfg:     cfg,
-		styles:  styles,
-		input:   NewInputModel(styles, commands),
-		status:  status,
-		msgView: NewMessageView(styles, 80),
+		cfg:      cfg,
+		styles:   styles,
+		input:    NewInputModel(styles, commands),
+		status:   status,
+		msgView:  NewMessageView(styles, 80),
+		bgResult: &strings.Builder{},
 	}
 }
 
@@ -161,12 +181,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Label: msg.Item.Label,
 				Desc:  msg.Item.Desc,
 			})
-			m.applyPendingResult()
+			bgCmd := m.applyPendingResult()
+			if bgCmd != nil {
+				return m, bgCmd
+			}
 		}
 		return m, nil
 
 	case ModalCloseMsg:
 		m.pickerCallback = nil
+		return m, nil
+
+	case bgEventMsg:
+		return m.handleBgEvent(msg.event)
+
+	case titleGeneratedMsg:
+		if m.cfg.Session != nil && msg.title != "" {
+			_ = m.cfg.Session.SetTitle(msg.title)
+		}
 		return m, nil
 	}
 
@@ -352,14 +384,77 @@ func (m *Model) bindApp() {
 				r.modelName = text
 			}
 		}),
+		ext.WithSwapSession(func(sess any) {
+			if s, ok := sess.(*session.Session); ok {
+				r.newSession = s
+			}
+		}),
+		ext.WithForkSession(func() (string, int, error) {
+			if m.cfg.Session == nil {
+				return "", 0, fmt.Errorf("no active session")
+			}
+			forked, err := m.cfg.Session.Fork(0)
+			if err != nil {
+				return "", 0, err
+			}
+			parentID := m.cfg.Session.ID()
+			if len(parentID) > 8 {
+				parentID = parentID[:8]
+			}
+			r.newSession = forked
+			return parentID, len(forked.Messages()), nil
+		}),
+		ext.WithRunBackground(func(prompt string) error {
+			if m.bgAgent != nil && m.bgAgent.IsRunning() {
+				return fmt.Errorf("background task already running")
+			}
+			tools := m.cfg.App.BackgroundSafeTools()
+			bgMax := 5
+			if m.cfg.Settings != nil {
+				bgMax = config.IntOr(m.cfg.Settings.Agent.BgMaxTurns, 5)
+			}
+			m.bgAgent = core.NewAgent(core.AgentConfig{
+				System:   m.cfg.Agent.System(),
+				Provider: m.cfg.Agent.Provider(),
+				Tools:    tools,
+				MaxTurns: bgMax,
+			})
+			ch := m.bgAgent.Start(context.Background(), prompt)
+			m.bgEventCh = ch
+			m.bgTask = prompt
+			m.bgResult.Reset()
+			m.status.SetBgTask(prompt)
+			r.bgStartCh = ch
+			return nil
+		}),
+		ext.WithCancelBackground(func() {
+			if m.bgAgent != nil && m.bgAgent.IsRunning() {
+				m.bgAgent.Stop()
+			}
+			m.bgAgent = nil
+			m.bgEventCh = nil
+			m.bgTask = ""
+			m.bgResult.Reset()
+			m.status.SetBgTask("")
+		}),
+		ext.WithIsBackgroundRunning(func() bool {
+			return m.bgAgent != nil && m.bgAgent.IsRunning()
+		}),
+		ext.WithSetSessionTitle(func(title string) error {
+			if m.cfg.Session == nil {
+				return fmt.Errorf("no active session")
+			}
+			return m.cfg.Session.SetTitle(title)
+		}),
 	)
 }
 
 // applyPendingResult reads the pending result and applies it to the model.
-func (m *Model) applyPendingResult() {
+// Returns a tea.Cmd if the result requires ongoing work (e.g., background agent polling).
+func (m *Model) applyPendingResult() tea.Cmd {
 	r := m.pendingResult
 	if r == nil {
-		return
+		return nil
 	}
 	m.pendingResult = nil
 
@@ -378,9 +473,22 @@ func (m *Model) applyPendingResult() {
 		m.modal.Show()
 		m.pickerCallback = r.pickerCB
 	}
+	if r.newSession != nil {
+		if m.cfg.Session != nil {
+			m.cfg.Session.Close()
+		}
+		m.cfg.Session = r.newSession
+		msgs := r.newSession.Messages()
+		m.messages = msgs
+		m.cfg.Agent.SetMessages(msgs)
+	}
 	if r.quit {
 		m.quitting = true
 	}
+	if r.bgStartCh != nil {
+		return pollBgEvents(r.bgStartCh)
+	}
+	return nil
 }
 
 // runCommand dispatches a slash command to the registered handler.
@@ -419,13 +527,13 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.applyPendingResult()
+	bgCmd := m.applyPendingResult()
 
 	if m.quitting {
 		return m, tea.Quit
 	}
 
-	return m, nil
+	return m, bgCmd
 }
 
 func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
@@ -469,6 +577,15 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.activeTool = ""
 
+		// Auto-generate session title after first exchange
+		autoTitle := m.cfg.Settings == nil || m.cfg.Settings.Agent.AutoTitleEnabled()
+		if autoTitle && !m.titleGenerated && m.cfg.Session != nil && m.cfg.Session.Meta().Title == "" {
+			m.titleGenerated = true
+			if cmd := m.generateTitle(); cmd != nil {
+				return m, cmd
+			}
+		}
+
 	case core.EventMaxTurns:
 		m.messages = append(m.messages, &core.AssistantMessage{
 			Content: []core.AssistantContent{
@@ -508,6 +625,124 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+// generateTitle fires a lightweight LLM call to produce a short session title.
+// Returns a tea.Cmd that runs in a goroutine and sends titleGeneratedMsg.
+func (m *Model) generateTitle() tea.Cmd {
+	prov := m.cfg.Agent.Provider()
+	if prov == nil {
+		return nil
+	}
+
+	// Collect the first user message and first assistant text
+	var userText, assistantText string
+	for _, msg := range m.messages {
+		switch v := msg.(type) {
+		case *core.UserMessage:
+			if userText == "" {
+				userText = v.Content
+			}
+		case *core.AssistantMessage:
+			if assistantText == "" {
+				for _, c := range v.Content {
+					if tc, ok := c.(core.TextContent); ok {
+						assistantText = tc.Text
+						break
+					}
+				}
+			}
+		}
+		if userText != "" && assistantText != "" {
+			break
+		}
+	}
+
+	if userText == "" {
+		return nil
+	}
+
+	// Truncate to keep the title prompt small
+	if len([]rune(userText)) > 200 {
+		userText = string([]rune(userText)[:200])
+	}
+	if len([]rune(assistantText)) > 200 {
+		assistantText = string([]rune(assistantText)[:200])
+	}
+
+	maxTok := 30
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		ch := prov.Stream(ctx, core.StreamRequest{
+			System: "Generate a concise 3-5 word title for this conversation. Reply with ONLY the title, no quotes or punctuation.",
+			Messages: []core.Message{
+				&core.UserMessage{Content: fmt.Sprintf("User: %s\n\nAssistant: %s", userText, assistantText)},
+			},
+			Options: core.StreamOptions{MaxTokens: &maxTok},
+		})
+
+		var title strings.Builder
+		for evt := range ch {
+			if evt.Type == core.StreamTextDelta {
+				title.WriteString(evt.Delta)
+			}
+		}
+
+		result := strings.TrimSpace(title.String())
+		if result == "" {
+			return titleGeneratedMsg{}
+		}
+		// Cap at 50 runes
+		if runes := []rune(result); len(runes) > 50 {
+			result = string(runes[:50])
+		}
+		return titleGeneratedMsg{title: result}
+	}
+}
+
+func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
+	switch e := evt.(type) {
+	case core.EventStreamDelta:
+		if e.Kind == "text" {
+			m.bgResult.WriteString(e.Delta)
+		}
+
+	case core.EventAgentEnd:
+		result := strings.TrimSpace(m.bgResult.String())
+		if result == "" {
+			result = "(background task produced no output)"
+		}
+		m.messages = append(m.messages, &core.AssistantMessage{
+			Content: []core.AssistantContent{
+				core.TextContent{Text: fmt.Sprintf("Background task: %s\n\n%s", m.bgTask, result)},
+			},
+		})
+		m.bgAgent = nil
+		m.bgEventCh = nil
+		m.bgTask = ""
+		m.bgResult.Reset()
+		m.status.SetBgTask("")
+		return m, nil
+	}
+
+	// Continue polling
+	if m.bgEventCh != nil {
+		return m, pollBgEvents(m.bgEventCh)
+	}
+	return m, nil
+}
+
+// pollBgEvents reads the next event from the background agent channel.
+func pollBgEvents(ch <-chan core.Event) tea.Cmd {
+	return func() tea.Msg {
+		evt, ok := <-ch
+		if !ok {
+			return bgEventMsg{event: core.EventAgentEnd{}}
+		}
+		return bgEventMsg{event: evt}
+	}
+}
+
 // commandNames returns sorted slash command names from the ext.App.
 func commandNames(app *ext.App) []string {
 	if app == nil {
@@ -541,7 +776,7 @@ func (m *Model) runShortcut(msg tea.KeyPressMsg) (tea.Model, bool) {
 
 	m.bindApp()
 	_ = sc.Handler(m.cfg.App)
-	m.applyPendingResult()
+	_ = m.applyPendingResult()
 
 	return m, true
 }
