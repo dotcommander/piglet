@@ -129,15 +129,29 @@ func run() error {
 	// Agent
 	coreTools := app.CoreTools()
 	compactAt := config.IntOr(settings.Agent.CompactAt, 0)
-	ag := core.NewAgent(core.AgentConfig{
+
+	// Register LLM-powered compactor as an extension
+	if compactAt > 0 {
+		app.RegisterCompactor(ext.Compactor{
+			Name:      "llm-summary",
+			Threshold: compactAt,
+			Compact:   makeLLMCompactor(prov),
+		})
+	}
+
+	// Build agent config, pulling compactor from ext if registered
+	agCfg := core.AgentConfig{
 		Provider:    prov,
 		System:      system,
 		Tools:       coreTools,
 		MaxTurns:    config.IntOr(settings.Agent.MaxTurns, 10),
 		MaxMessages: config.IntOr(settings.Agent.MaxMessages, 200),
-		CompactAt:   compactAt,
-		OnCompact:   makeCompactor(prov),
-	})
+	}
+	if c := app.Compactor(); c != nil {
+		agCfg.CompactAt = c.Threshold
+		agCfg.OnCompact = c.Compact
+	}
+	ag := core.NewAgent(agCfg)
 
 	// Bind domain managers so commands work through ext.App
 	sessPtr := &sess
@@ -215,9 +229,9 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 	return agentErr
 }
 
-// makeCompactor returns an OnCompact callback that summarizes messages via the LLM.
-func makeCompactor(prov core.StreamProvider) func([]core.Message) (string, error) {
-	return func(msgs []core.Message) (string, error) {
+// makeLLMCompactor returns a compactor that summarizes messages via the LLM.
+func makeLLMCompactor(prov core.StreamProvider) func(context.Context, []core.Message) ([]core.Message, error) {
+	return func(ctx context.Context, msgs []core.Message) ([]core.Message, error) {
 		// Build a text representation of the middle messages
 		var b strings.Builder
 		for _, m := range msgs {
@@ -246,9 +260,6 @@ func makeCompactor(prov core.StreamProvider) func([]core.Message) (string, error
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
 		ch := prov.Stream(ctx, core.StreamRequest{
 			System: "Summarize this conversation excerpt concisely. Preserve key decisions, file paths, errors, and outcomes. Output only the summary, no preamble.",
 			Messages: []core.Message{
@@ -262,14 +273,14 @@ func makeCompactor(prov core.StreamProvider) func([]core.Message) (string, error
 				summary.WriteString(evt.Delta)
 			}
 			if evt.Type == core.StreamError {
-				return "", evt.Error
+				return nil, evt.Error
 			}
 		}
 
 		result := summary.String()
 		if result == "" {
-			return "", fmt.Errorf("empty summary")
+			return nil, fmt.Errorf("empty summary")
 		}
-		return "[Conversation compacted]\n\n" + result, nil
+		return core.CompactMessages(msgs, "[Conversation compacted]\n\n"+result), nil
 	}
 }
