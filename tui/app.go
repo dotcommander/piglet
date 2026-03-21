@@ -83,9 +83,11 @@ type Model struct {
 	streamText     string
 	streamThink    string
 	activeTool     string
-	totalIn        int
-	totalOut       int
-	totalCost      float64
+	totalIn         int
+	totalOut        int
+	totalCost       float64
+	totalCacheRead  int
+	totalCacheWrite int
 	quitting       bool
 	pickerCallback func(ext.PickerItem)
 
@@ -113,6 +115,9 @@ type Model struct {
 
 	// Pending image attachment for next message
 	pendingImage *core.ImageContent
+
+	// Auto-scroll: follow new output unless user scrolled up
+	followOutput bool
 }
 
 // New creates a TUI model.
@@ -128,12 +133,13 @@ func New(cfg Config) Model {
 	status.Set(ext.StatusKeyModel, styles.Muted.Render(cfg.Model.DisplayName()))
 
 	return Model{
-		cfg:      cfg,
-		styles:   styles,
-		input:    NewInputModel(styles, commands),
-		status:   status,
-		msgView:  NewMessageView(styles, 80),
-		bgResult: &strings.Builder{},
+		cfg:          cfg,
+		styles:       styles,
+		input:        NewInputModel(styles, commands),
+		status:       status,
+		msgView:      NewMessageView(styles, 80),
+		bgResult:     &strings.Builder{},
+		followOutput: true,
 	}
 }
 
@@ -177,6 +183,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.Code == 'i' && msg.Mod.Contains(tea.ModCtrl):
 			return m.handleImageAttach()
 
+		case msg.Code == tea.KeyPgUp, msg.Code == tea.KeyPgDown:
+			m.viewport, _ = m.viewport.Update(msg)
+			m.followOutput = m.viewport.AtBottom()
+			return m, nil
+
 		case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
 			return m.handleSubmit()
 
@@ -187,11 +198,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseWheelMsg:
+		m.viewport, _ = m.viewport.Update(msg)
+		m.followOutput = m.viewport.AtBottom()
+		return m, nil
+
 	case eventMsg:
 		return m.handleEvent(msg.event)
 
 	case tickMsg:
 		if m.streaming {
+			m.refreshViewport()
+			if m.followOutput {
+				m.viewport.GotoBottom()
+			}
 			cmds = append(cmds, tickCmd())
 		}
 
@@ -267,15 +287,7 @@ func (m Model) View() tea.View {
 
 	var sections []string
 
-	// Messages viewport — bottom-aligned with top padding for breathing room
-	content := "\n" + m.renderMessages()
-	contentLines := strings.Count(content, "\n")
-	vpHeight := m.viewport.Height()
-	if contentLines < vpHeight {
-		content = strings.Repeat("\n", vpHeight-contentLines) + content
-	}
-	m.viewport.SetContent(content)
-	m.viewport.GotoBottom()
+	// Messages viewport
 	sections = append(sections, m.viewport.View())
 
 	// Toast notification (transient, above input)
@@ -294,7 +306,9 @@ func (m Model) View() tea.View {
 		return tea.NewView(m.modal.View())
 	}
 
-	return tea.NewView(m.styles.App.Render(strings.Join(sections, "\n")))
+	v := tea.NewView(m.styles.App.Render(strings.Join(sections, "\n")))
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // Run starts the TUI.
@@ -338,13 +352,29 @@ func (m *Model) layout() {
 		vpH = 3
 	}
 
+	wasAtBottom := m.followOutput
 	m.viewport = viewport.New(viewport.WithWidth(m.width-2), viewport.WithHeight(vpH))
 	m.viewport.Style = lipgloss.NewStyle()
+	m.refreshViewport()
+	if wasAtBottom {
+		m.viewport.GotoBottom()
+	}
 
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width)
 	m.msgView.SetWidth(m.width - 2)
 	m.modal.SetSize(m.width, m.height)
+}
+
+// refreshViewport updates the viewport content from messages without changing scroll position.
+func (m *Model) refreshViewport() {
+	content := "\n" + m.renderMessages()
+	contentLines := strings.Count(content, "\n")
+	vpHeight := m.viewport.Height()
+	if contentLines < vpHeight {
+		content = strings.Repeat("\n", vpHeight-contentLines) + content
+	}
+	m.viewport.SetContent(content)
 }
 
 func (m *Model) showNotification(text string) {
@@ -435,7 +465,10 @@ close access theFile`)
 	}
 }
 
-func formatTokens(in, out int) string {
+func formatTokens(in, out, cacheRead int) string {
+	if cacheRead > 0 {
+		return fmt.Sprintf("%dk/%dk (cached:%dk)", in/1000, out/1000, cacheRead/1000)
+	}
 	return fmt.Sprintf("%dk/%dk", in/1000, out/1000)
 }
 
@@ -476,6 +509,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m.runCommand(cmd, args)
 	}
 
+	// Re-follow output when user sends a message
+	m.followOutput = true
+
 	// Send to agent
 	userMsg := &core.UserMessage{
 		Content:   text,
@@ -492,6 +528,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	if m.cfg.Session != nil {
 		_ = m.cfg.Session.Append(userMsg)
 	}
+
+	m.refreshViewport()
+	m.viewport.GotoBottom()
 
 	// Start agent
 	ch := m.cfg.Agent.Start(context.Background(), text)
@@ -679,7 +718,9 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 			m.totalIn += e.Assistant.Usage.InputTokens
 			m.totalOut += e.Assistant.Usage.OutputTokens
 			m.totalCost += e.Assistant.Usage.Cost
-			m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut)))
+			m.totalCacheRead += e.Assistant.Usage.CacheReadTokens
+			m.totalCacheWrite += e.Assistant.Usage.CacheWriteTokens
+			m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut, m.totalCacheRead)))
 			m.status.Set(ext.StatusKeyCost, m.styles.Muted.Render(formatCost(m.totalCost)))
 
 			if m.cfg.Session != nil {
@@ -697,6 +738,10 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.activeTool = ""
 		m.streamCache = StreamCache{}
+		m.refreshViewport()
+		if m.followOutput {
+			m.viewport.GotoBottom()
+		}
 
 		// Auto-generate session title after first exchange
 		autoTitle := m.cfg.Settings == nil || m.cfg.Settings.Agent.AutoTitleEnabled()
