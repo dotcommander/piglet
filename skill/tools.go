@@ -24,7 +24,7 @@ func skillListTool(store *Store) *ext.ToolDef {
 		Execute: func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) {
 			skills := store.List()
 			if len(skills) == 0 {
-				return textResult("No skills available."), nil
+				return ext.TextResult("No skills available."), nil
 			}
 			var b strings.Builder
 			for _, sk := range skills {
@@ -41,7 +41,7 @@ func skillListTool(store *Store) *ext.ToolDef {
 				}
 				b.WriteByte('\n')
 			}
-			return textResult(b.String()), nil
+			return ext.TextResult(b.String()), nil
 		},
 		BackgroundSafe: true,
 	}
@@ -61,22 +61,17 @@ func skillLoadTool(store *Store) *ext.ToolDef {
 			},
 		},
 		Execute: func(_ context.Context, _ string, args map[string]any) (*core.ToolResult, error) {
-			name, _ := args["name"].(string)
+			name := ext.StringArg(args, "name")
 			if name == "" {
-				return textResult("error: name is required"), nil
+				return ext.TextResult("error: name is required"), nil
 			}
 			content, err := store.Load(name)
 			if err != nil {
-				return textResult(fmt.Sprintf("error: skill %q not found", name)), nil
+				return ext.TextResult(fmt.Sprintf("error: skill %q not found", name)), nil
 			}
-			return textResult(content), nil
+			return ext.TextResult(content), nil
 		},
 		BackgroundSafe: true,
 	}
 }
 
-func textResult(text string) *core.ToolResult {
-	return &core.ToolResult{
-		Content: []core.ContentBlock{core.TextContent{Text: text}},
-	}
-}

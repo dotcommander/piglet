@@ -31,19 +31,19 @@ func memorySetTool(store *Store) *ext.ToolDef {
 			},
 		},
 		Execute: func(_ context.Context, _ string, args map[string]any) (*core.ToolResult, error) {
-			key := stringArg(args, "key")
+			key := ext.StringArg(args, "key")
 			if key == "" {
-				return textResult("error: key is required"), nil
+				return ext.TextResult("error: key is required"), nil
 			}
-			value := stringArg(args, "value")
+			value := ext.StringArg(args, "value")
 			if value == "" {
-				return textResult("error: value is required"), nil
+				return ext.TextResult("error: value is required"), nil
 			}
-			category := stringArg(args, "category")
+			category := ext.StringArg(args, "category")
 			if err := store.Set(key, value, category); err != nil {
-				return textResult(fmt.Sprintf("error: %v", err)), nil
+				return ext.TextResult(fmt.Sprintf("error: %v", err)), nil
 			}
-			return textResult("Saved: " + key), nil
+			return ext.TextResult("Saved: " + key), nil
 		},
 		PromptHint: "Save a fact to project memory",
 	}
@@ -63,12 +63,12 @@ func memoryGetTool(store *Store) *ext.ToolDef {
 			},
 		},
 		Execute: func(_ context.Context, _ string, args map[string]any) (*core.ToolResult, error) {
-			key := stringArg(args, "key")
+			key := ext.StringArg(args, "key")
 			fact, ok := store.Get(key)
 			if !ok {
-				return textResult("not found: " + key), nil
+				return ext.TextResult("not found: " + key), nil
 			}
-			return textResult(fact.Value), nil
+			return ext.TextResult(fact.Value), nil
 		},
 		PromptHint: "Retrieve a fact from project memory",
 	}
@@ -88,10 +88,10 @@ func memoryListTool(store *Store) *ext.ToolDef {
 			},
 		},
 		Execute: func(_ context.Context, _ string, args map[string]any) (*core.ToolResult, error) {
-			category := stringArg(args, "category")
+			category := ext.StringArg(args, "category")
 			facts := store.List(category)
 			if len(facts) == 0 {
-				return textResult("No memories stored"), nil
+				return ext.TextResult("No memories stored"), nil
 			}
 			var b strings.Builder
 			for _, f := range facts {
@@ -100,20 +100,10 @@ func memoryListTool(store *Store) *ext.ToolDef {
 				b.WriteString(f.Value)
 				b.WriteByte('\n')
 			}
-			return textResult(strings.TrimRight(b.String(), "\n")), nil
+			return ext.TextResult(strings.TrimRight(b.String(), "\n")), nil
 		},
 		PromptHint:   "List all project memory facts",
 		PromptGuides: []string{"Use category to filter", "Returns key: value pairs"},
 	}
 }
 
-func textResult(text string) *core.ToolResult {
-	return &core.ToolResult{
-		Content: []core.ContentBlock{core.TextContent{Text: text}},
-	}
-}
-
-func stringArg(args map[string]any, key string) string {
-	v, _ := args[key].(string)
-	return v
-}
