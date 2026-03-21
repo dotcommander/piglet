@@ -55,6 +55,7 @@ func LoadAll(ctx context.Context, app *ext.App) (cleanup func(), err error) {
 			slog.Warn("failed to start extension", "name", manifests[i].Name, "err", r.err)
 			continue
 		}
+		r.host.SetApp(app)
 		hosts = append(hosts, r.host)
 		bridge(app, r.host)
 	}
@@ -116,9 +117,6 @@ func bridge(app *ext.App, h *Host) {
 		})
 	}
 
-	// Wire runtime callbacks
-	h.onNotify = func(msg string) { app.Notify(msg) }
-	h.onShowMessage = func(text string) { app.ShowMessage(text) }
 }
 
 // proxyToolExecute returns a ToolExecuteFn that proxies to the extension process.

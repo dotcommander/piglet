@@ -12,32 +12,30 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dotcommander/piglet/ext"
 )
 
 // Host manages a single external extension process.
 type Host struct {
 	manifest *Manifest
 	cwd      string
+	app      *ext.App // nil until bridge wires it
 
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Scanner
 
-	writeMu   sync.Mutex             // protects stdin writes
-	pendingMu sync.Mutex             // protects pending map
+	writeMu   sync.Mutex           // protects stdin writes
+	pendingMu sync.Mutex           // protects pending map
 	nextID    atomic.Int64
-	pending   map[int]chan *Message   // pending request ID → response channel
+	pending   map[int]chan *Message // pending request ID → response channel
 	closed    chan struct{}
 
 	// Registrations collected during handshake
 	tools          []RegisterToolParams
 	commands       []RegisterCommandParams
 	promptSections []RegisterPromptSectionParams
-
-	// Runtime callbacks (set by bridge)
-	onNotify      func(msg string)
-	onShowMessage func(text string)
-	onLog         func(level, msg string)
 }
 
 // NewHost creates a host for the given manifest.
@@ -49,6 +47,9 @@ func NewHost(m *Manifest, cwd string) *Host {
 		closed:   make(chan struct{}),
 	}
 }
+
+// SetApp wires the host to the main application for runtime notifications.
+func (h *Host) SetApp(app *ext.App) { h.app = app }
 
 // Start spawns the extension process, performs the initialize handshake,
 // and collects registrations. Returns after the extension sends initialize result.
@@ -210,10 +211,21 @@ func (h *Host) request(ctx context.Context, method string, params any) (*Message
 	case resp := <-ch:
 		return resp, nil
 	case <-ctx.Done():
+		h.sendCancel(id)
 		return nil, ctx.Err()
 	case <-h.closed:
 		return nil, fmt.Errorf("extension %s closed", h.manifest.Name)
 	}
+}
+
+// sendCancel tells the extension to abort the in-flight request.
+func (h *Host) sendCancel(id int) {
+	paramsJSON, _ := json.Marshal(CancelParams{ID: id})
+	_ = h.send(&Message{
+		JSONRPC: "2.0",
+		Method:  MethodCancelRequest,
+		Params:  paramsJSON,
+	})
 }
 
 func (h *Host) send(msg *Message) error {
@@ -287,13 +299,13 @@ func (h *Host) handleMessage(msg *Message) {
 		}
 	case MethodNotify:
 		var p NotifyParams
-		if json.Unmarshal(msg.Params, &p) == nil && h.onNotify != nil {
-			h.onNotify(p.Message)
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.Notify(p.Message)
 		}
 	case MethodShowMessage:
 		var p ShowMessageParams
-		if json.Unmarshal(msg.Params, &p) == nil && h.onShowMessage != nil {
-			h.onShowMessage(p.Text)
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.ShowMessage(p.Text)
 		}
 	case MethodLog:
 		var p LogParams

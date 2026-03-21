@@ -139,16 +139,22 @@ type ShutdownParams struct{}
 // Protocol version
 const ProtocolVersion = "1"
 
+// CancelParams tells the extension to abort the request with the given ID.
+type CancelParams struct {
+	ID int `json:"id"`
+}
+
 // Method names
 const (
-	MethodInitialize           = "initialize"
-	MethodShutdown             = "shutdown"
-	MethodRegisterTool         = "register/tool"
-	MethodRegisterCommand      = "register/command"
+	MethodInitialize            = "initialize"
+	MethodShutdown              = "shutdown"
+	MethodCancelRequest         = "$/cancelRequest"
+	MethodRegisterTool          = "register/tool"
+	MethodRegisterCommand       = "register/command"
 	MethodRegisterPromptSection = "register/promptSection"
-	MethodToolExecute          = "tool/execute"
-	MethodCommandExecute       = "command/execute"
-	MethodNotify               = "notify"
-	MethodLog                  = "log"
-	MethodShowMessage          = "showMessage"
+	MethodToolExecute           = "tool/execute"
+	MethodCommandExecute        = "command/execute"
+	MethodNotify                = "notify"
+	MethodLog                   = "log"
+	MethodShowMessage           = "showMessage"
 )
