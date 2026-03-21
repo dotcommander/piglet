@@ -4,13 +4,17 @@ package command
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/ext/external"
 	"github.com/dotcommander/piglet/modelsdev"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -23,6 +27,8 @@ func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registr
 	registerStep(app)
 	registerCompact(app)
 	registerExport(app)
+	registerExtensions(app)
+	registerExtInit(app)
 	registerModel(app, models)
 	registerSession(app, sessDir)
 	registerModelsSync(app, registry, auth)
@@ -62,19 +68,7 @@ func registerHelp(app *ext.App) {
 			var b strings.Builder
 			b.WriteString("Available commands:\n")
 
-			// Sort by name for consistent output
-			names := make([]string, 0, len(cmds))
-			for name := range cmds {
-				names = append(names, name)
-			}
-			// Simple sort
-			for i := range names {
-				for j := i + 1; j < len(names); j++ {
-					if names[i] > names[j] {
-						names[i], names[j] = names[j], names[i]
-					}
-				}
-			}
+			names := slices.Sorted(maps.Keys(cmds))
 
 			for _, name := range names {
 				cmd := cmds[name]
@@ -85,6 +79,7 @@ func registerHelp(app *ext.App) {
 			b.WriteString("  ctrl+c    — stop agent / quit\n")
 			b.WriteString("  ctrl+p    — model selector\n")
 			b.WriteString("  ctrl+s    — session picker\n")
+			b.WriteString("\nExtensions: /extensions to see loaded extensions\n")
 
 			a.ShowMessage(b.String())
 			return nil
@@ -245,6 +240,114 @@ func registerModelsSync(app *ext.App, registry *provider.Registry, auth *config.
 			} else {
 				a.ShowMessage(fmt.Sprintf("Sync complete: %d model(s) updated", updated))
 			}
+			return nil
+		},
+	})
+}
+
+func registerExtensions(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "extensions",
+		Description: "List loaded extensions",
+		Handler: func(args string, a *ext.App) error {
+			infos := a.ExtInfos()
+
+			var b strings.Builder
+			if len(infos) == 0 {
+				b.WriteString("No extensions loaded.\n")
+			} else {
+				b.WriteString("Loaded extensions:\n\n")
+				for _, info := range infos {
+					b.WriteString(fmt.Sprintf("  %s (%s, %s)\n", info.Name, info.Kind, info.Runtime))
+					if len(info.Tools) > 0 {
+						b.WriteString(fmt.Sprintf("    tools: %s\n", strings.Join(info.Tools, ", ")))
+					}
+					if len(info.Commands) > 0 {
+						b.WriteString(fmt.Sprintf("    commands: /%s\n", strings.Join(info.Commands, ", /")))
+					}
+					b.WriteString("\n")
+				}
+			}
+
+			extDir, err := external.ExtensionsDir()
+			if err == nil {
+				b.WriteString(fmt.Sprintf("Extensions dir: %s/\n", extDir))
+			}
+			b.WriteString("Docs: https://github.com/dotcommander/piglet/blob/main/docs/extensions.md")
+
+			a.ShowMessage(b.String())
+			return nil
+		},
+	})
+}
+
+func registerExtInit(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "ext-init",
+		Description: "Scaffold a new extension",
+		Handler: func(args string, a *ext.App) error {
+			name := strings.TrimSpace(args)
+			if name == "" {
+				a.ShowMessage("Usage: /ext-init <name>\nExample: /ext-init my-tool")
+				return nil
+			}
+
+			extDir, err := external.ExtensionsDir()
+			if err != nil {
+				return fmt.Errorf("extensions dir: %w", err)
+			}
+
+			dir := filepath.Join(extDir, name)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("create dir: %w", err)
+			}
+
+			manifest := fmt.Sprintf(`name: %s
+version: 0.1.0
+runtime: bun
+entry: index.ts
+capabilities:
+  - tools
+  - commands
+`, name)
+
+			r := strings.NewReplacer("{{NAME}}", name)
+			indexTS := r.Replace(`import { piglet } from "@piglet/sdk";
+
+piglet.setInfo("{{NAME}}", "0.1.0");
+
+piglet.registerTool({
+  name: "{{NAME}}_hello",
+  description: "A greeting tool",
+  parameters: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Name to greet" },
+    },
+    required: ["name"],
+  },
+  execute: async (args) => {
+    return { text: "Hello, " + args.name + "!" };
+  },
+});
+
+piglet.registerCommand({
+  name: "{{NAME}}",
+  description: "Run {{NAME}}",
+  handler: async (args) => {
+    piglet.notify("{{NAME}}: " + (args || "no args"));
+  },
+});
+`)
+
+			if err := os.WriteFile(dir+"/manifest.yaml", []byte(manifest), 0644); err != nil {
+				return fmt.Errorf("write manifest: %w", err)
+			}
+			if err := os.WriteFile(dir+"/index.ts", []byte(indexTS), 0644); err != nil {
+				return fmt.Errorf("write index.ts: %w", err)
+			}
+
+			a.ShowMessage(fmt.Sprintf("Created extension at %s/\n\nFiles:\n  manifest.yaml — extension config\n  index.ts      — your code\n\nInstall SDK: cd %s && bun add @piglet/sdk\nRestart piglet to load.", dir, dir))
 			return nil
 		},
 	})
