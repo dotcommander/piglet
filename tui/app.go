@@ -42,17 +42,9 @@ type bgEventMsg struct{ event core.Event }
 // titleGeneratedMsg carries an auto-generated session title.
 type titleGeneratedMsg struct{ title string }
 
-// cmdResult captures what a command handler wants the TUI to do.
-// Callbacks write here; runCommand reads after handler returns.
-type cmdResult struct {
-	message     string
-	quit        bool
-	modelName   string
-	pickerTitle string
-	pickerItems []ModalItem
-	pickerCB    func(ext.PickerItem)
-	newSession  *session.Session
-	bgStartCh  <-chan core.Event // set when background agent starts
+// bgStartResult is set by the background agent callback when it starts polling.
+type bgStartResult struct {
+	ch <-chan core.Event
 }
 
 // Model is the Bubble Tea model for the TUI.
@@ -82,8 +74,8 @@ type Model struct {
 	quitting       bool
 	pickerCallback func(ext.PickerItem)
 
-	// Shared command result (pointer so callbacks can write to it)
-	pendingResult *cmdResult
+	// Background start channel (set by bind callback, read after command)
+	pendingBgStart *bgStartResult
 
 	// Event channel
 	eventCh <-chan core.Event
@@ -181,7 +173,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Label: msg.Item.Label,
 				Desc:  msg.Item.Desc,
 			})
-			bgCmd := m.applyPendingResult()
+			bgCmd := m.applyActions()
 			if bgCmd != nil {
 				return m, bgCmd
 			}
@@ -355,55 +347,15 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(pollEvents(ch), tickCmd())
 }
 
-// bindApp wires ext.App callbacks to write to m.pendingResult.
-// Called before each command handler invocation.
+// bindApp wires sync callbacks that need return values or direct TUI mutation.
+// Fire-and-forget intents (ShowMessage, Quit, etc.) use the action queue.
 func (m *Model) bindApp() {
 	if m.cfg.App == nil {
 		return
 	}
-	r := &cmdResult{}
-	m.pendingResult = r
+	m.pendingBgStart = nil
 
 	m.cfg.App.Bind(m.cfg.Agent,
-		ext.WithShowMessage(func(text string) {
-			r.message = text
-		}),
-		ext.WithRequestQuit(func() {
-			r.quit = true
-		}),
-		ext.WithShowPicker(func(title string, items []ext.PickerItem, onSelect func(ext.PickerItem)) {
-			r.pickerTitle = title
-			r.pickerItems = make([]ModalItem, len(items))
-			for i, item := range items {
-				r.pickerItems[i] = ModalItem{ID: item.ID, Label: item.Label, Desc: item.Desc}
-			}
-			r.pickerCB = onSelect
-		}),
-		ext.WithStatus(func(key, text string) {
-			if key == "model" {
-				r.modelName = text
-			}
-		}),
-		ext.WithSwapSession(func(sess any) {
-			if s, ok := sess.(*session.Session); ok {
-				r.newSession = s
-			}
-		}),
-		ext.WithForkSession(func() (string, int, error) {
-			if m.cfg.Session == nil {
-				return "", 0, fmt.Errorf("no active session")
-			}
-			forked, err := m.cfg.Session.Fork(0)
-			if err != nil {
-				return "", 0, err
-			}
-			parentID := m.cfg.Session.ID()
-			if len(parentID) > 8 {
-				parentID = parentID[:8]
-			}
-			r.newSession = forked
-			return parentID, len(forked.Messages()), nil
-		}),
 		ext.WithRunBackground(func(prompt string) error {
 			if m.bgAgent != nil && m.bgAgent.IsRunning() {
 				return fmt.Errorf("background task already running")
@@ -424,7 +376,7 @@ func (m *Model) bindApp() {
 			m.bgTask = prompt
 			m.bgResult.Reset()
 			m.status.SetBgTask(prompt)
-			r.bgStartCh = ch
+			m.pendingBgStart = &bgStartResult{ch: ch}
 			return nil
 		}),
 		ext.WithCancelBackground(func() {
@@ -440,53 +392,60 @@ func (m *Model) bindApp() {
 		ext.WithIsBackgroundRunning(func() bool {
 			return m.bgAgent != nil && m.bgAgent.IsRunning()
 		}),
-		ext.WithSetSessionTitle(func(title string) error {
-			if m.cfg.Session == nil {
-				return fmt.Errorf("no active session")
-			}
-			return m.cfg.Session.SetTitle(title)
-		}),
 	)
 }
 
-// applyPendingResult reads the pending result and applies it to the model.
-// Returns a tea.Cmd if the result requires ongoing work (e.g., background agent polling).
-func (m *Model) applyPendingResult() tea.Cmd {
-	r := m.pendingResult
-	if r == nil {
+// applyActions drains the action queue and applies each action to the model.
+// Returns a tea.Cmd if any action requires ongoing work (e.g., background agent polling).
+func (m *Model) applyActions() tea.Cmd {
+	if m.cfg.App == nil {
 		return nil
 	}
-	m.pendingResult = nil
 
-	if r.message != "" {
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{core.TextContent{Text: r.message}},
-		})
-	}
-	if r.modelName != "" {
-		m.status.SetModel(r.modelName)
-		m.cfg.Model = findModel(m.cfg.Models, r.modelName)
-	}
-	if r.pickerTitle != "" {
-		m.modal = NewModalModel(r.pickerTitle, r.pickerItems, m.styles)
-		m.modal.SetSize(m.width, m.height)
-		m.modal.Show()
-		m.pickerCallback = r.pickerCB
-	}
-	if r.newSession != nil {
-		if m.cfg.Session != nil {
-			m.cfg.Session.Close()
+	for _, action := range m.cfg.App.PendingActions() {
+		switch act := action.(type) {
+		case ext.ActionShowMessage:
+			m.messages = append(m.messages, &core.AssistantMessage{
+				Content: []core.AssistantContent{core.TextContent{Text: act.Text}},
+			})
+		case ext.ActionNotify:
+			m.messages = append(m.messages, &core.AssistantMessage{
+				Content: []core.AssistantContent{core.TextContent{Text: act.Message}},
+			})
+		case ext.ActionSetStatus:
+			if act.Key == "model" {
+				m.status.SetModel(act.Text)
+				m.cfg.Model = findModel(m.cfg.Models, act.Text)
+			}
+		case ext.ActionShowPicker:
+			items := make([]ModalItem, len(act.Items))
+			for i, item := range act.Items {
+				items[i] = ModalItem{ID: item.ID, Label: item.Label, Desc: item.Desc}
+			}
+			m.modal = NewModalModel(act.Title, items, m.styles)
+			m.modal.SetSize(m.width, m.height)
+			m.modal.Show()
+			m.pickerCallback = act.OnSelect
+		case ext.ActionSwapSession:
+			if s, ok := act.Session.(*session.Session); ok {
+				if m.cfg.Session != nil {
+					m.cfg.Session.Close()
+				}
+				m.cfg.Session = s
+				msgs := s.Messages()
+				m.messages = msgs
+				m.cfg.Agent.SetMessages(msgs)
+			}
+		case ext.ActionQuit:
+			m.quitting = true
 		}
-		m.cfg.Session = r.newSession
-		msgs := r.newSession.Messages()
-		m.messages = msgs
-		m.cfg.Agent.SetMessages(msgs)
 	}
-	if r.quit {
-		m.quitting = true
-	}
-	if r.bgStartCh != nil {
-		return pollBgEvents(r.bgStartCh)
+
+	// Check if a background agent was started
+	if m.pendingBgStart != nil {
+		ch := m.pendingBgStart.ch
+		m.pendingBgStart = nil
+		return pollBgEvents(ch)
 	}
 	return nil
 }
@@ -527,7 +486,7 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	bgCmd := m.applyPendingResult()
+	bgCmd := m.applyActions()
 
 	if m.quitting {
 		return m, tea.Quit
@@ -597,6 +556,13 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, &core.AssistantMessage{
 			Content: []core.AssistantContent{
 				core.TextContent{Text: fmt.Sprintf("Retrying (%d/%d)...", e.Attempt, e.Max)},
+			},
+		})
+
+	case core.EventCompact:
+		m.messages = append(m.messages, &core.AssistantMessage{
+			Content: []core.AssistantContent{
+				core.TextContent{Text: fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)},
 			},
 		})
 	}
@@ -776,7 +742,7 @@ func (m *Model) runShortcut(msg tea.KeyPressMsg) (tea.Model, bool) {
 
 	m.bindApp()
 	_ = sc.Handler(m.cfg.App)
-	_ = m.applyPendingResult()
+	_ = m.applyActions()
 
 	return m, true
 }
