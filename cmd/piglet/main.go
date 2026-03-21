@@ -4,17 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"maps"
+	"os/signal"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
+	"github.com/dotcommander/piglet/memory"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -72,14 +74,30 @@ func run() error {
 
 	// Extension app + built-in tools + commands
 	app := ext.NewApp(cwd)
-	tool.RegisterBuiltins(app)
-	command.RegisterBuiltins(app, registry.Models(), sessDir, registry, auth)
+	tool.RegisterBuiltins(app, tool.BashConfig{
+		DefaultTimeout: settings.Bash.DefaultTimeout,
+		MaxTimeout:     settings.Bash.MaxTimeout,
+		MaxStdout:      settings.Bash.MaxStdout,
+		MaxStderr:      settings.Bash.MaxStderr,
+	})
+	command.RegisterBuiltins(app, registry.Models(), sessDir, registry, auth, &settings)
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
 		Runtime:  "go",
 		Tools:    app.Tools(),
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
+	})
+
+	// Project memory (tools, /memory command, prompt section)
+	memory.Register(app)
+
+	// Git context (diff + recent commits in system prompt)
+	prompt.RegisterGitContext(app, prompt.GitContextConfig{
+		MaxDiffStatFiles: settings.Git.MaxDiffStatFiles,
+		MaxLogLines:      settings.Git.MaxLogLines,
+		MaxDiffHunkLines: settings.Git.MaxDiffHunkLines,
+		CommandTimeout:   time.Duration(settings.Git.CommandTimeout) * time.Second,
 	})
 
 	// External extensions (TypeScript, Python, etc.)
@@ -93,7 +111,9 @@ func run() error {
 	if basePrompt == "" {
 		basePrompt = "You are piglet, a helpful coding assistant."
 	}
-	system := prompt.Build(app, basePrompt)
+	system := prompt.Build(app, basePrompt, prompt.BuildOptions{
+		OrderOverrides: settings.PromptOrder,
+	})
 
 	// Session
 	sess, err := session.New(sessDir, cwd)
@@ -112,18 +132,19 @@ func run() error {
 		Provider: prov,
 		System:   system,
 		Tools:    coreTools,
-		MaxTurns: 10,
+		MaxTurns: config.IntOr(settings.Agent.MaxTurns, 10),
 	})
 
 	if interactive {
 		return tui.Run(tui.Config{
-			Agent:   ag,
-			Session: sess,
-			Model:   model,
-			Models:  registry.Models(),
-			SessDir: sessDir,
-			Theme:   tui.DefaultTheme(),
-			App:     app,
+			Agent:    ag,
+			Session:  sess,
+			Model:    model,
+			Models:   registry.Models(),
+			SessDir:  sessDir,
+			Theme:    tui.DefaultTheme(),
+			App:      app,
+			Settings: &settings,
 		})
 	}
 
