@@ -114,23 +114,24 @@ func (r *Registry) registerBuiltins() {
 	builtins := []core.Model{
 		// OpenAI
 		{ID: "gpt-4o", Name: "GPT-4o", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
-		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
+		{ID: "gpt-4o-mini", Name: "GPT-4o mini", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
 		{ID: "o3-mini", Name: "o3-mini", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000},
 
 		// Anthropic
-		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 8192},
-		{ID: "claude-opus-4-20250514", Name: "Claude Opus 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 8192},
-		{ID: "claude-haiku-3-5-20241022", Name: "Claude 3.5 Haiku", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 8192},
+		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
+		{ID: "claude-opus-4-20250514", Name: "Claude Opus 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 32000},
+		{ID: "claude-3-5-haiku-20241022", Name: "Claude Haiku 3.5", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 8192},
+		{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
 
 		// Google
 		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Provider: "google", API: core.APIGoogle, BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
 		{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", Provider: "google", API: core.APIGoogle, BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
 
 		// xAI
-		{ID: "grok-3", Name: "Grok 3", Provider: "xai", API: core.APIOpenAI, BaseURL: "https://api.x.ai", ContextWindow: 131072, MaxTokens: 16384},
+		{ID: "grok-3", Name: "Grok 3", Provider: "xai", API: core.APIOpenAI, BaseURL: "https://api.x.ai", ContextWindow: 131072, MaxTokens: 8192},
 
 		// Groq
-		{ID: "llama-3.3-70b-versatile", Name: "Llama 3.3 70B", Provider: "groq", API: core.APIOpenAI, BaseURL: "https://api.groq.com/openai", ContextWindow: 131072, MaxTokens: 8192},
+		{ID: "llama-3.3-70b-versatile", Name: "Llama 3.3 70B Versatile", Provider: "groq", API: core.APIOpenAI, BaseURL: "https://api.groq.com/openai", ContextWindow: 131072, MaxTokens: 32768},
 
 		// OpenRouter
 		{ID: "auto", Name: "Auto", Provider: "openrouter", API: core.APIOpenAI, BaseURL: "https://openrouter.ai/api", ContextWindow: 200000, MaxTokens: 16384},

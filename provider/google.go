@@ -2,71 +2,31 @@ package provider
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"github.com/dotcommander/piglet/core"
 	"strings"
-	"time"
+
+	"github.com/dotcommander/piglet/core"
 )
 
 // Google implements core.StreamProvider for Google Generative AI.
 type Google struct {
-	model      core.Model
-	apiKeyFn   func() string
-	httpClient *http.Client
+	baseProvider
 }
 
 // NewGoogle creates a Google provider.
 func NewGoogle(model core.Model, apiKeyFn func() string) *Google {
-	return &Google{
-		model:    model,
-		apiKeyFn: apiKeyFn,
-		httpClient: &http.Client{
-			Timeout: 300 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 100,
-			},
-		},
-	}
+	return &Google{baseProvider: newBaseProvider(model, apiKeyFn)}
 }
 
 // Stream implements core.StreamProvider.
 func (p *Google) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
-	ch := make(chan core.StreamEvent, 32)
-
-	go func() {
-		defer close(ch)
-
-		body, err := p.buildRequest(req)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("build request: %w", err)}
-			return
-		}
-
-		reader, err := p.doRequest(ctx, body)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
-			return
-		}
-		defer reader.Close()
-
-		msg := p.parseStream(ctx, reader, ch)
-		if msg.StopReason == "" {
-			msg.StopReason = core.StopReasonStop
-		}
-		msg.Model = p.model.ID
-		msg.Provider = p.model.Provider
-		msg.Timestamp = time.Now()
-
-		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
-	}()
-
-	return ch
+	return runStream(ctx, req, p)
 }
+
+func (p *Google) streamModel() core.Model { return p.model }
 
 // ---------------------------------------------------------------------------
 // Request types
@@ -245,36 +205,12 @@ func (p *Google) endpoint() string {
 	return fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse", base, p.model.ID)
 }
 
-func (p *Google) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
-	apiKey := p.apiKeyFn()
+func (p *Google) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
 	url := p.endpoint()
-	if apiKey != "" {
+	if apiKey := p.apiKeyFn(); apiKey != "" {
 		url += "&key=" + apiKey
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	for k, v := range p.model.Headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("Google API error %d: %s", resp.StatusCode, string(errBody))
-	}
-
-	return resp.Body, nil
+	return p.doHTTPRequest(ctx, url, body, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +232,7 @@ type gemUsage struct {
 	CandidatesTokenCount int `json:"candidatesTokenCount"`
 }
 
-func (p *Google) parseStream(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
+func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 
 	scanner := bufio.NewScanner(reader)

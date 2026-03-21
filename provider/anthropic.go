@@ -2,73 +2,33 @@ package provider
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"github.com/dotcommander/piglet/core"
 	"strings"
-	"time"
+
+	"github.com/dotcommander/piglet/core"
 )
 
 const anthropicAPIVersion = "2023-06-01"
 
 // Anthropic implements core.StreamProvider for the Anthropic Messages API.
 type Anthropic struct {
-	model      core.Model
-	apiKeyFn   func() string
-	httpClient *http.Client
+	baseProvider
 }
 
 // NewAnthropic creates an Anthropic provider.
 func NewAnthropic(model core.Model, apiKeyFn func() string) *Anthropic {
-	return &Anthropic{
-		model:    model,
-		apiKeyFn: apiKeyFn,
-		httpClient: &http.Client{
-			Timeout: 300 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 100,
-			},
-		},
-	}
+	return &Anthropic{baseProvider: newBaseProvider(model, apiKeyFn)}
 }
 
 // Stream implements core.StreamProvider.
 func (p *Anthropic) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
-	ch := make(chan core.StreamEvent, 32)
-
-	go func() {
-		defer close(ch)
-
-		body, err := p.buildRequest(req)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("build request: %w", err)}
-			return
-		}
-
-		reader, err := p.doRequest(ctx, body)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
-			return
-		}
-		defer reader.Close()
-
-		msg := p.parseSSEStream(ctx, reader, ch)
-		if msg.StopReason == "" {
-			msg.StopReason = core.StopReasonStop
-		}
-		msg.Model = p.model.ID
-		msg.Provider = p.model.Provider
-		msg.Timestamp = time.Now()
-
-		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
-	}()
-
-	return ch
+	return runStream(ctx, req, p)
 }
+
+func (p *Anthropic) streamModel() core.Model { return p.model }
 
 // ---------------------------------------------------------------------------
 // Request types
@@ -238,36 +198,14 @@ func (p *Anthropic) endpoint() string {
 	return base + "/v1/messages"
 }
 
-func (p *Anthropic) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	if apiKey := p.apiKeyFn(); apiKey != "" {
-		req.Header.Set("x-api-key", apiKey)
-	}
-
-	for k, v := range p.model.Headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("Anthropic API error %d: %s", resp.StatusCode, string(errBody))
-	}
-
-	return resp.Body, nil
+func (p *Anthropic) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
+	return p.doHTTPRequest(ctx, p.endpoint(), body, func(req *http.Request) {
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("anthropic-version", anthropicAPIVersion)
+		if apiKey := p.apiKeyFn(); apiKey != "" {
+			req.Header.Set("x-api-key", apiKey)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +250,7 @@ type antDelta struct {
 	StopReason  string `json:"stop_reason,omitempty"`
 }
 
-func (p *Anthropic) parseSSEStream(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
+func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder)
 

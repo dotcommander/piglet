@@ -2,71 +2,32 @@ package provider
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"github.com/dotcommander/piglet/core"
 	"strings"
-	"time"
+
+	"github.com/dotcommander/piglet/core"
 )
 
 // OpenAI implements core.StreamProvider for OpenAI-compatible APIs.
 type OpenAI struct {
-	model      core.Model
-	apiKeyFn   func() string
-	httpClient *http.Client
+	baseProvider
 }
 
 // NewOpenAI creates a provider for OpenAI-compatible APIs.
 func NewOpenAI(model core.Model, apiKeyFn func() string) *OpenAI {
-	return &OpenAI{
-		model:    model,
-		apiKeyFn: apiKeyFn,
-		httpClient: &http.Client{
-			Timeout: 300 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 100,
-			},
-		},
-	}
+	return &OpenAI{baseProvider: newBaseProvider(model, apiKeyFn)}
 }
 
 // Stream implements core.StreamProvider.
 func (p *OpenAI) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
-	ch := make(chan core.StreamEvent, 32)
-
-	go func() {
-		defer close(ch)
-
-		body, err := p.buildRequest(req)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("build request: %w", err)}
-			return
-		}
-
-		reader, err := p.doRequest(ctx, body)
-		if err != nil {
-			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
-			return
-		}
-		defer reader.Close()
-
-		msg := p.parseSSEStream(ctx, reader, ch)
-		if msg.StopReason == "" {
-			msg.StopReason = core.StopReasonStop
-		}
-		msg.Model = p.model.ID
-		msg.Provider = p.model.Provider
-		msg.Timestamp = time.Now()
-
-		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
-	}()
-
-	return ch
+	return runStream(ctx, req, p)
 }
+
+func (p *OpenAI) streamModel() core.Model { return p.model }
 
 // ---------------------------------------------------------------------------
 // Request building
@@ -265,31 +226,13 @@ func (p *OpenAI) endpoint() string {
 	return base + "/v1/chat/completions"
 }
 
-func (p *OpenAI) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-
-	if apiKey := p.apiKeyFn(); apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(errBody))
-	}
-
-	return resp.Body, nil
+func (p *OpenAI) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
+	return p.doHTTPRequest(ctx, p.endpoint(), body, func(req *http.Request) {
+		req.Header.Set("Accept", "text/event-stream")
+		if apiKey := p.apiKeyFn(); apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +261,7 @@ type oaiUsage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-func (p *OpenAI) parseSSEStream(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
+func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder) // index → accumulated args JSON
 
