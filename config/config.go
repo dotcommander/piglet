@@ -27,10 +27,11 @@ type Settings struct {
 
 // AgentSettings controls agent loop behavior. Zero values use defaults.
 type AgentSettings struct {
-	MaxTurns        int   `yaml:"maxTurns,omitempty"`        // default 10
-	BgMaxTurns      int   `yaml:"bgMaxTurns,omitempty"`      // default 5
-	AutoTitle       *bool `yaml:"autoTitle,omitempty"`        // default true; pointer distinguishes false from unset
-	CompactKeepRecent int `yaml:"compactKeepRecent,omitempty"` // default 6
+	MaxTurns          int   `yaml:"maxTurns,omitempty"`          // default 10
+	BgMaxTurns        int   `yaml:"bgMaxTurns,omitempty"`        // default 5
+	AutoTitle         *bool `yaml:"autoTitle,omitempty"`          // default true; pointer distinguishes false from unset
+	CompactKeepRecent int   `yaml:"compactKeepRecent,omitempty"` // default 6
+	CompactAt         int   `yaml:"compactAt,omitempty"`         // token threshold for auto-compact; 0 = disabled
 }
 
 // AutoTitleEnabled returns whether auto-title generation is on (default true).
@@ -57,11 +58,15 @@ type BashSettings struct {
 	MaxStderr      int `yaml:"maxStderr,omitempty"`      // bytes, default 50000
 }
 
-// ConfigDir returns ~/.config/piglet/.
+// ConfigDir returns ~/.config/piglet/, respecting XDG_CONFIG_HOME.
 func ConfigDir() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("config dir: %w", err)
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("config dir: %w", err)
+		}
+		dir = filepath.Join(home, ".config")
 	}
 	return filepath.Join(dir, "piglet"), nil
 }
