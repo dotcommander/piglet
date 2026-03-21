@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
@@ -83,18 +84,20 @@ func New(cfg Config) Model {
 	styles := NewStyles(cfg.Theme)
 	commands := commandNames(cfg.App)
 
+	status := NewStatusBar(styles)
+	status.SetModel(cfg.Model.DisplayName())
+
 	return Model{
 		cfg:     cfg,
 		styles:  styles,
 		input:   NewInputModel(styles, commands),
-		status:  NewStatusBar(styles),
+		status:  status,
 		msgView: NewMessageView(styles, 80),
 	}
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	m.status.SetModel(m.cfg.Model.Name)
 	return m.input.textarea.Focus()
 }
 
@@ -151,12 +154,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pickerCallback != nil {
 			cb := m.pickerCallback
 			m.pickerCallback = nil
+			// Set up a fresh result for the callback to write into
+			m.bindApp()
 			cb(ext.PickerItem{
 				ID:    msg.Item.ID,
 				Label: msg.Item.Label,
 				Desc:  msg.Item.Desc,
 			})
-			// Process any pending result from the picker callback
 			m.applyPendingResult()
 		}
 		return m, nil
@@ -184,12 +188,14 @@ func (m Model) View() tea.View {
 
 	var sections []string
 
-	// Header
-	header := m.styles.Header.Render("piglet")
-	sections = append(sections, header)
-
-	// Messages viewport
-	m.viewport.SetContent(m.renderMessages())
+	// Messages viewport — bottom-aligned like Claude Code
+	content := m.renderMessages()
+	contentLines := strings.Count(content, "\n")
+	vpHeight := m.viewport.Height()
+	if contentLines < vpHeight {
+		content = strings.Repeat("\n", vpHeight-contentLines) + content
+	}
+	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 	sections = append(sections, m.viewport.View())
 
@@ -210,7 +216,10 @@ func (m Model) View() tea.View {
 // Run starts the TUI.
 func Run(cfg Config) error {
 	m := New(cfg)
-	p := tea.NewProgram(m, tea.WithFilter(filterTerminalResponses))
+	p := tea.NewProgram(m,
+		tea.WithColorProfile(colorprofile.TrueColor),
+		tea.WithFilter(filterTerminalResponses),
+	)
 	_, err := p.Run()
 	return err
 }
@@ -238,10 +247,9 @@ func filterTerminalResponses(_ tea.Model, msg tea.Msg) tea.Msg {
 // ---------------------------------------------------------------------------
 
 func (m *Model) layout() {
-	headerH := 1
 	statusH := 1
 	inputH := 5 // border + 3 lines + border
-	vpH := m.height - headerH - statusH - inputH - 2
+	vpH := m.height - statusH - inputH - 2
 	if vpH < 3 {
 		vpH = 3
 	}
@@ -561,10 +569,10 @@ func keyString(msg tea.KeyPressMsg) string {
 	return strings.Join(parts, "+")
 }
 
-// findModel looks up a model by display name.
-func findModel(models []core.Model, name string) core.Model {
+// findModel looks up a model by "provider/name" or plain name.
+func findModel(models []core.Model, query string) core.Model {
 	for _, m := range models {
-		if m.Name == name {
+		if m.DisplayName() == query || m.Name == query {
 			return m
 		}
 	}

@@ -19,7 +19,7 @@ type MessageView struct {
 // NewMessageView creates a message renderer.
 func NewMessageView(styles Styles, width int) MessageView {
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(width-4),
 	)
 	return MessageView{styles: styles, renderer: r, width: width}
@@ -27,9 +27,12 @@ func NewMessageView(styles Styles, width int) MessageView {
 
 // SetWidth updates the rendering width.
 func (v *MessageView) SetWidth(w int) {
+	if w == v.width {
+		return
+	}
 	v.width = w
 	v.renderer, _ = glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(w-4),
 	)
 }
