@@ -1,0 +1,431 @@
+package provider
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"github.com/dotcommander/piglet/core"
+	"strings"
+	"time"
+)
+
+const anthropicAPIVersion = "2023-06-01"
+
+// Anthropic implements core.StreamProvider for the Anthropic Messages API.
+type Anthropic struct {
+	model      core.Model
+	apiKeyFn   func() string
+	httpClient *http.Client
+}
+
+// NewAnthropic creates an Anthropic provider.
+func NewAnthropic(model core.Model, apiKeyFn func() string) *Anthropic {
+	return &Anthropic{
+		model:    model,
+		apiKeyFn: apiKeyFn,
+		httpClient: &http.Client{
+			Timeout: 300 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 100,
+			},
+		},
+	}
+}
+
+// Stream implements core.StreamProvider.
+func (p *Anthropic) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
+	ch := make(chan core.StreamEvent, 32)
+
+	go func() {
+		defer close(ch)
+
+		body, err := p.buildRequest(req)
+		if err != nil {
+			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("build request: %w", err)}
+			return
+		}
+
+		reader, err := p.doRequest(ctx, body)
+		if err != nil {
+			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
+			return
+		}
+		defer reader.Close()
+
+		msg := p.parseSSEStream(ctx, reader, ch)
+		if msg.StopReason == "" {
+			msg.StopReason = core.StopReasonStop
+		}
+		msg.Model = p.model.ID
+		msg.Provider = p.model.Provider
+		msg.Timestamp = time.Now()
+
+		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
+	}()
+
+	return ch
+}
+
+// ---------------------------------------------------------------------------
+// Request types
+// ---------------------------------------------------------------------------
+
+type antRequest struct {
+	Model     string       `json:"model"`
+	MaxTokens int          `json:"max_tokens"`
+	System    string       `json:"system,omitempty"`
+	Messages  []antMessage `json:"messages"`
+	Stream    bool         `json:"stream"`
+	Tools     []antTool    `json:"tools,omitempty"`
+}
+
+type antMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string or []antBlock
+}
+
+type antBlock struct {
+	Type string `json:"type"`
+	// Text block
+	Text string `json:"text,omitempty"`
+	// Image block
+	Source *antImageSource `json:"source,omitempty"`
+	// Tool use block
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Input any    `json:"input,omitempty"`
+	// Tool result block
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   any    `json:"content,omitempty"` // string or []antBlock
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+type antImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+type antTool struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema any    `json:"input_schema"`
+}
+
+func (p *Anthropic) buildRequest(req core.StreamRequest) ([]byte, error) {
+	maxTokens := p.model.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 4096
+	}
+
+	antReq := antRequest{
+		Model:     p.model.ID,
+		MaxTokens: maxTokens,
+		System:    req.System,
+		Messages:  p.convertMessages(req),
+		Stream:    true,
+	}
+
+	if len(req.Tools) > 0 {
+		antReq.Tools = p.convertTools(req.Tools)
+	}
+
+	return json.Marshal(antReq)
+}
+
+func (p *Anthropic) convertMessages(req core.StreamRequest) []antMessage {
+	var msgs []antMessage
+
+	for _, m := range req.Messages {
+		switch msg := m.(type) {
+		case *core.UserMessage:
+			msgs = append(msgs, p.convertUserMessage(msg))
+		case *core.AssistantMessage:
+			msgs = append(msgs, p.convertAssistantMessage(msg))
+		case *core.ToolResultMessage:
+			msgs = append(msgs, p.convertToolResult(msg))
+		}
+	}
+
+	return msgs
+}
+
+func (p *Anthropic) convertUserMessage(msg *core.UserMessage) antMessage {
+	if msg.Content != "" && len(msg.Blocks) == 0 {
+		return antMessage{Role: "user", Content: msg.Content}
+	}
+
+	var blocks []antBlock
+	if msg.Content != "" {
+		blocks = append(blocks, antBlock{Type: "text", Text: msg.Content})
+	}
+	for _, b := range msg.Blocks {
+		switch c := b.(type) {
+		case core.TextContent:
+			blocks = append(blocks, antBlock{Type: "text", Text: c.Text})
+		case core.ImageContent:
+			blocks = append(blocks, antBlock{
+				Type: "image",
+				Source: &antImageSource{
+					Type:      "base64",
+					MediaType: c.MimeType,
+					Data:      c.Data,
+				},
+			})
+		}
+	}
+
+	return antMessage{Role: "user", Content: blocks}
+}
+
+func (p *Anthropic) convertAssistantMessage(msg *core.AssistantMessage) antMessage {
+	var blocks []antBlock
+	for _, c := range msg.Content {
+		switch block := c.(type) {
+		case core.TextContent:
+			blocks = append(blocks, antBlock{Type: "text", Text: block.Text})
+		case core.ToolCall:
+			blocks = append(blocks, antBlock{
+				Type:  "tool_use",
+				ID:    block.ID,
+				Name:  block.Name,
+				Input: block.Arguments,
+			})
+		}
+	}
+	return antMessage{Role: "assistant", Content: blocks}
+}
+
+func (p *Anthropic) convertToolResult(msg *core.ToolResultMessage) antMessage {
+	text := toolResultText(msg)
+	return antMessage{
+		Role: "user",
+		Content: []antBlock{{
+			Type:      "tool_result",
+			ToolUseID: msg.ToolCallID,
+			Content:   text,
+			IsError:   msg.IsError,
+		}},
+	}
+}
+
+func (p *Anthropic) convertTools(tools []core.ToolSchema) []antTool {
+	out := make([]antTool, 0, len(tools))
+	for _, t := range tools {
+		schema := t.Parameters
+		if schema == nil {
+			schema = map[string]any{"type": "object"}
+		}
+		out = append(out, antTool{
+			Name:        t.Name,
+			Description: t.Description,
+			InputSchema: schema,
+		})
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+
+func (p *Anthropic) endpoint() string {
+	base := strings.TrimSuffix(p.model.BaseURL, "/")
+	return base + "/v1/messages"
+}
+
+func (p *Anthropic) doRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint(), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	if apiKey := p.apiKeyFn(); apiKey != "" {
+		req.Header.Set("x-api-key", apiKey)
+	}
+
+	for k, v := range p.model.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http request: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("Anthropic API error %d: %s", resp.StatusCode, string(errBody))
+	}
+
+	return resp.Body, nil
+}
+
+// ---------------------------------------------------------------------------
+// SSE parsing
+// ---------------------------------------------------------------------------
+
+type antStreamEvent struct {
+	Type  string          `json:"type"`
+	Index int             `json:"index"`
+	Delta json.RawMessage `json:"delta,omitempty"`
+
+	// content_block_start
+	ContentBlock *antContentBlock `json:"content_block,omitempty"`
+
+	// message_start
+	Message *antStreamMessage `json:"message,omitempty"`
+
+	// message_delta
+	Usage *antStreamUsage `json:"usage,omitempty"`
+}
+
+type antContentBlock struct {
+	Type string `json:"type"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+type antStreamMessage struct {
+	Usage *antStreamUsage `json:"usage,omitempty"`
+}
+
+type antStreamUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type antDelta struct {
+	Type        string `json:"type"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
+}
+
+func (p *Anthropic) parseSSEStream(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
+	var msg core.AssistantMessage
+	toolArgs := make(map[int]*strings.Builder)
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
+			return msg
+		default:
+		}
+
+		line := scanner.Text()
+		data := extractSSEData(line)
+		if data == "" {
+			continue
+		}
+
+		var evt antStreamEvent
+		if err := json.Unmarshal([]byte(data), &evt); err != nil {
+			continue
+		}
+
+		switch evt.Type {
+		case "message_start":
+			if evt.Message != nil && evt.Message.Usage != nil {
+				msg.Usage.InputTokens = evt.Message.Usage.InputTokens
+			}
+
+		case "content_block_start":
+			if evt.ContentBlock != nil {
+				switch evt.ContentBlock.Type {
+				case "text":
+					msg.Content = append(msg.Content, core.TextContent{})
+				case "tool_use":
+					msg.Content = append(msg.Content, core.ToolCall{
+						ID:        evt.ContentBlock.ID,
+						Name:      evt.ContentBlock.Name,
+						Arguments: map[string]any{},
+					})
+					toolArgs[evt.Index] = &strings.Builder{}
+				}
+			}
+
+		case "content_block_delta":
+			if evt.Delta != nil {
+				var delta antDelta
+				if err := json.Unmarshal(evt.Delta, &delta); err != nil {
+					continue
+				}
+
+				switch delta.Type {
+				case "text_delta":
+					ch <- core.StreamEvent{Type: core.StreamTextDelta, Index: evt.Index, Delta: delta.Text}
+					p.appendTextAtIndex(&msg, evt.Index, delta.Text)
+				case "input_json_delta":
+					ch <- core.StreamEvent{Type: core.StreamToolCallDelta, Index: evt.Index, Delta: delta.PartialJSON}
+					if builder, ok := toolArgs[evt.Index]; ok {
+						builder.WriteString(delta.PartialJSON)
+					}
+				}
+			}
+
+		case "message_delta":
+			if evt.Delta != nil {
+				var delta antDelta
+				if err := json.Unmarshal(evt.Delta, &delta); err == nil && delta.StopReason != "" {
+					msg.StopReason = p.mapStopReason(delta.StopReason)
+				}
+			}
+			if evt.Usage != nil {
+				msg.Usage.OutputTokens = evt.Usage.OutputTokens
+			}
+		}
+	}
+
+	// Finalize tool arguments
+	for idx, builder := range toolArgs {
+		p.finalizeToolArgs(&msg, idx, builder.String())
+	}
+
+	return msg
+}
+
+func (p *Anthropic) appendTextAtIndex(msg *core.AssistantMessage, idx int, delta string) {
+	if idx < len(msg.Content) {
+		if tc, ok := msg.Content[idx].(core.TextContent); ok {
+			msg.Content[idx] = core.TextContent{Text: tc.Text + delta}
+		}
+	}
+}
+
+func (p *Anthropic) finalizeToolArgs(msg *core.AssistantMessage, idx int, argsJSON string) {
+	if idx < len(msg.Content) {
+		if tc, ok := msg.Content[idx].(core.ToolCall); ok {
+			var args map[string]any
+			if err := json.Unmarshal([]byte(argsJSON), &args); err == nil {
+				tc.Arguments = args
+			}
+			msg.Content[idx] = tc
+		}
+	}
+}
+
+func (p *Anthropic) mapStopReason(reason string) core.StopReason {
+	switch reason {
+	case "end_turn":
+		return core.StopReasonStop
+	case "max_tokens":
+		return core.StopReasonLength
+	case "tool_use":
+		return core.StopReasonTool
+	default:
+		return core.StopReasonStop
+	}
+}

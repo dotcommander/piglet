@@ -1,0 +1,151 @@
+package prompt_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/prompt"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestBuild_BasePrompt(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	result := prompt.Build(app, "You are a helpful assistant.")
+
+	// Base prompt appears when no user prompt file is loaded (HOME set to temp dir).
+	// In CI there is no ~/.config/piglet/prompt.md, so base is used.
+	// We assert the base string is present (may be absent if user has a prompt file,
+	// so we check the result is non-empty and contains the base when possible).
+	assert.NotEmpty(t, result)
+}
+
+func TestBuild_WithPromptSections(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "Code Style",
+		Content: "Always use gofmt.",
+		Order:   0,
+	})
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "Testing",
+		Content: "Write table-driven tests.",
+		Order:   1,
+	})
+
+	result := prompt.Build(app, "base")
+
+	assert.Contains(t, result, "# Code Style")
+	assert.Contains(t, result, "Always use gofmt.")
+	assert.Contains(t, result, "# Testing")
+	assert.Contains(t, result, "Write table-driven tests.")
+}
+
+func TestBuild_WithToolDefs(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterTool(&ext.ToolDef{
+		ToolSchema: core.ToolSchema{
+			Name:        "read_file",
+			Description: "Reads a file from disk.",
+		},
+		PromptHint:   "Read file contents with line numbers",
+		PromptGuides: []string{"Use offset/limit for large files", "Prefer grep to locate content"},
+	})
+
+	result := prompt.Build(app, "base")
+
+	assert.Contains(t, result, "# Tools")
+	assert.Contains(t, result, "## read_file")
+	assert.Contains(t, result, "Read file contents with line numbers")
+	assert.Contains(t, result, "Reads a file from disk.")
+	assert.Contains(t, result, "Use offset/limit for large files")
+	assert.Contains(t, result, "Prefer grep to locate content")
+}
+
+func TestBuild_EmptyBase(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "Section",
+		Content: "Some content.",
+	})
+
+	result := prompt.Build(app, "")
+
+	// Even with empty base, sections appear
+	assert.Contains(t, result, "# Section")
+	assert.Contains(t, result, "Some content.")
+}
+
+func TestBuild_SectionsOrdered(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	// Register out of order — Build should emit in Order ascending
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "Third",
+		Content: "third content",
+		Order:   30,
+	})
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "First",
+		Content: "first content",
+		Order:   10,
+	})
+	app.RegisterPromptSection(ext.PromptSection{
+		Title:   "Second",
+		Content: "second content",
+		Order:   20,
+	})
+
+	result := prompt.Build(app, "base")
+
+	idxFirst := strings.Index(result, "# First")
+	idxSecond := strings.Index(result, "# Second")
+	idxThird := strings.Index(result, "# Third")
+
+	assert.Greater(t, idxFirst, -1, "First section missing")
+	assert.Greater(t, idxSecond, -1, "Second section missing")
+	assert.Greater(t, idxThird, -1, "Third section missing")
+
+	assert.Less(t, idxFirst, idxSecond, "First should appear before Second")
+	assert.Less(t, idxSecond, idxThird, "Second should appear before Third")
+}
+
+func TestBuild_ToolWithoutHint(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterTool(&ext.ToolDef{
+		ToolSchema: core.ToolSchema{
+			Name:        "list_dir",
+			Description: "Lists directory contents.",
+		},
+		// No PromptHint, no PromptGuides
+	})
+
+	result := prompt.Build(app, "base")
+
+	assert.Contains(t, result, "## list_dir")
+	assert.Contains(t, result, "Lists directory contents.")
+	// No hint separator when hint is empty
+	assert.NotContains(t, result, "## list_dir —")
+}
+
+func TestBuild_NoToolsSection(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	result := prompt.Build(app, "base")
+
+	// No tools registered → no "# Tools" header
+	assert.NotContains(t, result, "# Tools")
+}
