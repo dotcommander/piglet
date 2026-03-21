@@ -80,7 +80,7 @@ func run() error {
 		MaxStdout:      settings.Bash.MaxStdout,
 		MaxStderr:      settings.Bash.MaxStderr,
 	})
-	command.RegisterBuiltins(app, registry.Models(), sessDir, registry, auth, &settings)
+	command.RegisterBuiltins(app, settings.Shortcuts)
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
@@ -128,12 +128,22 @@ func run() error {
 
 	// Agent
 	coreTools := app.CoreTools()
+	compactAt := config.IntOr(settings.Agent.CompactAt, 0)
 	ag := core.NewAgent(core.AgentConfig{
-		Provider: prov,
-		System:   system,
-		Tools:    coreTools,
-		MaxTurns: config.IntOr(settings.Agent.MaxTurns, 10),
+		Provider:  prov,
+		System:    system,
+		Tools:     coreTools,
+		MaxTurns:  config.IntOr(settings.Agent.MaxTurns, 10),
+		CompactAt: compactAt,
+		OnCompact: makeCompactor(prov),
 	})
+
+	// Bind domain managers so commands work through ext.App
+	sessPtr := &sess
+	app.Bind(ag,
+		ext.WithSessionManager(&sessionMgr{dir: sessDir, current: sessPtr}),
+		ext.WithModelManager(&modelMgr{registry: registry, auth: auth}),
+	)
 
 	if interactive {
 		return tui.Run(tui.Config{
@@ -176,6 +186,8 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 			}
 		case core.EventRetry:
 			fmt.Fprintf(os.Stderr, "[retry %d/%d: %s]\n", e.Attempt, e.Max, e.Error)
+		case core.EventCompact:
+			fmt.Fprintf(os.Stderr, "[compacted: %d → %d messages at %d tokens]\n", e.Before, e.After, e.TokensAtCompact)
 		case core.EventAgentEnd:
 			fmt.Println()
 		}
@@ -200,4 +212,63 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 	}
 
 	return agentErr
+}
+
+// makeCompactor returns an OnCompact callback that summarizes messages via the LLM.
+func makeCompactor(prov core.StreamProvider) func([]core.Message) (string, error) {
+	return func(msgs []core.Message) (string, error) {
+		// Build a text representation of the middle messages
+		var b strings.Builder
+		for _, m := range msgs {
+			switch msg := m.(type) {
+			case *core.UserMessage:
+				fmt.Fprintf(&b, "User: %s\n", msg.Content)
+			case *core.AssistantMessage:
+				for _, c := range msg.Content {
+					if tc, ok := c.(core.TextContent); ok {
+						fmt.Fprintf(&b, "Assistant: %s\n", tc.Text)
+					}
+				}
+			case *core.ToolResultMessage:
+				for _, c := range msg.Content {
+					if tc, ok := c.(core.TextContent); ok {
+						text := tc.Text
+						if len(text) > 200 {
+							r := []rune(text)
+							if len(r) > 200 {
+								text = string(r[:200]) + "..."
+							}
+						}
+						fmt.Fprintf(&b, "Tool(%s): %s\n", msg.ToolCallID, text)
+					}
+				}
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		ch := prov.Stream(ctx, core.StreamRequest{
+			System: "Summarize this conversation excerpt concisely. Preserve key decisions, file paths, errors, and outcomes. Output only the summary, no preamble.",
+			Messages: []core.Message{
+				&core.UserMessage{Content: b.String(), Timestamp: time.Now()},
+			},
+		})
+
+		var summary strings.Builder
+		for evt := range ch {
+			if evt.Type == core.StreamTextDelta {
+				summary.WriteString(evt.Delta)
+			}
+			if evt.Type == core.StreamError {
+				return "", evt.Error
+			}
+		}
+
+		result := summary.String()
+		if result == "" {
+			return "", fmt.Errorf("empty summary")
+		}
+		return "[Conversation compacted]\n\n" + result, nil
+	}
 }
