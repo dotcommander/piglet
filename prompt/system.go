@@ -2,19 +2,26 @@
 package prompt
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dotcommander/piglet/ext"
 )
+
+// BuildOptions controls optional prompt building behavior.
+type BuildOptions struct {
+	OrderOverrides map[string]int // section title → order override
+}
 
 // Build constructs the system prompt from:
 // 1. Base identity string (fallback if no user prompt file)
 // 2. User prompt file (~/.config/piglet/prompt.md) — overrides base
 // 3. Extension-registered prompt sections
 // 4. Tool hints and guidelines from registered tools
-func Build(app *ext.App, base string) string {
+func Build(app *ext.App, base string, opts ...BuildOptions) string {
 	var b strings.Builder
 
 	// User prompt file overrides the base identity
@@ -26,7 +33,18 @@ func Build(app *ext.App, base string) string {
 	b.WriteString("\n\n")
 
 	// Extension-registered prompt sections
-	for _, section := range app.PromptSections() {
+	sections := app.PromptSections()
+	if len(opts) > 0 && len(opts[0].OrderOverrides) > 0 {
+		for i, s := range sections {
+			if order, ok := opts[0].OrderOverrides[s.Title]; ok {
+				sections[i].Order = order
+			}
+		}
+		slices.SortFunc(sections, func(a, b ext.PromptSection) int {
+			return cmp.Compare(a.Order, b.Order)
+		})
+	}
+	for _, section := range sections {
 		if section.Title != "" {
 			b.WriteString("# ")
 			b.WriteString(section.Title)
