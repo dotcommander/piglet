@@ -2,18 +2,22 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/modelsdev"
+	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
 )
 
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
-func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string) {
+func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registry *provider.Registry, auth *config.Auth) {
 	registerHelp(app)
 	registerClear(app)
 	registerStep(app)
@@ -21,6 +25,7 @@ func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string) {
 	registerExport(app)
 	registerModel(app, models)
 	registerSession(app, sessDir)
+	registerModelsSync(app, registry, auth)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
@@ -219,6 +224,27 @@ func registerSession(app *ext.App, sessDir string) {
 				a.ShowMessage("Loaded session: " + selected.Label)
 				// Note: session file handle management is handled by the TUI
 			})
+			return nil
+		},
+	})
+}
+
+func registerModelsSync(app *ext.App, registry *provider.Registry, auth *config.Auth) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "models-sync",
+		Description: "Sync model catalog from models.dev",
+		Handler: func(args string, a *ext.App) error {
+			a.ShowMessage("Syncing models from models.dev...")
+			updated, err := modelsdev.Sync(context.Background(), registry, auth)
+			if err != nil {
+				a.ShowMessage("Sync failed: " + err.Error())
+				return nil
+			}
+			if updated == 0 {
+				a.ShowMessage("All models up to date.")
+			} else {
+				a.ShowMessage(fmt.Sprintf("Sync complete: %d model(s) updated", updated))
+			}
 			return nil
 		},
 	})

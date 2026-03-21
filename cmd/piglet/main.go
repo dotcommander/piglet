@@ -69,7 +69,7 @@ func run() error {
 	// Extension app + built-in tools + commands
 	app := ext.NewApp(cwd)
 	tool.RegisterBuiltins(app)
-	command.RegisterBuiltins(app, registry.Models(), sessDir)
+	command.RegisterBuiltins(app, registry.Models(), sessDir, registry, auth)
 
 	// System prompt: config.yaml systemPrompt → fallback default
 	basePrompt := settings.SystemPrompt
