@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -45,6 +47,12 @@ type titleGeneratedMsg struct{ title string }
 // notifyTickMsg decrements the notification timer.
 type notifyTickMsg struct{}
 
+// clipboardImageMsg carries the result of a clipboard image read.
+type clipboardImageMsg struct {
+	image *core.ImageContent
+	err   error
+}
+
 // notifyDuration is how many ticks a toast notification stays visible.
 const notifyDuration = 15 // ~3 seconds at 200ms tick
 
@@ -77,6 +85,7 @@ type Model struct {
 	activeTool     string
 	totalIn        int
 	totalOut       int
+	totalCost      float64
 	quitting       bool
 	pickerCallback func(ext.PickerItem)
 
@@ -101,6 +110,9 @@ type Model struct {
 	// Toast notification (transient, not in conversation history)
 	notification      string
 	notificationTimer int // ticks remaining (0 = hidden)
+
+	// Pending image attachment for next message
+	pendingImage *core.ImageContent
 }
 
 // New creates a TUI model.
@@ -109,7 +121,11 @@ func New(cfg Config) Model {
 	commands := commandNames(cfg.App)
 
 	status := NewStatusBar(styles)
-	status.SetModel(cfg.Model.DisplayName())
+	if cfg.App != nil {
+		status.SetRegistry(cfg.App.StatusSections())
+	}
+	status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet"))
+	status.Set(ext.StatusKeyModel, styles.Muted.Render(cfg.Model.DisplayName()))
 
 	return Model{
 		cfg:      cfg,
@@ -157,6 +173,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.quitting = true
 			return m, tea.Quit
+
+		case msg.Code == 'i' && msg.Mod.Contains(tea.ModCtrl):
+			return m.handleImageAttach()
 
 		case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
 			return m.handleSubmit()
@@ -217,6 +236,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+
+	case clipboardImageMsg:
+		if msg.err != nil {
+			m.showNotification("No image: " + msg.err.Error())
+			return m, notifyTick()
+		}
+		m.pendingImage = msg.image
+		m.input.SetAttachment("image")
+		size := len(msg.image.Data) * 3 / 4 // approximate decoded size
+		m.showNotification(fmt.Sprintf("Image attached (%s) — send with your next message", formatImageSize(size)))
+		return m, notifyTick()
 	}
 
 	// Update input
@@ -350,6 +380,84 @@ func (m Model) renderMessages() string {
 	return b.String()
 }
 
+// handleImageAttach reads an image from the macOS clipboard and attaches it to the next message.
+func (m Model) handleImageAttach() (tea.Model, tea.Cmd) {
+	if m.pendingImage != nil {
+		// Toggle off
+		m.pendingImage = nil
+		m.input.SetAttachment("")
+		m.showNotification("Image attachment removed")
+		return m, notifyTick()
+	}
+
+	return m, func() tea.Msg {
+		return readClipboardImage()
+	}
+}
+
+// readClipboardImage reads a PNG image from the macOS clipboard.
+func readClipboardImage() clipboardImageMsg {
+	cmd := exec.Command("osascript", "-e", "the clipboard info")
+	info, err := cmd.Output()
+	if err != nil {
+		return clipboardImageMsg{err: fmt.Errorf("clipboard not available")}
+	}
+
+	// Check if clipboard has image data
+	infoStr := string(info)
+	var mime string
+	switch {
+	case strings.Contains(infoStr, "PNGf"):
+		mime = "image/png"
+	case strings.Contains(infoStr, "JPEG"):
+		mime = "image/jpeg"
+	default:
+		return clipboardImageMsg{err: fmt.Errorf("no image in clipboard")}
+	}
+
+	// Read the image data
+	pbCmd := exec.Command("osascript", "-e",
+		`set imageData to the clipboard as «class PNGf»
+set theFile to (open for access POSIX file "/dev/stdout" with write permission)
+write imageData to theFile
+close access theFile`)
+	data, err := pbCmd.Output()
+	if err != nil || len(data) == 0 {
+		return clipboardImageMsg{err: fmt.Errorf("failed to read image from clipboard")}
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return clipboardImageMsg{
+		image: &core.ImageContent{
+			Data:     encoded,
+			MimeType: mime,
+		},
+	}
+}
+
+func formatTokens(in, out int) string {
+	return fmt.Sprintf("%dk/%dk", in/1000, out/1000)
+}
+
+func formatCost(c float64) string {
+	if c < 0.01 {
+		return "<$0.01"
+	}
+	return fmt.Sprintf("$%.2f", c)
+}
+
+// formatImageSize formats a byte count as a human-readable string.
+func formatImageSize(bytes int) string {
+	switch {
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/(1<<10))
+	default:
+		return fmt.Sprintf("%dB", bytes)
+	}
+}
+
 func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
@@ -372,6 +480,11 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	userMsg := &core.UserMessage{
 		Content:   text,
 		Timestamp: time.Now(),
+	}
+	if m.pendingImage != nil {
+		userMsg.Blocks = append(userMsg.Blocks, *m.pendingImage)
+		m.pendingImage = nil
+		m.input.SetAttachment("")
 	}
 	m.messages = append(m.messages, userMsg)
 
@@ -416,7 +529,11 @@ func (m *Model) bindApp() {
 			m.bgEventCh = ch
 			m.bgTask = prompt
 			m.bgResult.Reset()
-			m.status.SetBgTask(prompt)
+			task := prompt
+			if len([]rune(task)) > 20 {
+				task = string([]rune(task)[:20]) + "..."
+			}
+			m.status.Set(ext.StatusKeyBg, m.styles.Spinner.Render("bg: "+task))
 			m.pendingBgStart = &bgStartResult{ch: ch}
 			return nil
 		}),
@@ -428,7 +545,7 @@ func (m *Model) bindApp() {
 			m.bgEventCh = nil
 			m.bgTask = ""
 			m.bgResult.Reset()
-			m.status.SetBgTask("")
+			m.status.Set(ext.StatusKeyBg, "")
 		}),
 		ext.WithIsBackgroundRunning(func() bool {
 			return m.bgAgent != nil && m.bgAgent.IsRunning()
@@ -453,9 +570,11 @@ func (m *Model) applyActions() tea.Cmd {
 			m.showNotification(act.Message)
 			cmds = append(cmds, notifyTick())
 		case ext.ActionSetStatus:
-			if act.Key == "model" {
-				m.status.SetModel(act.Text)
+			if act.Key == ext.StatusKeyModel {
 				m.cfg.Model = findModel(m.cfg.Models, act.Text)
+				m.status.Set(ext.StatusKeyModel, m.styles.Muted.Render(act.Text))
+			} else {
+				m.status.Set(act.Key, m.styles.Muted.Render(act.Text))
 			}
 		case ext.ActionShowPicker:
 			items := make([]ModalItem, len(act.Items))
@@ -559,7 +678,9 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, e.Assistant)
 			m.totalIn += e.Assistant.Usage.InputTokens
 			m.totalOut += e.Assistant.Usage.OutputTokens
-			m.status.SetTokens(m.totalIn, m.totalOut)
+			m.totalCost += e.Assistant.Usage.Cost
+			m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut)))
+			m.status.Set(ext.StatusKeyCost, m.styles.Muted.Render(formatCost(m.totalCost)))
 
 			if m.cfg.Session != nil {
 				_ = m.cfg.Session.Append(e.Assistant)
@@ -728,7 +849,7 @@ func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.bgEventCh = nil
 		m.bgTask = ""
 		m.bgResult.Reset()
-		m.status.SetBgTask("")
+		m.status.Set(ext.StatusKeyBg, "")
 		return m, nil
 	}
 

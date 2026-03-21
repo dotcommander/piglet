@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -128,9 +129,11 @@ func (m ModalModel) View() string {
 
 	// Filter
 	if m.filter != "" {
-		b.WriteString(m.styles.Muted.Render("filter: " + m.filter))
-		b.WriteByte('\n')
+		b.WriteString(m.styles.Muted.Render("filter: " + m.filter + "_"))
+	} else {
+		b.WriteString(m.styles.Muted.Render("filter: _"))
 	}
+	b.WriteByte('\n')
 	b.WriteByte('\n')
 
 	// Items
@@ -188,20 +191,71 @@ func (m ModalModel) View() string {
 func (m *ModalModel) applyFilter() {
 	if m.filter == "" {
 		m.filtered = m.items
-	} else {
-		lf := strings.ToLower(m.filter)
-		m.filtered = nil
-		for _, item := range m.items {
-			if strings.Contains(strings.ToLower(item.Label), lf) ||
-				strings.Contains(strings.ToLower(item.Desc), lf) ||
-				strings.Contains(strings.ToLower(item.ID), lf) {
-				m.filtered = append(m.filtered, item)
+		if m.cursor >= len(m.filtered) {
+			m.cursor = max(0, len(m.filtered)-1)
+		}
+		return
+	}
+
+	lf := []rune(strings.ToLower(m.filter))
+	type scored struct {
+		item  ModalItem
+		score int
+	}
+	var matches []scored
+	for _, item := range m.items {
+		best := -1
+		for _, text := range []string{item.Label, item.Desc, item.ID} {
+			if s, ok := fuzzyScore([]rune(strings.ToLower(text)), lf); ok {
+				if best < 0 || s < best {
+					best = s
+				}
 			}
 		}
+		if best >= 0 {
+			matches = append(matches, scored{item: item, score: best})
+		}
+	}
+	slices.SortFunc(matches, func(a, b scored) int { return a.score - b.score })
+	m.filtered = make([]ModalItem, len(matches))
+	for i, s := range matches {
+		m.filtered[i] = s.item
 	}
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
+}
+
+// fuzzyScore checks if needle characters appear in order within haystack.
+// Returns the sum of gaps between consecutive matched positions (lower = tighter match)
+// and true if all characters matched, or -1 and false otherwise.
+func fuzzyScore(haystack, needle []rune) (int, bool) {
+	if len(needle) == 0 {
+		return 0, true
+	}
+	hi := 0
+	prevPos := -1
+	score := 0
+	for _, nr := range needle {
+		found := false
+		for hi < len(haystack) {
+			r := haystack[hi]
+			pos := hi
+			hi++
+			if r == nr {
+				if prevPos >= 0 {
+					score += pos - prevPos - 1
+				}
+				prevPos = pos
+				found = true
+				break
+			}
+		}
+		if !found {
+			return -1, false
+		}
+	}
+	return score, true
 }
 
 // themeColors returns a Theme with default border color.

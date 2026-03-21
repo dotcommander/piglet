@@ -18,6 +18,8 @@ type InputModel struct {
 	selected    int
 	showing     bool
 	commands    []string // all registered command names
+
+	attachment string // shown above the input border when non-empty
 }
 
 // NewInputModel creates a new composer input.
@@ -64,6 +66,9 @@ func (m *InputModel) SetValue(s string) { m.textarea.SetValue(s) }
 
 // Reset clears the textarea.
 func (m *InputModel) Reset() { m.textarea.Reset() }
+
+// SetAttachment sets the attachment indicator shown above the input.
+func (m *InputModel) SetAttachment(s string) { m.attachment = s }
 
 // Update handles input events.
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
@@ -116,6 +121,10 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 // View renders the input.
 func (m InputModel) View() string {
 	var b strings.Builder
+
+	if m.attachment != "" {
+		b.WriteString(m.styles.Spinner.Render("  [image attached]") + "\n")
+	}
 
 	if m.showing && len(m.suggestions) > 0 {
 		for i, s := range m.suggestions {
