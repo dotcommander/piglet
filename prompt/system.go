@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -86,11 +87,11 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 // loadUserPrompt reads ~/.config/piglet/prompt.md if it exists.
 func loadUserPrompt() string {
-	dir, err := os.UserConfigDir()
+	dir, err := config.ConfigDir()
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "piglet", "prompt.md"))
+	data, err := os.ReadFile(filepath.Join(dir, "prompt.md"))
 	if err != nil {
 		return ""
 	}

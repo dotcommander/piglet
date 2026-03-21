@@ -21,12 +21,9 @@ const selfKnowledgeOrder = 20 // before project docs (30), git context (40), mem
 func RegisterSelfKnowledge(app *ext.App) {
 	var b strings.Builder
 
-	// Environment context — tells the model it has local access
 	b.WriteString(fmt.Sprintf("Working directory: %s\n", app.CWD()))
 	b.WriteString(fmt.Sprintf("Platform: %s\n", runtime.GOOS))
-	b.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04:05 MST")))
-	b.WriteString("You are running on the user's local machine with full tool access.\n")
-	b.WriteString("Use the bash tool to run system commands when needed (date, pwd, env, etc).\n\n")
+	b.WriteString(fmt.Sprintf("Current time: %s\n\n", time.Now().Format("2006-01-02 15:04:05 MST")))
 
 	// Tools
 	defs := app.ToolDefs()
