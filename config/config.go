@@ -18,6 +18,43 @@ type Settings struct {
 	ShellPath       string            `yaml:"shellPath,omitempty"`
 	Extensions      []string          `yaml:"extensions,omitempty"`
 	Providers       map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
+	Agent           AgentSettings     `yaml:"agent,omitempty"`
+	Git             GitSettings       `yaml:"git,omitempty"`
+	Bash            BashSettings      `yaml:"bash,omitempty"`
+	Shortcuts       map[string]string `yaml:"shortcuts,omitempty"`  // action → keybind (e.g. "model": "ctrl+p")
+	PromptOrder     map[string]int    `yaml:"promptOrder,omitempty"` // section title → order override
+}
+
+// AgentSettings controls agent loop behavior. Zero values use defaults.
+type AgentSettings struct {
+	MaxTurns        int   `yaml:"maxTurns,omitempty"`        // default 10
+	BgMaxTurns      int   `yaml:"bgMaxTurns,omitempty"`      // default 5
+	AutoTitle       *bool `yaml:"autoTitle,omitempty"`        // default true; pointer distinguishes false from unset
+	CompactKeepRecent int `yaml:"compactKeepRecent,omitempty"` // default 6
+}
+
+// AutoTitleEnabled returns whether auto-title generation is on (default true).
+func (a AgentSettings) AutoTitleEnabled() bool {
+	if a.AutoTitle == nil {
+		return true
+	}
+	return *a.AutoTitle
+}
+
+// GitSettings controls git context in the system prompt. Zero values use defaults.
+type GitSettings struct {
+	MaxDiffStatFiles int `yaml:"maxDiffStatFiles,omitempty"` // default 30
+	MaxLogLines      int `yaml:"maxLogLines,omitempty"`      // default 5
+	MaxDiffHunkLines int `yaml:"maxDiffHunkLines,omitempty"` // default 50
+	CommandTimeout   int `yaml:"commandTimeout,omitempty"`   // seconds, default 5
+}
+
+// BashSettings controls the bash tool limits. Zero values use defaults.
+type BashSettings struct {
+	DefaultTimeout int `yaml:"defaultTimeout,omitempty"` // seconds, default 30
+	MaxTimeout     int `yaml:"maxTimeout,omitempty"`     // seconds, default 300
+	MaxStdout      int `yaml:"maxStdout,omitempty"`      // bytes, default 100000
+	MaxStderr      int `yaml:"maxStderr,omitempty"`      // bytes, default 50000
 }
 
 // ConfigDir returns ~/.config/piglet/.
@@ -124,6 +161,14 @@ func Resolve(envKey, settingsValue, fallback string) string {
 	}
 	if strings.TrimSpace(settingsValue) != "" {
 		return settingsValue
+	}
+	return fallback
+}
+
+// IntOr returns v if positive, otherwise fallback.
+func IntOr(v, fallback int) int {
+	if v > 0 {
+		return v
 	}
 	return fallback
 }
