@@ -13,6 +13,19 @@ import (
 //
 // After registration, Bind() wires the runtime references (agent, session)
 // so runtime methods like SendMessage() and Model() work.
+//
+// CAPABILITY GATE — before adding a new callback or field to App, answer:
+//
+//  1. Can this be a Tool?        → RegisterTool (agent-callable action)
+//  2. Can this be a Command?     → RegisterCommand (user-invoked /slash)
+//  3. Can this be a Shortcut?    → RegisterShortcut (keyboard binding)
+//  4. Can this be a PromptSection? → RegisterPromptSection (system prompt injection)
+//  5. Can this be an Interceptor? → RegisterInterceptor (before/after tool hook)
+//
+// Only add a new BindOption/callback when NONE of the above apply — typically
+// for TUI-specific lifecycle that extensions cannot express through existing
+// primitives (e.g. session swapping, background agent management).
+// See ext/architecture_test.go for automated boundary enforcement.
 type App struct {
 	mu sync.RWMutex
 	cwd string
@@ -34,6 +47,16 @@ type App struct {
 	showMessage func(text string)
 	requestQuit func()
 	showPicker  func(title string, items []PickerItem, onSelect func(PickerItem))
+	swapSession func(sess any) // any to avoid session import cycle
+	forkSession func() (id string, count int, err error)
+
+	// Background agent callbacks
+	runBackground       func(prompt string) error
+	cancelBackground    func()
+	isBackgroundRunning func() bool
+
+	// Session title callback
+	setSessionTitle func(title string) error
 }
 
 // AgentAPI is the subset of *core.Agent that the extension runtime needs.
@@ -168,11 +191,23 @@ func (a *App) ToolDefs() []*ToolDef {
 // CoreTools converts registered ToolDefs into core.Tool slice for the agent.
 // Wraps each tool's Execute with the interceptor chain.
 func (a *App) CoreTools() []core.Tool {
+	return a.filterTools(nil)
+}
+
+// BackgroundSafeTools returns core.Tool slice filtered to tools marked BackgroundSafe.
+func (a *App) BackgroundSafeTools() []core.Tool {
+	return a.filterTools(func(td *ToolDef) bool { return td.BackgroundSafe })
+}
+
+func (a *App) filterTools(pred func(*ToolDef) bool) []core.Tool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	tools := make([]core.Tool, 0, len(a.tools))
 	for _, td := range a.tools {
+		if pred != nil && !pred(td) {
+			continue
+		}
 		tools = append(tools, core.Tool{
 			ToolSchema: td.ToolSchema,
 			Execute:    a.wrapWithInterceptors(td.Name, td.Execute),
@@ -277,6 +312,37 @@ func WithShowPicker(fn func(title string, items []PickerItem, onSelect func(Pick
 	return func(a *App) { a.showPicker = fn }
 }
 
+// WithSwapSession sets the callback to swap the active session.
+func WithSwapSession(fn func(sess any)) BindOption {
+	return func(a *App) { a.swapSession = fn }
+}
+
+// WithForkSession sets the callback to fork the current session.
+// Returns the parent short ID, message count, and any error.
+func WithForkSession(fn func() (string, int, error)) BindOption {
+	return func(a *App) { a.forkSession = fn }
+}
+
+// WithRunBackground sets the callback to start a background agent.
+func WithRunBackground(fn func(prompt string) error) BindOption {
+	return func(a *App) { a.runBackground = fn }
+}
+
+// WithCancelBackground sets the callback to cancel the running background agent.
+func WithCancelBackground(fn func()) BindOption {
+	return func(a *App) { a.cancelBackground = fn }
+}
+
+// WithIsBackgroundRunning sets the callback to check if a background agent is active.
+func WithIsBackgroundRunning(fn func() bool) BindOption {
+	return func(a *App) { a.isBackgroundRunning = fn }
+}
+
+// WithSetSessionTitle sets the callback to update the current session's title.
+func WithSetSessionTitle(fn func(title string) error) BindOption {
+	return func(a *App) { a.setSessionTitle = fn }
+}
+
 // ---------------------------------------------------------------------------
 // Runtime methods (available after Bind)
 // ---------------------------------------------------------------------------
@@ -371,6 +437,30 @@ func (a *App) RequestQuit() {
 	}
 }
 
+// ForkSession forks the current session into a new branch.
+// Returns the parent short ID, message count, and any error.
+// Returns an error if not bound or no session.
+func (a *App) ForkSession() (string, int, error) {
+	a.mu.RLock()
+	fn := a.forkSession
+	a.mu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return "", 0, fmt.Errorf("no active session")
+}
+
+// SwapSession swaps the active session. The sess parameter must be a *session.Session
+// (typed as any to avoid import cycle). No-op if not bound.
+func (a *App) SwapSession(sess any) {
+	a.mu.RLock()
+	fn := a.swapSession
+	a.mu.RUnlock()
+	if fn != nil {
+		fn(sess)
+	}
+}
+
 // ShowPicker shows a picker/modal in the TUI. No-op if not bound.
 func (a *App) ShowPicker(title string, items []PickerItem, onSelect func(PickerItem)) {
 	a.mu.RLock()
@@ -379,6 +469,51 @@ func (a *App) ShowPicker(title string, items []PickerItem, onSelect func(PickerI
 	if fn != nil {
 		fn(title, items, onSelect)
 	}
+}
+
+// RunBackground starts a background agent with the given prompt.
+// Returns an error if not bound or if a background agent is already running.
+func (a *App) RunBackground(prompt string) error {
+	a.mu.RLock()
+	fn := a.runBackground
+	a.mu.RUnlock()
+	if fn == nil {
+		return fmt.Errorf("background agent not available")
+	}
+	return fn(prompt)
+}
+
+// CancelBackground stops the running background agent. No-op if not bound or not running.
+func (a *App) CancelBackground() {
+	a.mu.RLock()
+	fn := a.cancelBackground
+	a.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// IsBackgroundRunning returns whether a background agent is currently active.
+func (a *App) IsBackgroundRunning() bool {
+	a.mu.RLock()
+	fn := a.isBackgroundRunning
+	a.mu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return false
+}
+
+// SetSessionTitle updates the current session's title.
+// Returns an error if not bound or no active session.
+func (a *App) SetSessionTitle(title string) error {
+	a.mu.RLock()
+	fn := a.setSessionTitle
+	a.mu.RUnlock()
+	if fn == nil {
+		return fmt.Errorf("no active session")
+	}
+	return fn(title)
 }
 
 // ConversationMessages returns a snapshot of the conversation history.

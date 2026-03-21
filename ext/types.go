@@ -29,6 +29,9 @@ type ToolDef struct {
 	// PromptGuides are bullets injected into the system prompt guidelines.
 	// Example: ["Use offset/limit for files >2000 lines", "Prefer grep to find content"]
 	PromptGuides []string
+
+	// BackgroundSafe marks this tool as safe for background agent use (read-only).
+	BackgroundSafe bool
 }
 
 // ---------------------------------------------------------------------------
