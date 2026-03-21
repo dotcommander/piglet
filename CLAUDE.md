@@ -96,9 +96,12 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 
 - Settings: `~/.config/piglet/config.yaml`
 - Auth: `~/.config/piglet/auth.json`
-- System prompt: `~/.config/piglet/prompt.md` (overrides default identity)
+- System prompt: `~/.config/piglet/prompt.md` (identity — NOT a Go const)
+- Behavior: `~/.config/piglet/behavior.md` (guidelines — NOT a Go const)
 - Sessions: `~/.config/piglet/sessions/`
 - Extensions: `~/.config/piglet/extensions/`
+
+**All prompt content, behavioral text, and default strings live in config files above. Go code reads these files. It never contains the content. See Go workspace CLAUDE.md "Configuration Data" for the pre-flight gate.**
 
 ## Dependencies
 
