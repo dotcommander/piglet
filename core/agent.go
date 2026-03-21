@@ -339,6 +339,11 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 
 		a.emit(EventTurnEnd{Assistant: assistant, ToolResults: toolResults})
 
+		// Auto-compact if token usage exceeds threshold
+		if a.cfg.CompactAt > 0 && a.cfg.OnCompact != nil {
+			a.maybeCompact()
+		}
+
 		// Check max turns
 		turnCount++
 		if a.cfg.MaxTurns > 0 && turnCount >= a.cfg.MaxTurns {
@@ -388,6 +393,52 @@ func (a *Agent) dequeueSteer() []Message {
 	msgs := a.steerQ
 	a.steerQ = nil
 	return msgs
+}
+
+func (a *Agent) maybeCompact() {
+	a.mu.RLock()
+	total := 0
+	for _, m := range a.messages {
+		if am, ok := m.(*AssistantMessage); ok {
+			total += am.Usage.InputTokens
+		}
+	}
+	threshold := a.cfg.CompactAt
+	msgs := a.messages
+	a.mu.RUnlock()
+
+	if total < threshold || len(msgs) < 8 {
+		return
+	}
+
+	summary, err := a.cfg.OnCompact(msgs)
+	if err != nil || summary == "" {
+		return
+	}
+
+	a.mu.Lock()
+	a.messages = CompactMessages(a.messages, summary)
+	a.mu.Unlock()
+
+	a.emit(EventCompact{Before: len(msgs), After: len(a.messages), TokensAtCompact: total})
+}
+
+// CompactMessages keeps first message + summary + last keepRecent messages.
+// Used by both auto-compact (with LLM summary) and /compact command (with placeholder).
+func CompactMessages(msgs []Message, summary string) []Message {
+	const keepRecent = 6
+	if len(msgs) <= keepRecent+1 {
+		return msgs
+	}
+
+	result := make([]Message, 0, keepRecent+2)
+	result = append(result, msgs[0])
+	result = append(result, &AssistantMessage{
+		Content:   []AssistantContent{TextContent{Text: summary}},
+		Timestamp: time.Now(),
+	})
+	result = append(result, msgs[len(msgs)-keepRecent:]...)
+	return result
 }
 
 func (a *Agent) dequeueFollow() []Message {

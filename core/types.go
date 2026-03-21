@@ -358,3 +358,12 @@ type EventStepWait struct {
 }
 
 func (EventStepWait) eventType() string { return "step_wait" }
+
+// EventCompact signals that auto-compaction occurred.
+type EventCompact struct {
+	Before          int
+	After           int
+	TokensAtCompact int
+}
+
+func (EventCompact) eventType() string { return "compact" }
