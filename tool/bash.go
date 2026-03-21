@@ -1,14 +1,14 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"strings"
 	"time"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
 )
 
 // BashConfig holds configurable limits for the bash tool. Zero values use defaults.
@@ -69,30 +69,29 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 			cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
 			cmd.Dir = app.CWD()
 
-			var stdout, stderr bytes.Buffer
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
+			stdout := &boundedWriter{limit: cfg.MaxStdout}
+			stderr := &boundedWriter{limit: cfg.MaxStderr}
+			cmd.Stdout = stdout
+			cmd.Stderr = stderr
 
 			err := cmd.Run()
 
 			var b strings.Builder
 			if stdout.Len() > 0 {
-				out := stdout.String()
-				if len(out) > cfg.MaxStdout {
-					out = out[:cfg.MaxStdout] + "\n... (output truncated)"
+				b.WriteString(stdout.String())
+				if stdout.Truncated() {
+					b.WriteString("\n... (output truncated)")
 				}
-				b.WriteString(out)
 			}
 			if stderr.Len() > 0 {
 				if b.Len() > 0 {
 					b.WriteString("\n")
 				}
-				errOut := stderr.String()
-				if len(errOut) > cfg.MaxStderr {
-					errOut = errOut[:cfg.MaxStderr] + "\n... (stderr truncated)"
-				}
 				b.WriteString("STDERR:\n")
-				b.WriteString(errOut)
+				b.WriteString(stderr.String())
+				if stderr.Truncated() {
+					b.WriteString("\n... (stderr truncated)")
+				}
 			}
 
 			if err != nil {

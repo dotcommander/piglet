@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"regexp"
 	"strings"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
 )
 
 func grepTool(app *ext.App) *ext.ToolDef {
@@ -134,13 +135,4 @@ func grepFile(re *regexp.Regexp, path, displayPath string, limit int, count *int
 		}
 	}
 	return results
-}
-
-func shouldSkipDir(name string) bool {
-	switch name {
-	case ".git", "node_modules", "vendor", ".next", "__pycache__", ".cache", "dist", "build":
-		return true
-	default:
-		return strings.HasPrefix(name, ".")
-	}
 }

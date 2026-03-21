@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"strings"
 )
 
 func findTool(app *ext.App) *ext.ToolDef {
@@ -44,33 +45,17 @@ func findTool(app *ext.App) *ext.ToolDef {
 			}
 
 			var results []string
-			filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if d.IsDir() && shouldSkipDir(d.Name()) {
-					return filepath.SkipDir
-				}
+			fsys := filteredFS{base: os.DirFS(searchPath), skip: shouldSkipDir}
+			_ = doublestar.GlobWalk(fsys, pattern, func(path string, d os.DirEntry) error {
 				if d.IsDir() {
 					return nil
 				}
 				if len(results) >= limit {
-					return filepath.SkipAll
+					return doublestar.SkipDir
 				}
-
-				rel, _ := filepath.Rel(searchPath, path)
-				matched, _ := filepath.Match(pattern, d.Name())
-				if !matched && strings.Contains(pattern, "**") {
-					matched, _ = filepath.Match(strings.TrimPrefix(pattern, "**/"), d.Name())
-				}
-				if !matched {
-					matched, _ = filepath.Match(pattern, rel)
-				}
-				if matched {
-					results = append(results, rel)
-				}
+				results = append(results, path)
 				return nil
-			})
+			}, doublestar.WithNoFollow())
 
 			if len(results) == 0 {
 				return textResult("no files found matching pattern"), nil

@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"strings"
 )
 
 func lsTool(app *ext.App) *ext.ToolDef {
@@ -62,18 +63,5 @@ func lsTool(app *ext.App) *ext.ToolDef {
 		},
 		PromptHint:     "List directory contents",
 		BackgroundSafe: true,
-	}
-}
-
-func formatSize(bytes int64) string {
-	switch {
-	case bytes >= 1<<30:
-		return fmt.Sprintf("%.1fG", float64(bytes)/(1<<30))
-	case bytes >= 1<<20:
-		return fmt.Sprintf("%.1fM", float64(bytes)/(1<<20))
-	case bytes >= 1<<10:
-		return fmt.Sprintf("%.1fK", float64(bytes)/(1<<10))
-	default:
-		return fmt.Sprintf("%dB", bytes)
 	}
 }
