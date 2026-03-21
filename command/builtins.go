@@ -2,7 +2,6 @@
 package command
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -11,13 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/modelsdev"
-	"github.com/dotcommander/piglet/provider"
-	"github.com/dotcommander/piglet/session"
 )
 
 // Default keyboard shortcut bindings.
@@ -29,37 +24,36 @@ const (
 )
 
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
-func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registry *provider.Registry, auth *config.Auth, settings *config.Settings) {
+// All commands operate exclusively through the ext.App SDK.
+func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 	registerHelp(app)
 	registerClear(app)
 	registerStep(app)
-	registerCompact(app, settings)
+	registerCompact(app)
 	registerExport(app)
 	registerExtensions(app)
 	registerExtInit(app)
-	registerModel(app, models, registry, auth)
-	registerSession(app, sessDir)
-	registerModelsSync(app, registry, auth)
+	registerModel(app)
+	registerSession(app)
+	registerModelsSync(app)
 	registerBranch(app)
 	registerBg(app)
 	registerBgCancel(app)
-	registerSearch(app, sessDir)
+	registerSearch(app)
 	registerTitle(app)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
-	shortcuts := map[string]string{
+	keys := map[string]string{
 		shortcutModel:   keyModel,
 		shortcutSession: keySession,
 	}
-	if settings != nil {
-		for action, key := range settings.Shortcuts {
-			shortcuts[action] = key
-		}
+	for action, key := range shortcuts {
+		keys[action] = key
 	}
 
 	app.RegisterShortcut(&ext.Shortcut{
-		Key:         shortcuts[shortcutModel],
+		Key:         keys[shortcutModel],
 		Description: "Open model selector",
 		Handler: func(a *ext.App) error {
 			cmds := a.Commands()
@@ -70,7 +64,7 @@ func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registr
 		},
 	})
 	app.RegisterShortcut(&ext.Shortcut{
-		Key:         shortcuts[shortcutSession],
+		Key:         keys[shortcutSession],
 		Description: "Open session picker",
 		Handler: func(a *ext.App) error {
 			cmds := a.Commands()
@@ -137,11 +131,7 @@ func registerStep(app *ext.App) {
 	})
 }
 
-func registerCompact(app *ext.App, settings *config.Settings) {
-	keepRecent := 6
-	if settings != nil {
-		keepRecent = config.IntOr(settings.Agent.CompactKeepRecent, 6)
-	}
+func registerCompact(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "compact",
 		Description: "Compact conversation history",
@@ -152,7 +142,8 @@ func registerCompact(app *ext.App, settings *config.Settings) {
 				return nil
 			}
 			before := len(msgs)
-			compacted := session.Compact(msgs, session.CompactOptions{KeepRecent: keepRecent})
+			summary := fmt.Sprintf("[%d earlier messages compacted]", len(msgs)-7)
+			compacted := core.CompactMessages(msgs, summary)
 			a.SetConversationMessages(compacted)
 			a.ShowMessage(fmt.Sprintf("Compacted: %d → %d messages", before, len(compacted)))
 			return nil
@@ -181,11 +172,16 @@ func registerExport(app *ext.App) {
 	})
 }
 
-func registerModel(app *ext.App, models []core.Model, registry *provider.Registry, auth *config.Auth) {
+func registerModel(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "model",
 		Description: "Switch model",
 		Handler: func(args string, a *ext.App) error {
+			models := a.AvailableModels()
+			if len(models) == 0 {
+				a.ShowMessage("No models available")
+				return nil
+			}
 			items := make([]ext.PickerItem, len(models))
 			for i, mod := range models {
 				items[i] = ext.PickerItem{
@@ -195,51 +191,37 @@ func registerModel(app *ext.App, models []core.Model, registry *provider.Registr
 				}
 			}
 			a.ShowPicker("Select Model", items, func(selected ext.PickerItem) {
-				for _, mod := range models {
-					if mod.Provider+"/"+mod.ID == selected.ID {
-						apiKeyFn := func() string {
-							return auth.GetAPIKey(mod.Provider)
-						}
-						prov, err := registry.Create(mod, apiKeyFn)
-						if err != nil {
-							a.ShowMessage("Failed to create provider: " + err.Error())
-							return
-						}
-						a.SetModel(mod)
-						a.SetProvider(prov)
-						a.SetStatus("model", mod.DisplayName())
-						a.ShowMessage("Switched to " + mod.DisplayName())
-						break
-					}
+				if err := a.SwitchModel(selected.ID); err != nil {
+					a.ShowMessage("Failed to switch model: " + err.Error())
+					return
 				}
+				a.ShowMessage("Switched to " + selected.Label)
 			})
 			return nil
 		},
 	})
 }
 
-func registerSession(app *ext.App, sessDir string) {
+func registerSession(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "session",
 		Description: "Manage sessions",
 		Handler: func(args string, a *ext.App) error {
-			if sessDir == "" {
-				a.ShowMessage("Sessions not configured")
+			summaries, err := a.Sessions()
+			if err != nil {
+				a.ShowMessage(err.Error())
 				return nil
 			}
-			summaries, err := session.List(sessDir)
-			if err != nil || len(summaries) == 0 {
+			if len(summaries) == 0 {
 				a.ShowMessage("No sessions found")
 				return nil
 			}
 			items := sessionPickerItems(summaries)
 			a.ShowPicker("Select Session", items, func(selected ext.PickerItem) {
-				sess, err := session.Open(selected.ID)
-				if err != nil {
+				if err := a.LoadSession(selected.ID); err != nil {
 					a.ShowMessage("Failed to open session: " + err.Error())
 					return
 				}
-				a.SwapSession(sess)
 				a.ShowMessage("Loaded session: " + selected.Label)
 			})
 			return nil
@@ -247,13 +229,13 @@ func registerSession(app *ext.App, sessDir string) {
 	})
 }
 
-func registerModelsSync(app *ext.App, registry *provider.Registry, auth *config.Auth) {
+func registerModelsSync(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "models-sync",
 		Description: "Sync model catalog from models.dev",
 		Handler: func(args string, a *ext.App) error {
 			a.ShowMessage("Syncing models from models.dev...")
-			updated, err := modelsdev.Sync(context.Background(), registry, auth)
+			updated, err := a.SyncModels()
 			if err != nil {
 				a.ShowMessage("Sync failed: " + err.Error())
 				return nil
@@ -403,7 +385,7 @@ func registerQuit(app *ext.App) {
 	})
 }
 
-func registerSearch(app *ext.App, sessDir string) {
+func registerSearch(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "search",
 		Description: "Search sessions by title or directory",
@@ -413,18 +395,18 @@ func registerSearch(app *ext.App, sessDir string) {
 				a.ShowMessage("Usage: /search <query>")
 				return nil
 			}
-			if sessDir == "" {
-				a.ShowMessage("Sessions not configured")
+			summaries, err := a.Sessions()
+			if err != nil {
+				a.ShowMessage(err.Error())
 				return nil
 			}
-			summaries, err := session.List(sessDir)
-			if err != nil || len(summaries) == 0 {
+			if len(summaries) == 0 {
 				a.ShowMessage("No sessions found")
 				return nil
 			}
 
 			q := strings.ToLower(query)
-			var matched []session.Summary
+			var matched []ext.SessionSummary
 			for _, s := range summaries {
 				if strings.Contains(strings.ToLower(s.Title), q) || strings.Contains(strings.ToLower(s.CWD), q) {
 					matched = append(matched, s)
@@ -438,12 +420,10 @@ func registerSearch(app *ext.App, sessDir string) {
 			}
 
 			a.ShowPicker(fmt.Sprintf("Search: %s (%d results)", query, len(items)), items, func(selected ext.PickerItem) {
-				sess, err := session.Open(selected.ID)
-				if err != nil {
+				if err := a.LoadSession(selected.ID); err != nil {
 					a.ShowMessage("Failed to open session: " + err.Error())
 					return
 				}
-				a.SwapSession(sess)
 				a.ShowMessage("Loaded session: " + selected.Label)
 			})
 			return nil
@@ -507,7 +487,7 @@ func registerBgCancel(app *ext.App) {
 	})
 }
 
-func sessionPickerItems(summaries []session.Summary) []ext.PickerItem {
+func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	items := make([]ext.PickerItem, len(summaries))
 	for i, s := range summaries {
 		label := s.Title
@@ -533,6 +513,7 @@ func sessionPickerItems(summaries []session.Summary) []ext.PickerItem {
 	}
 	return items
 }
+
 
 func exportMarkdown(messages []core.Message, path string) error {
 	var b strings.Builder
