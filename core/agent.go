@@ -167,6 +167,13 @@ func (a *Agent) SetModel(m Model) {
 	a.mu.Unlock()
 }
 
+// SetProvider swaps the streaming provider for future LLM calls.
+func (a *Agent) SetProvider(p StreamProvider) {
+	a.mu.Lock()
+	a.cfg.Provider = p
+	a.mu.Unlock()
+}
+
 // SetSystem updates the system prompt.
 func (a *Agent) SetSystem(s string) {
 	a.mu.Lock()

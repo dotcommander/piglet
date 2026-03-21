@@ -87,6 +87,11 @@ type Model struct {
 	Headers       map[string]string `json:"headers,omitempty"`
 }
 
+// DisplayName returns "provider/name" for UI display.
+func (m Model) DisplayName() string {
+	return m.Provider + "/" + m.Name
+}
+
 // ModelCost is per-million-token pricing.
 type ModelCost struct {
 	Input      float64 `json:"input"`

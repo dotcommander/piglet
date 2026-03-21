@@ -29,7 +29,7 @@ func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registr
 	registerExport(app)
 	registerExtensions(app)
 	registerExtInit(app)
-	registerModel(app, models)
+	registerModel(app, models, registry, auth)
 	registerSession(app, sessDir)
 	registerModelsSync(app, registry, auth)
 	registerQuit(app)
@@ -154,7 +154,7 @@ func registerExport(app *ext.App) {
 	})
 }
 
-func registerModel(app *ext.App, models []core.Model) {
+func registerModel(app *ext.App, models []core.Model, registry *provider.Registry, auth *config.Auth) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "model",
 		Description: "Switch model",
@@ -170,9 +170,18 @@ func registerModel(app *ext.App, models []core.Model) {
 			a.ShowPicker("Select Model", items, func(selected ext.PickerItem) {
 				for _, mod := range models {
 					if mod.Provider+"/"+mod.ID == selected.ID {
+						apiKeyFn := func() string {
+							return auth.GetAPIKey(mod.Provider)
+						}
+						prov, err := registry.Create(mod, apiKeyFn)
+						if err != nil {
+							a.ShowMessage("Failed to create provider: " + err.Error())
+							return
+						}
 						a.SetModel(mod)
-						a.SetStatus("model", mod.Name)
-						a.ShowMessage("Switched to " + mod.Name)
+						a.SetProvider(prov)
+						a.SetStatus("model", mod.DisplayName())
+						a.ShowMessage("Switched to " + mod.DisplayName())
 						break
 					}
 				}

@@ -43,6 +43,7 @@ type AgentAPI interface {
 	FollowUp(msg core.Message)
 	SetTools(tools []core.Tool)
 	SetModel(m core.Model)
+	SetProvider(p core.StreamProvider)
 	Messages() []core.Message
 	IsRunning() bool
 	StepMode() bool
@@ -317,6 +318,16 @@ func (a *App) SetModel(m core.Model) {
 	a.mu.RUnlock()
 	if agent != nil {
 		agent.SetModel(m)
+	}
+}
+
+// SetProvider swaps the agent's streaming provider.
+func (a *App) SetProvider(p core.StreamProvider) {
+	a.mu.RLock()
+	agent := a.agent
+	a.mu.RUnlock()
+	if agent != nil {
+		agent.SetProvider(p)
 	}
 }
 
