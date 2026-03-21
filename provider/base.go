@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ type baseProvider struct {
 	model      core.Model
 	apiKeyFn   func() string
 	httpClient *http.Client
+	logger     *slog.Logger // nil = no debug logging
 }
 
 func newBaseProvider(model core.Model, apiKeyFn func() string) baseProvider {
@@ -29,6 +31,14 @@ func newBaseProvider(model core.Model, apiKeyFn func() string) baseProvider {
 			},
 		},
 	}
+}
+
+func (b *baseProvider) SetLogger(l *slog.Logger) {
+	b.logger = l
+}
+
+func (b *baseProvider) debugLog() *slog.Logger {
+	return b.logger
 }
 
 // doHTTPRequest handles the shared HTTP POST + status check logic.
@@ -69,6 +79,14 @@ type streamPipeline interface {
 	streamModel() core.Model
 }
 
+type Debuggable interface {
+	SetLogger(l *slog.Logger)
+}
+
+type debugLogger interface {
+	debugLog() *slog.Logger
+}
+
 // runStream is the shared Stream() goroutine template.
 func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-chan core.StreamEvent {
 	ch := make(chan core.StreamEvent, 32)
@@ -82,6 +100,19 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 			return
 		}
 
+		// Debug: log request payload
+		var logger *slog.Logger
+		if dl, ok := p.(debugLogger); ok {
+			logger = dl.debugLog()
+		}
+		if logger != nil {
+			logger.Debug("request",
+				"provider", p.streamModel().Provider,
+				"model", p.streamModel().ID,
+				"body", string(body),
+			)
+		}
+
 		reader, err := p.sendRequest(ctx, body)
 		if err != nil {
 			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
@@ -89,7 +120,21 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 		}
 		defer reader.Close()
 
-		msg := p.parseResponse(ctx, reader, ch)
+		// Debug: tee response stream to logger
+		var parseReader io.Reader = reader
+		if logger != nil {
+			var buf bytes.Buffer
+			parseReader = io.TeeReader(reader, &buf)
+			defer func() {
+				logger.Debug("response",
+					"provider", p.streamModel().Provider,
+					"model", p.streamModel().ID,
+					"body", buf.String(),
+				)
+			}()
+		}
+
+		msg := p.parseResponse(ctx, parseReader, ch)
 		m := p.streamModel()
 		if msg.StopReason == "" {
 			msg.StopReason = core.StopReasonStop
