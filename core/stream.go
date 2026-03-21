@@ -7,7 +7,8 @@ import (
 )
 
 func (a *Agent) streamWithRetry(ctx context.Context) (*AssistantMessage, error) {
-	for attempt := range MaxRetryAttempts {
+	maxRetries := a.cfg.maxRetries()
+	for attempt := range maxRetries {
 		msg, err := a.streamOnce(ctx)
 		if err == nil {
 			return msg, nil
@@ -15,14 +16,14 @@ func (a *Agent) streamWithRetry(ctx context.Context) (*AssistantMessage, error) 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if attempt >= MaxRetryAttempts-1 {
+		if attempt >= maxRetries-1 {
 			return nil, err
 		}
 
 		delay := retryDelay(attempt)
 		a.emit(EventRetry{
 			Attempt: attempt + 1,
-			Max:     MaxRetryAttempts,
+			Max:     maxRetries,
 			DelayMs: int(delay.Milliseconds()),
 			Error:   err.Error(),
 		})

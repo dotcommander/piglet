@@ -22,7 +22,7 @@ func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResu
 	toolCtx, toolCancel := context.WithCancel(ctx)
 	defer toolCancel()
 
-	sem := make(chan struct{}, ToolConcurrency)
+	sem := make(chan struct{}, a.cfg.toolConcurrency())
 	resultCh := make(chan toolExecResult, len(calls))
 
 	for i, tc := range calls {

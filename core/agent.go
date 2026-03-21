@@ -33,14 +33,30 @@ type AgentConfig struct {
 	Tools    []Tool
 	Options  StreamOptions
 
-	MaxTurns    int // 0 = unlimited
-	MaxMessages int // hard cap on message count; 0 = unlimited
+	MaxTurns        int // 0 = unlimited
+	MaxMessages     int // hard cap on message count; 0 = unlimited
+	MaxRetries      int // retry attempts on error; 0 = use default (3)
+	ToolConcurrency int // max parallel tool calls; 0 = use default (10)
 
 	// OnCompact is called when token usage exceeds CompactAt.
 	// It receives the context and current messages, and returns the compacted message set.
 	// If nil, compaction is disabled.
 	OnCompact func(ctx context.Context, messages []Message) ([]Message, error)
 	CompactAt int // token threshold; 0 = disabled
+}
+
+func (c AgentConfig) maxRetries() int {
+	if c.MaxRetries > 0 {
+		return c.MaxRetries
+	}
+	return MaxRetryAttempts
+}
+
+func (c AgentConfig) toolConcurrency() int {
+	if c.ToolConcurrency > 0 {
+		return c.ToolConcurrency
+	}
+	return ToolConcurrency
 }
 
 // Agent manages the agent loop: streaming, tool execution, steering, events.
