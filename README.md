@@ -1,6 +1,10 @@
-# piglet
+<p align="center">
+  <img src="docs/piglet.png" alt="piglet" width="300">
+</p>
 
-A minimalist TUI coding assistant with multi-provider LLM support and a built-in tool suite.
+<h1 align="center">piglet</h1>
+
+<p align="center">A minimalist TUI coding assistant with multi-provider LLM support and a built-in tool suite.</p>
 
 ## Features
 
