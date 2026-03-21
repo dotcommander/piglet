@@ -120,20 +120,3 @@ func TestSettingsPath_DeriveFromConfigDir(t *testing.T) {
 	assert.Equal(t, "/custom/config/piglet/config.yaml", path)
 }
 
-func TestResolve_EnvFirst(t *testing.T) {
-	t.Setenv("PIGLET_DEFAULT_PROVIDER", "anthropic")
-	result := config.Resolve("DEFAULT_PROVIDER", "openai", "google")
-	assert.Equal(t, "anthropic", result)
-}
-
-func TestResolve_SettingsSecond(t *testing.T) {
-	t.Parallel()
-	result := config.Resolve("NONEXISTENT_KEY_12345", "openai", "google")
-	assert.Equal(t, "openai", result)
-}
-
-func TestResolve_FallbackThird(t *testing.T) {
-	t.Parallel()
-	result := config.Resolve("NONEXISTENT_KEY_12345", "", "google")
-	assert.Equal(t, "google", result)
-}

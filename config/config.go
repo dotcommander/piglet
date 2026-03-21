@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,9 +19,18 @@ type Settings struct {
 	Providers       map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
 	Agent           AgentSettings     `yaml:"agent,omitempty"`
 	Git             GitSettings       `yaml:"git,omitempty"`
+	Tools           ToolSettings      `yaml:"tools,omitempty"`
 	Bash            BashSettings      `yaml:"bash,omitempty"`
 	Shortcuts       map[string]string `yaml:"shortcuts,omitempty"`  // action → keybind (e.g. "model": "ctrl+p")
 	PromptOrder     map[string]int    `yaml:"promptOrder,omitempty"` // section title → order override
+	ProjectDocs     []ProjectDoc      `yaml:"projectDocs,omitempty"` // files to auto-read for context
+	RTK             *bool             `yaml:"rtk,omitempty"`         // nil = auto-detect; true/false = explicit
+}
+
+// ProjectDoc maps a filename to a prompt section title.
+type ProjectDoc struct {
+	Name  string `yaml:"name"`
+	Title string `yaml:"title"`
 }
 
 // AgentSettings controls agent loop behavior. Zero values use defaults.
@@ -33,6 +41,9 @@ type AgentSettings struct {
 	CompactKeepRecent int   `yaml:"compactKeepRecent,omitempty"` // default 6
 	CompactAt         int   `yaml:"compactAt,omitempty"`         // token threshold for auto-compact; 0 = disabled
 	MaxMessages       int   `yaml:"maxMessages,omitempty"`       // hard cap on messages; 0 = unlimited
+	MaxTokens         int   `yaml:"maxTokens,omitempty"`         // output token limit; 0 = use model default
+	MaxRetries        int   `yaml:"maxRetries,omitempty"`        // retry attempts on error; 0 = use default (3)
+	ToolConcurrency   int   `yaml:"toolConcurrency,omitempty"`   // max parallel tool calls; 0 = use default (10)
 }
 
 // AutoTitleEnabled returns whether auto-title generation is on (default true).
@@ -49,6 +60,12 @@ type GitSettings struct {
 	MaxLogLines      int `yaml:"maxLogLines,omitempty"`      // default 5
 	MaxDiffHunkLines int `yaml:"maxDiffHunkLines,omitempty"` // default 50
 	CommandTimeout   int `yaml:"commandTimeout,omitempty"`   // seconds, default 5
+}
+
+// ToolSettings controls built-in tool defaults. Zero values use defaults.
+type ToolSettings struct {
+	ReadLimit int `yaml:"readLimit,omitempty"` // max lines per read; default 2000
+	GrepLimit int `yaml:"grepLimit,omitempty"` // max grep matches; default 100
 }
 
 // BashSettings controls the bash tool limits. Zero values use defaults.
@@ -157,18 +174,6 @@ func SaveTo(s Settings, path string) error {
 		return fmt.Errorf("rename config: %w", err)
 	}
 	return nil
-}
-
-// Resolve returns the effective value for a setting, checking environment
-// variables first (PIGLET_<KEY>), then the settings value, then the fallback.
-func Resolve(envKey, settingsValue, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv("PIGLET_" + strings.ToUpper(envKey))); v != "" {
-		return v
-	}
-	if strings.TrimSpace(settingsValue) != "" {
-		return settingsValue
-	}
-	return fallback
 }
 
 // IntOr returns v if positive, otherwise fallback.
