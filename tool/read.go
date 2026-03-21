@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func readTool(app *ext.App) *ext.ToolDef {
+func readTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "read",
@@ -41,9 +41,9 @@ func readTool(app *ext.App) *ext.ToolDef {
 			if offset < 1 {
 				offset = 1
 			}
-			limit := intArg(args, "limit", 2000)
+			limit := intArg(args, "limit", cfg.readLimit())
 			if limit < 1 {
-				limit = 2000
+				limit = cfg.readLimit()
 			}
 
 			start := offset - 1

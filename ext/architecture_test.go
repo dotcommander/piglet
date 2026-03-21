@@ -99,7 +99,7 @@ func TestAllToolsRegisteredThroughExtApp(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp(t.TempDir())
-	tool.RegisterBuiltins(app, tool.BashConfig{})
+	tool.RegisterBuiltins(app, tool.BashConfig{}, tool.ToolConfig{})
 
 	// Every tool in CoreTools must have a corresponding ToolDef
 	coreTools := app.CoreTools()
@@ -131,7 +131,7 @@ func TestAllToolsHaveConsistentCounts(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp(t.TempDir())
-	tool.RegisterBuiltins(app, tool.BashConfig{})
+	tool.RegisterBuiltins(app, tool.BashConfig{}, tool.ToolConfig{})
 
 	coreTools := app.CoreTools()
 	toolDefs := app.ToolDefs()
@@ -147,7 +147,7 @@ func TestBackgroundSafeToolsAreSubsetOfCoreTools(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp(t.TempDir())
-	tool.RegisterBuiltins(app, tool.BashConfig{})
+	tool.RegisterBuiltins(app, tool.BashConfig{}, tool.ToolConfig{})
 
 	bgTools := app.BackgroundSafeTools()
 	coreNames := make(map[string]bool)

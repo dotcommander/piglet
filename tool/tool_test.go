@@ -18,7 +18,7 @@ func setupApp(t *testing.T) (*ext.App, string) {
 	t.Helper()
 	dir := t.TempDir()
 	app := ext.NewApp(dir)
-	tool.RegisterBuiltins(app, tool.BashConfig{})
+	tool.RegisterBuiltins(app, tool.BashConfig{}, tool.ToolConfig{})
 	return app, dir
 }
 

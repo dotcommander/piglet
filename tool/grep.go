@@ -13,7 +13,7 @@ import (
 	"github.com/dotcommander/piglet/ext"
 )
 
-func grepTool(app *ext.App) *ext.ToolDef {
+func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "grep",
@@ -40,7 +40,7 @@ func grepTool(app *ext.App) *ext.ToolDef {
 			searchPath = resolvePath(app.CWD(), searchPath)
 			globPattern := stringArg(args, "glob", "")
 			ignoreCase := boolArg(args, "ignore_case", false)
-			limit := intArg(args, "limit", 100)
+			limit := intArg(args, "limit", cfg.grepLimit())
 
 			if ignoreCase {
 				pattern = "(?i)" + pattern
