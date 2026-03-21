@@ -1,10 +1,15 @@
 package provider
 
 import (
-	"github.com/dotcommander/piglet/core"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/dotcommander/piglet/core"
+	"gopkg.in/yaml.v3"
 )
 
 // Registry holds the model catalog and creates providers.
@@ -13,10 +18,13 @@ type Registry struct {
 	models map[string]core.Model // key = "provider/model-id"
 }
 
-// NewRegistry creates a registry with built-in models.
+// NewRegistry creates a registry, loading models from ~/.config/piglet/models.yaml.
 func NewRegistry() *Registry {
 	r := &Registry{models: make(map[string]core.Model)}
-	r.registerBuiltins()
+	if err := r.loadModels(); err != nil {
+		// Non-fatal: registry starts empty, user gets "unknown model" errors
+		fmt.Fprintf(os.Stderr, "warning: load models: %v\n", err)
+	}
 	return r
 }
 
@@ -32,7 +40,7 @@ func (r *Registry) Resolve(query string) (core.Model, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Exact match: "openai/gpt-4o"
+	// Exact match: "openai/gpt-5.1"
 	if m, ok := r.models[strings.ToLower(query)]; ok {
 		return m, true
 	}
@@ -110,34 +118,81 @@ func modelKey(provider, id string) string {
 	return strings.ToLower(provider) + "/" + strings.ToLower(id)
 }
 
-func (r *Registry) registerBuiltins() {
-	builtins := []core.Model{
-		// OpenAI
-		{ID: "gpt-4o", Name: "GPT-4o", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
-		{ID: "gpt-4o-mini", Name: "GPT-4o mini", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
-		{ID: "o3-mini", Name: "o3-mini", Provider: "openai", API: core.APIOpenAI, BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000},
+// ---------------------------------------------------------------------------
+// models.yaml loader
+// ---------------------------------------------------------------------------
 
-		// Anthropic
-		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
-		{ID: "claude-opus-4-20250514", Name: "Claude Opus 4", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 32000},
-		{ID: "claude-3-5-haiku-20241022", Name: "Claude Haiku 3.5", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 8192},
-		{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", Provider: "anthropic", API: core.APIAnthropic, BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
+type modelsFile struct {
+	Models []modelEntry `yaml:"models"`
+}
 
-		// Google
-		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Provider: "google", API: core.APIGoogle, BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
-		{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", Provider: "google", API: core.APIGoogle, BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
+type modelEntry struct {
+	ID            string `yaml:"id"`
+	Name          string `yaml:"name"`
+	Provider      string `yaml:"provider"`
+	API           string `yaml:"api"`
+	BaseURL       string `yaml:"baseUrl"`
+	ContextWindow int    `yaml:"contextWindow"`
+	MaxTokens     int    `yaml:"maxTokens"`
+}
 
-		// xAI
-		{ID: "grok-3", Name: "Grok 3", Provider: "xai", API: core.APIOpenAI, BaseURL: "https://api.x.ai", ContextWindow: 131072, MaxTokens: 8192},
-
-		// Groq
-		{ID: "llama-3.3-70b-versatile", Name: "Llama 3.3 70B Versatile", Provider: "groq", API: core.APIOpenAI, BaseURL: "https://api.groq.com/openai", ContextWindow: 131072, MaxTokens: 32768},
-
-		// OpenRouter
-		{ID: "auto", Name: "Auto", Provider: "openrouter", API: core.APIOpenAI, BaseURL: "https://openrouter.ai/api", ContextWindow: 200000, MaxTokens: 16384},
+func (r *Registry) loadModels() error {
+	path, err := modelsPath()
+	if err != nil {
+		return err
 	}
 
-	for _, m := range builtins {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("models.yaml not found at %s — run: piglet /config --setup", path)
+		}
+		return fmt.Errorf("read models: %w", err)
+	}
+
+	var file modelsFile
+	if err := yaml.Unmarshal(data, &file); err != nil {
+		return fmt.Errorf("parse models.yaml: %w", err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, e := range file.Models {
+		m := core.Model{
+			ID:            e.ID,
+			Name:          e.Name,
+			Provider:      e.Provider,
+			API:           parseAPI(e.API),
+			BaseURL:       e.BaseURL,
+			ContextWindow: e.ContextWindow,
+			MaxTokens:     e.MaxTokens,
+		}
 		r.models[modelKey(m.Provider, m.ID)] = m
 	}
+
+	return nil
+}
+
+func parseAPI(s string) core.API {
+	switch strings.ToLower(s) {
+	case "anthropic":
+		return core.APIAnthropic
+	case "google":
+		return core.APIGoogle
+	default:
+		return core.APIOpenAI
+	}
+}
+
+func modelsPath() (string, error) {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("models path: %w", err)
+		}
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "piglet", "models.yaml"), nil
 }

@@ -34,14 +34,15 @@ func (p *OpenAI) streamModel() core.Model { return p.model }
 // ---------------------------------------------------------------------------
 
 type oaiRequest struct {
-	Model         string            `json:"model"`
-	Messages      []oaiMessage      `json:"messages"`
-	MaxTokens     *int              `json:"max_tokens,omitempty"`
-	Temperature   *float64          `json:"temperature,omitempty"`
-	Stream        bool              `json:"stream"`
-	Tools         []oaiTool         `json:"tools,omitempty"`
-	ToolChoice    any               `json:"tool_choice,omitempty"`
-	StreamOptions *oaiStreamOptions `json:"stream_options,omitempty"`
+	Model               string            `json:"model"`
+	Messages            []oaiMessage      `json:"messages"`
+	MaxTokens           *int              `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int              `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64          `json:"temperature,omitempty"`
+	Stream              bool              `json:"stream"`
+	Tools               []oaiTool         `json:"tools,omitempty"`
+	ToolChoice          any               `json:"tool_choice,omitempty"`
+	StreamOptions       *oaiStreamOptions `json:"stream_options,omitempty"`
 }
 
 type oaiStreamOptions struct {
@@ -80,16 +81,22 @@ type oaiFunctionCall struct {
 
 func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
 	maxTokens := p.model.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = 4096
+	if req.Options.MaxTokens != nil {
+		maxTokens = *req.Options.MaxTokens
 	}
 
 	oaiReq := oaiRequest{
 		Model:         p.model.ID,
 		Messages:      p.convertMessages(req),
-		MaxTokens:     &maxTokens,
 		Stream:        true,
 		StreamOptions: &oaiStreamOptions{IncludeUsage: true},
+	}
+
+	// Newer OpenAI models use max_completion_tokens instead of max_tokens
+	if useMaxCompletionTokens(p.model.ID) {
+		oaiReq.MaxCompletionTokens = &maxTokens
+	} else {
+		oaiReq.MaxTokens = &maxTokens
 	}
 
 	if req.Options.Temperature != nil {
@@ -223,7 +230,30 @@ func toolResultText(msg *core.ToolResultMessage) string {
 
 func (p *OpenAI) endpoint() string {
 	base := strings.TrimSuffix(p.model.BaseURL, "/")
+	// If base URL already ends with a version path (e.g. /v4), skip /v1 prefix
+	if hasVersionSuffix(base) {
+		return base + "/chat/completions"
+	}
 	return base + "/v1/chat/completions"
+}
+
+// hasVersionSuffix checks if the URL ends with /v<N> (e.g. /v1, /v4).
+func hasVersionSuffix(url string) bool {
+	// Find last path segment
+	i := strings.LastIndex(url, "/")
+	if i < 0 || i >= len(url)-1 {
+		return false
+	}
+	seg := url[i+1:]
+	if len(seg) < 2 || seg[0] != 'v' {
+		return false
+	}
+	for _, c := range seg[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *OpenAI) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
@@ -256,9 +286,14 @@ type oaiChoiceDelta struct {
 }
 
 type oaiUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                  `json:"prompt_tokens"`
+	CompletionTokens    int                  `json:"completion_tokens"`
+	TotalTokens         int                  `json:"total_tokens"`
+	PromptTokensDetails *oaiPromptTokensInfo `json:"prompt_tokens_details,omitempty"`
+}
+
+type oaiPromptTokensInfo struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
@@ -290,6 +325,9 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 			msg.Usage = core.Usage{
 				InputTokens:  evt.Usage.PromptTokens,
 				OutputTokens: evt.Usage.CompletionTokens,
+			}
+			if evt.Usage.PromptTokensDetails != nil {
+				msg.Usage.CacheReadTokens = evt.Usage.PromptTokensDetails.CachedTokens
 			}
 		}
 
@@ -428,4 +466,27 @@ func mapStopReason(reason string) core.StopReason {
 	default:
 		return core.StopReasonStop
 	}
+}
+
+// useMaxCompletionTokens returns true for models that require
+// max_completion_tokens instead of max_tokens.
+func useMaxCompletionTokens(modelID string) bool {
+	// o-series reasoning models
+	for _, p := range []string{"o1", "o3", "o4"} {
+		if strings.HasPrefix(modelID, p) {
+			return true
+		}
+	}
+	// Newer generations: parse version number after "gpt-" prefix
+	const pfx = "gpt-"
+	if strings.HasPrefix(modelID, pfx) {
+		rest := modelID[len(pfx):]
+		if len(rest) > 0 && rest[0] >= '5' {
+			return true
+		}
+		if strings.HasPrefix(rest, "4.1") || strings.HasPrefix(rest, "4.5") {
+			return true
+		}
+	}
+	return false
 }

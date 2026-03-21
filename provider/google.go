@@ -83,8 +83,8 @@ type gemGenConfig struct {
 
 func (p *Google) buildRequest(req core.StreamRequest) ([]byte, error) {
 	maxTokens := p.model.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = 4096
+	if req.Options.MaxTokens != nil {
+		maxTokens = *req.Options.MaxTokens
 	}
 
 	gemReq := gemRequest{
@@ -228,8 +228,9 @@ type gemCandidate struct {
 }
 
 type gemUsage struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
+	PromptTokenCount          int `json:"promptTokenCount"`
+	CandidatesTokenCount      int `json:"candidatesTokenCount"`
+	CachedContentTokenCount   int `json:"cachedContentTokenCount"`
 }
 
 func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
@@ -260,8 +261,9 @@ func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		// Usage
 		if resp.UsageMetadata != nil {
 			msg.Usage = core.Usage{
-				InputTokens:  resp.UsageMetadata.PromptTokenCount,
-				OutputTokens: resp.UsageMetadata.CandidatesTokenCount,
+				InputTokens:    resp.UsageMetadata.PromptTokenCount,
+				OutputTokens:   resp.UsageMetadata.CandidatesTokenCount,
+				CacheReadTokens: resp.UsageMetadata.CachedContentTokenCount,
 			}
 		}
 

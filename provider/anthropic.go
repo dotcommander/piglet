@@ -37,10 +37,20 @@ func (p *Anthropic) streamModel() core.Model { return p.model }
 type antRequest struct {
 	Model     string       `json:"model"`
 	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
+	System    any          `json:"system,omitempty"` // string or []antSystemBlock
 	Messages  []antMessage `json:"messages"`
 	Stream    bool         `json:"stream"`
 	Tools     []antTool    `json:"tools,omitempty"`
+}
+
+type antCacheControl struct {
+	Type string `json:"type"`
+}
+
+type antSystemBlock struct {
+	Type         string           `json:"type"`
+	Text         string           `json:"text"`
+	CacheControl *antCacheControl `json:"cache_control,omitempty"`
 }
 
 type antMessage struct {
@@ -49,7 +59,8 @@ type antMessage struct {
 }
 
 type antBlock struct {
-	Type string `json:"type"`
+	Type         string           `json:"type"`
+	CacheControl *antCacheControl `json:"cache_control,omitempty"`
 	// Text block
 	Text string `json:"text,omitempty"`
 	// Image block
@@ -71,27 +82,38 @@ type antImageSource struct {
 }
 
 type antTool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	InputSchema any    `json:"input_schema"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	InputSchema  any              `json:"input_schema"`
+	CacheControl *antCacheControl `json:"cache_control,omitempty"`
 }
 
 func (p *Anthropic) buildRequest(req core.StreamRequest) ([]byte, error) {
 	maxTokens := p.model.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = 4096
+	if req.Options.MaxTokens != nil {
+		maxTokens = *req.Options.MaxTokens
 	}
 
 	antReq := antRequest{
 		Model:     p.model.ID,
 		MaxTokens: maxTokens,
-		System:    req.System,
 		Messages:  p.convertMessages(req),
 		Stream:    true,
 	}
 
+	// System prompt as cacheable block
+	if req.System != "" {
+		antReq.System = []antSystemBlock{{
+			Type:         "text",
+			Text:         req.System,
+			CacheControl: &antCacheControl{Type: "ephemeral"},
+		}}
+	}
+
 	if len(req.Tools) > 0 {
 		antReq.Tools = p.convertTools(req.Tools)
+		// Cache breakpoint on last tool — tools are stable within a session
+		antReq.Tools[len(antReq.Tools)-1].CacheControl = &antCacheControl{Type: "ephemeral"}
 	}
 
 	return json.Marshal(antReq)
@@ -111,7 +133,46 @@ func (p *Anthropic) convertMessages(req core.StreamRequest) []antMessage {
 		}
 	}
 
+	// Add cache breakpoint on the second-to-last user-role message.
+	// This enables incremental caching: on the next turn, the entire
+	// conversation prefix up to this point is a cache hit.
+	addConversationCacheBreakpoint(msgs)
+
 	return msgs
+}
+
+// addConversationCacheBreakpoint marks the second-to-last user-role message
+// with cache_control so the prefix is cacheable for the next turn.
+func addConversationCacheBreakpoint(msgs []antMessage) {
+	// Find the last two user-role messages
+	var lastTwo [2]int
+	count := 0
+	for i := len(msgs) - 1; i >= 0 && count < 2; i-- {
+		if msgs[i].Role == "user" {
+			lastTwo[count] = i
+			count++
+		}
+	}
+	if count < 2 {
+		return
+	}
+
+	// Mark the second-to-last user message
+	idx := lastTwo[1]
+	content := msgs[idx].Content
+	switch c := content.(type) {
+	case []antBlock:
+		if len(c) > 0 {
+			c[len(c)-1].CacheControl = &antCacheControl{Type: "ephemeral"}
+		}
+	case string:
+		// Convert string to block array so we can attach cache_control
+		msgs[idx].Content = []antBlock{{
+			Type:         "text",
+			Text:         c,
+			CacheControl: &antCacheControl{Type: "ephemeral"},
+		}}
+	}
 }
 
 func (p *Anthropic) convertUserMessage(msg *core.UserMessage) antMessage {
@@ -239,8 +300,10 @@ type antStreamMessage struct {
 }
 
 type antStreamUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 type antDelta struct {
@@ -278,6 +341,8 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 		case "message_start":
 			if evt.Message != nil && evt.Message.Usage != nil {
 				msg.Usage.InputTokens = evt.Message.Usage.InputTokens
+				msg.Usage.CacheWriteTokens = evt.Message.Usage.CacheCreationInputTokens
+				msg.Usage.CacheReadTokens = evt.Message.Usage.CacheReadInputTokens
 			}
 
 		case "content_block_start":
@@ -323,6 +388,12 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 			}
 			if evt.Usage != nil {
 				msg.Usage.OutputTokens = evt.Usage.OutputTokens
+				if evt.Usage.CacheCreationInputTokens > 0 {
+					msg.Usage.CacheWriteTokens = evt.Usage.CacheCreationInputTokens
+				}
+				if evt.Usage.CacheReadInputTokens > 0 {
+					msg.Usage.CacheReadTokens = evt.Usage.CacheReadInputTokens
+				}
 			}
 		}
 	}
