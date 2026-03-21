@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/dotcommander/piglet/core"
 )
 
 // MessageView renders conversation messages.
 type MessageView struct {
-	styles   Styles
-	renderer *glamour.TermRenderer
-	width    int
+	styles    Styles
+	renderer  *glamour.TermRenderer
+	width     int
+	cachedSep string // cached separator line, invalidated on width change
 }
 
 // NewMessageView creates a message renderer.
@@ -31,6 +31,7 @@ func (v *MessageView) SetWidth(w int) {
 		return
 	}
 	v.width = w
+	v.cachedSep = "" // invalidate separator cache
 	v.renderer, _ = glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(w-4),
@@ -38,7 +39,7 @@ func (v *MessageView) SetWidth(w int) {
 }
 
 // RenderMessage renders a single message.
-func (v MessageView) RenderMessage(msg core.Message) string {
+func (v *MessageView) RenderMessage(msg core.Message) string {
 	switch m := msg.(type) {
 	case *core.UserMessage:
 		return v.renderUser(m)
@@ -51,7 +52,18 @@ func (v MessageView) RenderMessage(msg core.Message) string {
 	}
 }
 
-func (v MessageView) renderUser(m *core.UserMessage) string {
+func (v *MessageView) separator() string {
+	if v.cachedSep == "" {
+		w := v.width
+		if w > 60 {
+			w = 60
+		}
+		v.cachedSep = v.styles.Muted.Render(strings.Repeat("─", w))
+	}
+	return v.cachedSep
+}
+
+func (v *MessageView) renderUser(m *core.UserMessage) string {
 	label := v.styles.UserMsg.Render("> You")
 	content := m.Content
 	if content == "" && len(m.Blocks) > 0 {
@@ -62,12 +74,13 @@ func (v MessageView) renderUser(m *core.UserMessage) string {
 			}
 		}
 	}
-	return label + "\n" + content + "\n"
+	return label + "\n" + v.separator() + "\n" + content + "\n"
 }
 
-func (v MessageView) renderAssistant(m *core.AssistantMessage) string {
+func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 	var b strings.Builder
 	b.WriteString(v.styles.AssistantMsg.Render("Assistant") + "\n")
+	b.WriteString(v.separator() + "\n")
 
 	for _, c := range m.Content {
 		switch block := c.(type) {
@@ -98,13 +111,15 @@ func (v MessageView) renderAssistant(m *core.AssistantMessage) string {
 	return b.String()
 }
 
-func (v MessageView) renderToolResult(m *core.ToolResultMessage) string {
-	style := v.styles.ToolName
+func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
+	var prefix string
 	if m.IsError {
-		style = v.styles.ToolError
+		prefix = v.styles.ToolError.Render("✗ ")
+	} else {
+		prefix = v.styles.Success.Render("✓ ")
 	}
 
-	label := style.Render(fmt.Sprintf("[%s]", m.ToolName))
+	label := prefix + v.styles.ToolName.Render(fmt.Sprintf("[%s]", m.ToolName))
 
 	var content string
 	for _, c := range m.Content {
@@ -118,18 +133,32 @@ func (v MessageView) renderToolResult(m *core.ToolResultMessage) string {
 	lines := strings.Split(content, "\n")
 	if len(lines) > 10 {
 		content = strings.Join(lines[:5], "\n") +
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Render(
+			v.styles.Muted.Render(
 				fmt.Sprintf("\n... (%d lines truncated)\n", len(lines)-10)) +
 			strings.Join(lines[len(lines)-5:], "\n")
 	}
 
-	return label + "\n" + content + "\n"
+	return label + "\n" + v.styles.Muted.Render(content) + "\n"
+}
+
+// StreamCache holds cached glamour output during streaming to avoid re-rendering every tick.
+type StreamCache struct {
+	len      int
+	render   string
+	newlines int // cached newline count at len
 }
 
 // RenderStreaming renders a partial assistant response being streamed.
-func (v MessageView) RenderStreaming(text string, thinking string) string {
+// Uses glamour with caching — only re-renders when text grows by 100+ chars or gains a newline.
+func (v *MessageView) RenderStreaming(text string, thinking string, cache *StreamCache) string {
 	var b strings.Builder
 	b.WriteString(v.styles.AssistantMsg.Render("Assistant") + "\n")
+	b.WriteString(v.separator() + "\n")
+
+	if text == "" && thinking == "" {
+		b.WriteString(v.styles.Muted.Render("waiting...") + "\n")
+		return b.String()
+	}
 
 	if thinking != "" {
 		preview := thinking
@@ -140,7 +169,23 @@ func (v MessageView) RenderStreaming(text string, thinking string) string {
 	}
 
 	if text != "" {
-		b.WriteString(text)
+		tl := len(text)
+		nl := strings.Count(text, "\n")
+		needsRender := tl-cache.len > 100 || nl != cache.newlines
+
+		if v.renderer != nil && needsRender {
+			if rendered, err := v.renderer.Render(text); err == nil {
+				cache.render = rendered
+				cache.len = tl
+				cache.newlines = nl
+			}
+		}
+
+		if cache.render != "" {
+			b.WriteString(cache.render)
+		} else {
+			b.WriteString(text)
+		}
 	}
 	b.WriteString(v.styles.Spinner.Render(" _"))
 	b.WriteByte('\n')

@@ -42,6 +42,12 @@ type bgEventMsg struct{ event core.Event }
 // titleGeneratedMsg carries an auto-generated session title.
 type titleGeneratedMsg struct{ title string }
 
+// notifyTickMsg decrements the notification timer.
+type notifyTickMsg struct{}
+
+// notifyDuration is how many ticks a toast notification stays visible.
+const notifyDuration = 15 // ~3 seconds at 200ms tick
+
 // bgStartResult is set by the background agent callback when it starts polling.
 type bgStartResult struct {
 	ch <-chan core.Event
@@ -88,6 +94,13 @@ type Model struct {
 
 	// Auto-title: generate after first exchange
 	titleGenerated bool
+
+	// Streaming glamour cache
+	streamCache StreamCache
+
+	// Toast notification (transient, not in conversation history)
+	notification      string
+	notificationTimer int // ticks remaining (0 = hidden)
 }
 
 // New creates a TUI model.
@@ -139,6 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.streaming {
 				m.cfg.Agent.Stop()
 				m.streaming = false
+				m.streamCache = StreamCache{}
 				return m, nil
 			}
 			m.quitting = true
@@ -192,6 +206,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.cfg.Session.SetTitle(msg.title)
 		}
 		return m, nil
+
+	case notifyTickMsg:
+		if m.notificationTimer > 0 {
+			m.notificationTimer--
+			if m.notificationTimer > 0 {
+				cmds = append(cmds, notifyTick())
+			} else {
+				m.notification = ""
+			}
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	// Update input
@@ -212,8 +237,8 @@ func (m Model) View() tea.View {
 
 	var sections []string
 
-	// Messages viewport — bottom-aligned like Claude Code
-	content := m.renderMessages()
+	// Messages viewport — bottom-aligned with top padding for breathing room
+	content := "\n" + m.renderMessages()
 	contentLines := strings.Count(content, "\n")
 	vpHeight := m.viewport.Height()
 	if contentLines < vpHeight {
@@ -222,6 +247,11 @@ func (m Model) View() tea.View {
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 	sections = append(sections, m.viewport.View())
+
+	// Toast notification (transient, above input)
+	if m.notification != "" {
+		sections = append(sections, m.styles.Muted.Render(" "+m.notification+" "))
+	}
 
 	// Input
 	sections = append(sections, m.input.View())
@@ -287,17 +317,28 @@ func (m *Model) layout() {
 	m.modal.SetSize(m.width, m.height)
 }
 
+func (m *Model) showNotification(text string) {
+	m.notification = text
+	m.notificationTimer = notifyDuration
+}
+
+func notifyTick() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+		return notifyTickMsg{}
+	})
+}
+
 func (m Model) renderMessages() string {
 	var b strings.Builder
 
 	for _, msg := range m.messages {
 		b.WriteString(m.msgView.RenderMessage(msg))
-		b.WriteByte('\n')
+		b.WriteString("\n\n")
 	}
 
 	// Streaming content
 	if m.streaming {
-		b.WriteString(m.msgView.RenderStreaming(m.streamText, m.streamThink))
+		b.WriteString(m.msgView.RenderStreaming(m.streamText, m.streamThink, &m.streamCache))
 	}
 
 	// Active tool indicator
@@ -402,16 +443,15 @@ func (m *Model) applyActions() tea.Cmd {
 		return nil
 	}
 
+	var cmds []tea.Cmd
 	for _, action := range m.cfg.App.PendingActions() {
 		switch act := action.(type) {
 		case ext.ActionShowMessage:
-			m.messages = append(m.messages, &core.AssistantMessage{
-				Content: []core.AssistantContent{core.TextContent{Text: act.Text}},
-			})
+			m.showNotification(act.Text)
+			cmds = append(cmds, notifyTick())
 		case ext.ActionNotify:
-			m.messages = append(m.messages, &core.AssistantMessage{
-				Content: []core.AssistantContent{core.TextContent{Text: act.Message}},
-			})
+			m.showNotification(act.Message)
+			cmds = append(cmds, notifyTick())
 		case ext.ActionSetStatus:
 			if act.Key == "model" {
 				m.status.SetModel(act.Text)
@@ -445,9 +485,9 @@ func (m *Model) applyActions() tea.Cmd {
 	if m.pendingBgStart != nil {
 		ch := m.pendingBgStart.ch
 		m.pendingBgStart = nil
-		return pollBgEvents(ch)
+		cmds = append(cmds, pollBgEvents(ch))
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 // runCommand dispatches a slash command to the registered handler.
@@ -535,6 +575,7 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	case core.EventAgentEnd:
 		m.streaming = false
 		m.activeTool = ""
+		m.streamCache = StreamCache{}
 
 		// Auto-generate session title after first exchange
 		autoTitle := m.cfg.Settings == nil || m.cfg.Settings.Agent.AutoTitleEnabled()
