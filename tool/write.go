@@ -24,26 +24,19 @@ func writeTool(app *ext.App) *ext.ToolDef {
 			},
 		},
 		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
-			path, _ := args["path"].(string)
-			content, _ := args["content"].(string)
-			if path == "" {
-				return textResult("error: path is required"), nil
+			path, errResult := requirePath(args, app.CWD())
+			if errResult != nil {
+				return errResult, nil
 			}
-			path = resolvePath(app.CWD(), path)
+			content, _ := args["content"].(string)
 
 			dir := filepath.Dir(path)
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return textResult(fmt.Sprintf("error creating directory: %v", err)), nil
 			}
 
-			// Atomic write: temp then rename
-			tmp := path + ".piglet-tmp"
-			if err := os.WriteFile(tmp, []byte(content), 0644); err != nil {
+			if err := atomicWrite(path, []byte(content)); err != nil {
 				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
-			}
-			if err := os.Rename(tmp, path); err != nil {
-				os.Remove(tmp)
-				return textResult(fmt.Sprintf("error renaming file: %v", err)), nil
 			}
 
 			return textResult(fmt.Sprintf("wrote %d bytes to %s", len(content), path)), nil

@@ -25,11 +25,10 @@ func readTool(app *ext.App) *ext.ToolDef {
 			},
 		},
 		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
-			path, _ := args["path"].(string)
-			if path == "" {
-				return textResult("error: path is required"), nil
+			path, errResult := requirePath(args, app.CWD())
+			if errResult != nil {
+				return errResult, nil
 			}
-			path = resolvePath(app.CWD(), path)
 
 			data, err := os.ReadFile(path)
 			if err != nil {

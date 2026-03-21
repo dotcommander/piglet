@@ -25,14 +25,12 @@ func editTool(app *ext.App) *ext.ToolDef {
 			},
 		},
 		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
-			path, _ := args["path"].(string)
+			path, errResult := requirePath(args, app.CWD())
+			if errResult != nil {
+				return errResult, nil
+			}
 			oldText, _ := args["old_text"].(string)
 			newText, _ := args["new_text"].(string)
-
-			if path == "" {
-				return textResult("error: path is required"), nil
-			}
-			path = resolvePath(app.CWD(), path)
 
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -50,17 +48,10 @@ func editTool(app *ext.App) *ext.ToolDef {
 				return textResult(fmt.Sprintf("error: old_text found %d times, must be unique. Add more context to make it unique.", count)), nil
 			}
 
-			// Replace
 			updated := strings.Replace(content, oldText, newText, 1)
 
-			// Atomic write
-			tmp := path + ".piglet-tmp"
-			if err := os.WriteFile(tmp, []byte(updated), 0644); err != nil {
+			if err := atomicWrite(path, []byte(updated)); err != nil {
 				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
-			}
-			if err := os.Rename(tmp, path); err != nil {
-				os.Remove(tmp)
-				return textResult(fmt.Sprintf("error renaming file: %v", err)), nil
 			}
 
 			return textResult(fmt.Sprintf("edited %s", path)), nil

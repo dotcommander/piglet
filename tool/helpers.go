@@ -1,7 +1,9 @@
 package tool
 
 import (
+	"os"
 	"path/filepath"
+
 	"github.com/dotcommander/piglet/core"
 )
 
@@ -47,4 +49,27 @@ func boolArg(args map[string]any, key string, fallback bool) bool {
 		return v
 	}
 	return fallback
+}
+
+// requirePath extracts and resolves a path argument.
+// Returns an error result if the path is empty.
+func requirePath(args map[string]any, cwd string) (string, *core.ToolResult) {
+	path, _ := args["path"].(string)
+	if path == "" {
+		return "", textResult("error: path is required")
+	}
+	return resolvePath(cwd, path), nil
+}
+
+// atomicWrite writes data to path via a temp file and rename.
+func atomicWrite(path string, data []byte) error {
+	tmp := path + ".piglet-tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
