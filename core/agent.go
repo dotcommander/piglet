@@ -63,6 +63,11 @@ type Agent struct {
 	stepMode bool
 	stepGate chan StepAction
 
+	// Background compaction
+	compactMu  sync.Mutex
+	compacting bool
+	compactWg  sync.WaitGroup
+
 	// Reusable timer for emit() to avoid per-call time.After leaks.
 	emitTimer *time.Timer
 }
@@ -244,6 +249,7 @@ func (a *Agent) Provider() StreamProvider {
 
 func (a *Agent) run(ctx context.Context, prompt string) {
 	defer func() {
+		a.compactWg.Wait()
 		a.mu.Lock()
 		a.running = false
 		a.mu.Unlock()
@@ -410,26 +416,59 @@ func (a *Agent) maybeCompact() {
 		}
 	}
 	threshold := a.cfg.CompactAt
-	msgs := a.messages
+	msgCount := len(a.messages)
+	var msgs []Message
+	if total >= threshold && msgCount >= 8 {
+		msgs = make([]Message, msgCount)
+		copy(msgs, a.messages)
+	}
 	a.mu.RUnlock()
 
-	if total < threshold || len(msgs) < 8 {
+	if msgs == nil {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	compacted, err := a.cfg.OnCompact(ctx, msgs)
-	if err != nil || len(compacted) == 0 {
+	a.compactMu.Lock()
+	if a.compacting {
+		a.compactMu.Unlock()
 		return
 	}
+	a.compacting = true
+	a.compactMu.Unlock()
 
-	a.mu.Lock()
-	a.messages = compacted
-	a.mu.Unlock()
+	a.compactWg.Add(1)
+	go func() {
+		defer a.compactWg.Done()
+		defer func() {
+			a.compactMu.Lock()
+			a.compacting = false
+			a.compactMu.Unlock()
+		}()
 
-	a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total})
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		compacted, err := a.cfg.OnCompact(ctx, msgs)
+		if err != nil || len(compacted) == 0 {
+			return
+		}
+
+		a.mu.Lock()
+		a.messages = compacted
+		a.mu.Unlock()
+
+		timer := time.NewTimer(EmitTimeout)
+		select {
+		case a.events <- EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total}:
+		case <-timer.C:
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 }
 
 // enforceMessageCap drops oldest messages (keeping the first) when over MaxMessages.
