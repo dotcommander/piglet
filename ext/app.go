@@ -41,22 +41,17 @@ type App struct {
 	extInfos       []ExtInfo
 
 	// Runtime references (set via Bind)
-	agent       AgentAPI
-	notify      func(msg string)
-	status      func(key, text string)
-	showMessage func(text string)
-	requestQuit func()
-	showPicker  func(title string, items []PickerItem, onSelect func(PickerItem))
-	swapSession func(sess any) // any to avoid session import cycle
-	forkSession func() (id string, count int, err error)
+	agent   AgentAPI
+	actions []Action // queued actions for TUI to drain
+
+	// Domain managers (set via Bind)
+	sessions SessionManager
+	models   ModelManager
 
 	// Background agent callbacks
 	runBackground       func(prompt string) error
 	cancelBackground    func()
 	isBackgroundRunning func() bool
-
-	// Session title callback
-	setSessionTitle func(title string) error
 }
 
 // AgentAPI is the subset of *core.Agent that the extension runtime needs.
@@ -279,48 +274,24 @@ func (a *App) Bind(agent AgentAPI, opts ...BindOption) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.agent = agent
+	a.actions = a.actions[:0] // clear stale actions
 	for _, opt := range opts {
 		opt(a)
 	}
 }
 
-// BindOption configures optional runtime callbacks.
+// BindOption configures optional runtime callbacks for sync operations
+// that cannot be expressed as fire-and-forget actions.
 type BindOption func(*App)
 
-// WithNotify sets the notification callback for the TUI.
-func WithNotify(fn func(msg string)) BindOption {
-	return func(a *App) { a.notify = fn }
+// WithSessionManager binds the session manager.
+func WithSessionManager(sm SessionManager) BindOption {
+	return func(a *App) { a.sessions = sm }
 }
 
-// WithStatus sets the status bar callback for the TUI.
-func WithStatus(fn func(key, text string)) BindOption {
-	return func(a *App) { a.status = fn }
-}
-
-// WithShowMessage sets the callback to display a message in the TUI.
-func WithShowMessage(fn func(text string)) BindOption {
-	return func(a *App) { a.showMessage = fn }
-}
-
-// WithRequestQuit sets the callback to request the TUI to quit.
-func WithRequestQuit(fn func()) BindOption {
-	return func(a *App) { a.requestQuit = fn }
-}
-
-// WithShowPicker sets the callback to show a picker/modal in the TUI.
-func WithShowPicker(fn func(title string, items []PickerItem, onSelect func(PickerItem))) BindOption {
-	return func(a *App) { a.showPicker = fn }
-}
-
-// WithSwapSession sets the callback to swap the active session.
-func WithSwapSession(fn func(sess any)) BindOption {
-	return func(a *App) { a.swapSession = fn }
-}
-
-// WithForkSession sets the callback to fork the current session.
-// Returns the parent short ID, message count, and any error.
-func WithForkSession(fn func() (string, int, error)) BindOption {
-	return func(a *App) { a.forkSession = fn }
+// WithModelManager binds the model manager.
+func WithModelManager(mm ModelManager) BindOption {
+	return func(a *App) { a.models = mm }
 }
 
 // WithRunBackground sets the callback to start a background agent.
@@ -338,9 +309,20 @@ func WithIsBackgroundRunning(fn func() bool) BindOption {
 	return func(a *App) { a.isBackgroundRunning = fn }
 }
 
-// WithSetSessionTitle sets the callback to update the current session's title.
-func WithSetSessionTitle(fn func(title string) error) BindOption {
-	return func(a *App) { a.setSessionTitle = fn }
+
+// PendingActions returns and clears all queued actions.
+func (a *App) PendingActions() []Action {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := a.actions
+	a.actions = nil
+	return out
+}
+
+func (a *App) enqueue(action Action) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.actions = append(a.actions, action)
 }
 
 // ---------------------------------------------------------------------------
@@ -397,78 +379,135 @@ func (a *App) SetProvider(p core.StreamProvider) {
 	}
 }
 
-// Notify sends a notification to the TUI. No-op if not bound.
+// Notify sends a notification to the TUI.
 func (a *App) Notify(msg string) {
-	a.mu.RLock()
-	fn := a.notify
-	a.mu.RUnlock()
-	if fn != nil {
-		fn(msg)
-	}
+	a.enqueue(ActionNotify{Message: msg})
 }
 
-// SetStatus updates a status bar widget. No-op if not bound.
+// SetStatus updates a status bar widget.
 func (a *App) SetStatus(key, text string) {
-	a.mu.RLock()
-	fn := a.status
-	a.mu.RUnlock()
-	if fn != nil {
-		fn(key, text)
-	}
+	a.enqueue(ActionSetStatus{Key: key, Text: text})
 }
 
-// ShowMessage displays a message in the TUI. No-op if not bound.
+// ShowMessage displays a message in the TUI.
 func (a *App) ShowMessage(text string) {
-	a.mu.RLock()
-	fn := a.showMessage
-	a.mu.RUnlock()
-	if fn != nil {
-		fn(text)
-	}
+	a.enqueue(ActionShowMessage{Text: text})
 }
 
-// RequestQuit signals the TUI to quit. No-op if not bound.
+// RequestQuit signals the TUI to quit.
 func (a *App) RequestQuit() {
+	a.enqueue(ActionQuit{})
+}
+
+// ShowPicker shows a picker/modal in the TUI.
+func (a *App) ShowPicker(title string, items []PickerItem, onSelect func(PickerItem)) {
+	a.enqueue(ActionShowPicker{Title: title, Items: items, OnSelect: onSelect})
+}
+
+// ---------------------------------------------------------------------------
+// Session domain methods (backed by SessionManager)
+// ---------------------------------------------------------------------------
+
+// Sessions returns all sessions, newest first.
+func (a *App) Sessions() ([]SessionSummary, error) {
 	a.mu.RLock()
-	fn := a.requestQuit
+	sm := a.sessions
 	a.mu.RUnlock()
-	if fn != nil {
-		fn()
+	if sm == nil {
+		return nil, fmt.Errorf("sessions not configured")
 	}
+	return sm.List()
+}
+
+// LoadSession opens a session by path and enqueues a swap.
+func (a *App) LoadSession(path string) error {
+	a.mu.RLock()
+	sm := a.sessions
+	a.mu.RUnlock()
+	if sm == nil {
+		return fmt.Errorf("sessions not configured")
+	}
+	sess, err := sm.Load(path)
+	if err != nil {
+		return err
+	}
+	a.enqueue(ActionSwapSession{Session: sess})
+	return nil
 }
 
 // ForkSession forks the current session into a new branch.
-// Returns the parent short ID, message count, and any error.
-// Returns an error if not bound or no session.
 func (a *App) ForkSession() (string, int, error) {
 	a.mu.RLock()
-	fn := a.forkSession
+	sm := a.sessions
 	a.mu.RUnlock()
-	if fn != nil {
-		return fn()
+	if sm == nil {
+		return "", 0, fmt.Errorf("no active session")
 	}
-	return "", 0, fmt.Errorf("no active session")
+	parentID, forked, count, err := sm.Fork()
+	if err != nil {
+		return "", 0, err
+	}
+	a.enqueue(ActionSwapSession{Session: forked})
+	return parentID, count, nil
 }
 
-// SwapSession swaps the active session. The sess parameter must be a *session.Session
-// (typed as any to avoid import cycle). No-op if not bound.
-func (a *App) SwapSession(sess any) {
+// SetSessionTitle updates the current session's title.
+func (a *App) SetSessionTitle(title string) error {
 	a.mu.RLock()
-	fn := a.swapSession
+	sm := a.sessions
 	a.mu.RUnlock()
-	if fn != nil {
-		fn(sess)
+	if sm == nil {
+		return fmt.Errorf("no active session")
 	}
+	return sm.SetTitle(title)
 }
 
-// ShowPicker shows a picker/modal in the TUI. No-op if not bound.
-func (a *App) ShowPicker(title string, items []PickerItem, onSelect func(PickerItem)) {
+// ---------------------------------------------------------------------------
+// Model domain methods (backed by ModelManager)
+// ---------------------------------------------------------------------------
+
+// AvailableModels returns all registered models.
+func (a *App) AvailableModels() []core.Model {
 	a.mu.RLock()
-	fn := a.showPicker
+	mm := a.models
 	a.mu.RUnlock()
-	if fn != nil {
-		fn(title, items, onSelect)
+	if mm == nil {
+		return nil
 	}
+	return mm.Available()
+}
+
+// SwitchModel activates a model by its "provider/id" key.
+// Updates the agent's model and provider, and enqueues a status update.
+func (a *App) SwitchModel(id string) error {
+	a.mu.RLock()
+	mm := a.models
+	agent := a.agent
+	a.mu.RUnlock()
+	if mm == nil {
+		return fmt.Errorf("model manager not configured")
+	}
+	mod, prov, err := mm.Switch(id)
+	if err != nil {
+		return err
+	}
+	if agent != nil {
+		agent.SetModel(mod)
+		agent.SetProvider(prov)
+	}
+	a.enqueue(ActionSetStatus{Key: "model", Text: mod.DisplayName()})
+	return nil
+}
+
+// SyncModels updates the model catalog from an external source.
+func (a *App) SyncModels() (int, error) {
+	a.mu.RLock()
+	mm := a.models
+	a.mu.RUnlock()
+	if mm == nil {
+		return 0, fmt.Errorf("model manager not configured")
+	}
+	return mm.Sync()
 }
 
 // RunBackground starts a background agent with the given prompt.
@@ -504,17 +543,6 @@ func (a *App) IsBackgroundRunning() bool {
 	return false
 }
 
-// SetSessionTitle updates the current session's title.
-// Returns an error if not bound or no active session.
-func (a *App) SetSessionTitle(title string) error {
-	a.mu.RLock()
-	fn := a.setSessionTitle
-	a.mu.RUnlock()
-	if fn == nil {
-		return fmt.Errorf("no active session")
-	}
-	return fn(title)
-}
 
 // ConversationMessages returns a snapshot of the conversation history.
 func (a *App) ConversationMessages() []core.Message {
