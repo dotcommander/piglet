@@ -97,8 +97,9 @@ func grepTool(app *ext.App) *ext.ToolDef {
 			}
 			return textResult(b.String()), nil
 		},
-		PromptHint:   "Search file contents with regex",
-		PromptGuides: []string{"Use glob to filter file types", "Default limit is 100 matches"},
+		PromptHint:     "Search file contents with regex",
+		PromptGuides:   []string{"Use glob to filter file types", "Default limit is 100 matches"},
+		BackgroundSafe: true,
 	}
 }
 

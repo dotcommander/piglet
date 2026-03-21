@@ -86,6 +86,7 @@ func findTool(app *ext.App) *ext.ToolDef {
 			}
 			return textResult(b.String()), nil
 		},
-		PromptHint: "Find files by glob pattern",
+		PromptHint:     "Find files by glob pattern",
+		BackgroundSafe: true,
 	}
 }

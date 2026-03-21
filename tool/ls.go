@@ -60,7 +60,8 @@ func lsTool(app *ext.App) *ext.ToolDef {
 			}
 			return textResult(b.String()), nil
 		},
-		PromptHint: "List directory contents",
+		PromptHint:     "List directory contents",
+		BackgroundSafe: true,
 	}
 }
 

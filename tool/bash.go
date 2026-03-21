@@ -11,7 +11,31 @@ import (
 	"time"
 )
 
-func bashTool(app *ext.App) *ext.ToolDef {
+// BashConfig holds configurable limits for the bash tool. Zero values use defaults.
+type BashConfig struct {
+	DefaultTimeout int // seconds, default 30
+	MaxTimeout     int // seconds, default 300
+	MaxStdout      int // bytes, default 100000
+	MaxStderr      int // bytes, default 50000
+}
+
+func (c BashConfig) withDefaults() BashConfig {
+	if c.DefaultTimeout <= 0 {
+		c.DefaultTimeout = 30
+	}
+	if c.MaxTimeout <= 0 {
+		c.MaxTimeout = 300
+	}
+	if c.MaxStdout <= 0 {
+		c.MaxStdout = 100_000
+	}
+	if c.MaxStderr <= 0 {
+		c.MaxStderr = 50_000
+	}
+	return c
+}
+
+func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "bash",
@@ -31,12 +55,12 @@ func bashTool(app *ext.App) *ext.ToolDef {
 				return textResult("error: command is required"), nil
 			}
 
-			timeout := intArg(args, "timeout", 30)
+			timeout := intArg(args, "timeout", cfg.DefaultTimeout)
 			if timeout < 1 {
-				timeout = 30
+				timeout = cfg.DefaultTimeout
 			}
-			if timeout > 300 {
-				timeout = 300
+			if timeout > cfg.MaxTimeout {
+				timeout = cfg.MaxTimeout
 			}
 
 			cmdCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -54,8 +78,8 @@ func bashTool(app *ext.App) *ext.ToolDef {
 			var b strings.Builder
 			if stdout.Len() > 0 {
 				out := stdout.String()
-				if len(out) > 100_000 {
-					out = out[:100_000] + "\n... (output truncated)"
+				if len(out) > cfg.MaxStdout {
+					out = out[:cfg.MaxStdout] + "\n... (output truncated)"
 				}
 				b.WriteString(out)
 			}
@@ -64,8 +88,8 @@ func bashTool(app *ext.App) *ext.ToolDef {
 					b.WriteString("\n")
 				}
 				errOut := stderr.String()
-				if len(errOut) > 50_000 {
-					errOut = errOut[:50_000] + "\n... (stderr truncated)"
+				if len(errOut) > cfg.MaxStderr {
+					errOut = errOut[:cfg.MaxStderr] + "\n... (stderr truncated)"
 				}
 				b.WriteString("STDERR:\n")
 				b.WriteString(errOut)

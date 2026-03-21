@@ -5,11 +5,12 @@ package tool
 import "github.com/dotcommander/piglet/ext"
 
 // RegisterBuiltins registers all built-in tools via the extension API.
-func RegisterBuiltins(app *ext.App) {
+func RegisterBuiltins(app *ext.App, bash BashConfig) {
+	bash = bash.withDefaults()
 	app.RegisterTool(readTool(app))
 	app.RegisterTool(writeTool(app))
 	app.RegisterTool(editTool(app))
-	app.RegisterTool(bashTool(app))
+	app.RegisterTool(bashTool(app, bash))
 	app.RegisterTool(grepTool(app))
 	app.RegisterTool(findTool(app))
 	app.RegisterTool(lsTool(app))

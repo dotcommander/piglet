@@ -68,7 +68,8 @@ func readTool(app *ext.App) *ext.ToolDef {
 
 			return textResult(b.String()), nil
 		},
-		PromptHint:   "Read file contents with line numbers",
-		PromptGuides: []string{"Use offset/limit for files >2000 lines"},
+		PromptHint:     "Read file contents with line numbers",
+		PromptGuides:   []string{"Use offset/limit for files >2000 lines"},
+		BackgroundSafe: true,
 	}
 }
