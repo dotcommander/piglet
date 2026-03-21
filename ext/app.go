@@ -38,6 +38,8 @@ type App struct {
 	renderers      map[string]Renderer
 	providers      map[string]*ProviderConfig
 	promptSections []PromptSection
+	compactor      *Compactor
+	statusSections []StatusSection
 	extInfos       []ExtInfo
 
 	// Runtime references (set via Bind)
@@ -131,6 +133,45 @@ func (a *App) RegisterPromptSection(s PromptSection) {
 	sort.Slice(a.promptSections, func(i, j int) bool {
 		return a.promptSections[i].Order < a.promptSections[j].Order
 	})
+}
+
+// RegisterCompactor sets the conversation compactor.
+// Only one compactor is active at a time (last-write-wins).
+func (a *App) RegisterCompactor(c Compactor) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.compactor = &c
+}
+
+// Compactor returns the registered compactor, or nil.
+func (a *App) Compactor() *Compactor {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.compactor
+}
+
+// RegisterStatusSection adds a status bar section.
+// Overwrites if a section with the same key already exists.
+func (a *App) RegisterStatusSection(s StatusSection) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// Replace existing with same key
+	for i, existing := range a.statusSections {
+		if existing.Key == s.Key {
+			a.statusSections[i] = s
+			return
+		}
+	}
+	a.statusSections = append(a.statusSections, s)
+}
+
+// StatusSections returns all registered status sections.
+func (a *App) StatusSections() []StatusSection {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := make([]StatusSection, len(a.statusSections))
+	copy(out, a.statusSections)
+	return out
 }
 
 // RegisterProvider adds a custom LLM provider.

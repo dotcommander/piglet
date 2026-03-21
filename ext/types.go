@@ -74,6 +74,50 @@ type Interceptor struct {
 }
 
 // ---------------------------------------------------------------------------
+// Compactor
+// ---------------------------------------------------------------------------
+
+// Compactor controls conversation compaction (summarization to save tokens).
+// Register one via App.RegisterCompactor. The Compact function receives all
+// messages and returns the compacted set — giving full control over what to
+// keep and how to summarize.
+type Compactor struct {
+	Name      string
+	Threshold int // token threshold for auto-compact; 0 = use config default
+	Compact   func(ctx context.Context, messages []core.Message) ([]core.Message, error)
+}
+
+// ---------------------------------------------------------------------------
+// Status sections
+// ---------------------------------------------------------------------------
+
+// StatusSide determines which side of the status bar a section appears on.
+type StatusSide int
+
+const (
+	StatusLeft  StatusSide = iota
+	StatusRight
+)
+
+// StatusSection defines an extensible status bar segment.
+// Register via App.RegisterStatusSection. The TUI renders all registered
+// sections sorted by Order within each side (left/right).
+type StatusSection struct {
+	Key   string     // unique key (e.g. "model", "tokens", "cost")
+	Side  StatusSide // left or right side of status bar
+	Order int        // lower = rendered first within the side
+}
+
+// Built-in status section keys.
+const (
+	StatusKeyApp    = "app"
+	StatusKeyModel  = "model"
+	StatusKeyBg     = "bg"
+	StatusKeyTokens = "tokens"
+	StatusKeyCost   = "cost"
+)
+
+// ---------------------------------------------------------------------------
 // Renderers
 // ---------------------------------------------------------------------------
 
