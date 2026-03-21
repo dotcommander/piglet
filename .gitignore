@@ -4,3 +4,6 @@
 # Scratch / exports
 piglet-export-*.md
 .work/
+
+# macOS
+.DS_Store
