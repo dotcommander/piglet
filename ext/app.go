@@ -25,6 +25,7 @@ type App struct {
 	renderers      map[string]Renderer
 	providers      map[string]*ProviderConfig
 	promptSections []PromptSection
+	extInfos       []ExtInfo
 
 	// Runtime references (set via Bind)
 	agent       AgentAPI
@@ -120,6 +121,22 @@ func (a *App) RegisterProvider(name string, cfg *ProviderConfig) {
 	a.providers[name] = cfg
 }
 
+// RegisterExtInfo records metadata about a loaded extension.
+func (a *App) RegisterExtInfo(info ExtInfo) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.extInfos = append(a.extInfos, info)
+}
+
+// ExtInfos returns metadata about all loaded extensions.
+func (a *App) ExtInfos() []ExtInfo {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := make([]ExtInfo, len(a.extInfos))
+	copy(out, a.extInfos)
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // Query registration state
 // ---------------------------------------------------------------------------
@@ -155,7 +172,6 @@ func (a *App) CoreTools() []core.Tool {
 
 	tools := make([]core.Tool, 0, len(a.tools))
 	for _, td := range a.tools {
-		td := td // capture
 		tools = append(tools, core.Tool{
 			ToolSchema: td.ToolSchema,
 			Execute:    a.wrapWithInterceptors(td.Name, td.Execute),
