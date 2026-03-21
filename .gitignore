@@ -7,3 +7,6 @@ piglet-export-*.md
 
 # macOS
 .DS_Store
+
+# Repomix output
+repomix-output.md
