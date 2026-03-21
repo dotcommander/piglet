@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
@@ -45,6 +46,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 	registerSearch(app)
 	registerTitle(app)
 	registerUndo(app)
+	registerConfig(app)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
@@ -577,6 +579,131 @@ func registerUndo(app *ext.App) {
 		},
 	})
 }
+
+func registerConfig(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "config",
+		Description: "Show or initialize config",
+		Handler: func(args string, a *ext.App) error {
+			switch strings.TrimSpace(args) {
+			case "--setup":
+				path, err := config.SettingsPath()
+				if err != nil {
+					a.ShowMessage("Config path error: " + err.Error())
+					return nil
+				}
+				if _, err := os.Stat(path); err == nil {
+					a.ShowMessage("Config already exists: " + path)
+					return nil
+				}
+				dir := filepath.Dir(path)
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					a.ShowMessage("Setup failed: " + err.Error())
+					return nil
+				}
+				if err := os.WriteFile(path, []byte(configTemplate), 0600); err != nil {
+					a.ShowMessage("Setup failed: " + err.Error())
+					return nil
+				}
+				a.ShowMessage("Created config: " + path)
+				return nil
+
+			default:
+				dir, _ := config.ConfigDir()
+				path, _ := config.SettingsPath()
+				authPath, _ := config.AuthPath()
+				sessDir, _ := config.SessionsDir()
+
+				var b strings.Builder
+				b.WriteString("Config directory: " + dir + "\n")
+				b.WriteString("  config.yaml:  ")
+				if _, err := os.Stat(path); err == nil {
+					b.WriteString(path + "\n")
+				} else {
+					b.WriteString("(not created — run /config --setup)\n")
+				}
+				b.WriteString("  auth.json:    ")
+				if _, err := os.Stat(authPath); err == nil {
+					b.WriteString(authPath + "\n")
+				} else {
+					b.WriteString("(not created)\n")
+				}
+				b.WriteString("  sessions/:    ")
+				if _, err := os.Stat(sessDir); err == nil {
+					b.WriteString(sessDir + "/\n")
+				} else {
+					b.WriteString("(not created)\n")
+				}
+				a.ShowMessage(b.String())
+				return nil
+			}
+		},
+	})
+}
+
+const configTemplate = `# Piglet configuration
+# Docs: https://github.com/dotcommander/piglet/blob/main/docs/configuration.md
+
+# Default provider and model (required)
+# defaultProvider: anthropic
+defaultModel: gpt-5.1
+
+# System prompt override (or use ~/.config/piglet/prompt.md)
+# systemPrompt: "You are piglet, a helpful coding assistant."
+
+# Shell path (default: $SHELL or /bin/sh)
+# shellPath: /bin/zsh
+
+# Theme: dark, light
+# theme: dark
+
+# Agent settings
+# agent:
+#   maxTurns: 10
+#   bgMaxTurns: 5
+#   autoTitle: true
+#   maxTokens: 4096
+#   maxRetries: 3
+#   toolConcurrency: 10
+#   compactAt: 80000
+#   compactKeepRecent: 6
+
+# Tool defaults
+# tools:
+#   readLimit: 2000
+#   grepLimit: 100
+
+# Git context in system prompt
+# git:
+#   maxDiffStatFiles: 30
+#   maxLogLines: 5
+#   maxDiffHunkLines: 50
+#   commandTimeout: 5
+
+# Bash tool limits
+# bash:
+#   defaultTimeout: 30
+#   maxTimeout: 300
+#   maxStdout: 100000
+#   maxStderr: 50000
+
+# Keyboard shortcuts (action: keybind)
+# shortcuts:
+#   model: ctrl+p
+#   session: ctrl+s
+
+# Provider base URL overrides
+# providers:
+#   openai: https://api.openai.com/v1
+
+# Prompt section ordering (section title: order)
+# promptOrder:
+#   "Recent Changes": 40
+#   "Project Memory": 50
+
+# External extensions (paths to extension directories)
+# extensions: []
+`
 
 func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	items := make([]ext.PickerItem, len(summaries))
