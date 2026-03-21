@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"maps"
+	"slices"
+	"strings"
+	"syscall"
+
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/ext/external"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 	"github.com/dotcommander/piglet/tui"
-	"strings"
-	"syscall"
 )
 
 func main() {
@@ -70,6 +74,19 @@ func run() error {
 	app := ext.NewApp(cwd)
 	tool.RegisterBuiltins(app)
 	command.RegisterBuiltins(app, registry.Models(), sessDir, registry, auth)
+	app.RegisterExtInfo(ext.ExtInfo{
+		Name:     "builtin",
+		Kind:     "builtin",
+		Runtime:  "go",
+		Tools:    app.Tools(),
+		Commands: slices.Sorted(maps.Keys(app.Commands())),
+	})
+
+	// External extensions (TypeScript, Python, etc.)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	extCleanup, _ := external.LoadAll(ctx, app)
+	defer extCleanup()
 
 	// System prompt: config.yaml systemPrompt → fallback default
 	basePrompt := settings.SystemPrompt
