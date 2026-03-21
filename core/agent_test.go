@@ -614,9 +614,9 @@ func TestAgentAutoCompact(t *testing.T) {
 		Provider:  prov,
 		Tools:     []core.Tool{echoTool()},
 		CompactAt: 8000,
-		OnCompact: func(msgs []core.Message) (string, error) {
+		OnCompact: func(ctx context.Context, msgs []core.Message) ([]core.Message, error) {
 			compactCalled++
-			return "Summary of earlier conversation.", nil
+			return core.CompactMessages(msgs, "Summary of earlier conversation."), nil
 		},
 	})
 

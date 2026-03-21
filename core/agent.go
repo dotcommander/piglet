@@ -37,9 +37,9 @@ type AgentConfig struct {
 	MaxMessages int // hard cap on message count; 0 = unlimited
 
 	// OnCompact is called when token usage exceeds CompactAt.
-	// It receives the current messages and should return a summary string.
+	// It receives the context and current messages, and returns the compacted message set.
 	// If nil, compaction is disabled.
-	OnCompact func(messages []Message) (string, error)
+	OnCompact func(ctx context.Context, messages []Message) ([]Message, error)
 	CompactAt int // token threshold; 0 = disabled
 }
 
@@ -417,16 +417,19 @@ func (a *Agent) maybeCompact() {
 		return
 	}
 
-	summary, err := a.cfg.OnCompact(msgs)
-	if err != nil || summary == "" {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	compacted, err := a.cfg.OnCompact(ctx, msgs)
+	if err != nil || len(compacted) == 0 {
 		return
 	}
 
 	a.mu.Lock()
-	a.messages = CompactMessages(a.messages, summary)
+	a.messages = compacted
 	a.mu.Unlock()
 
-	a.emit(EventCompact{Before: len(msgs), After: len(a.messages), TokensAtCompact: total})
+	a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total})
 }
 
 // enforceMessageCap drops oldest messages (keeping the first) when over MaxMessages.

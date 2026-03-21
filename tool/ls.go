@@ -49,7 +49,7 @@ func lsTool(app *ext.App) *ext.ToolDef {
 					name += "/"
 				}
 
-				fmt.Fprintf(&b, "%s\t%s\t%s\n", info.Mode(), formatSize(info.Size()), name)
+				fmt.Fprintf(&b, "%s\t%s\t%s\n", info.Mode(), FormatSize(info.Size()), name)
 				count++
 			}
 
