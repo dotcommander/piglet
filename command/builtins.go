@@ -2,6 +2,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
+	"github.com/dotcommander/piglet/tool"
 )
 
 // Default keyboard shortcut bindings.
@@ -26,6 +28,7 @@ const (
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
 // All commands operate exclusively through the ext.App SDK.
 func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
+	registerStatusSections(app)
 	registerHelp(app)
 	registerClear(app)
 	registerStep(app)
@@ -41,6 +44,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 	registerBgCancel(app)
 	registerSearch(app)
 	registerTitle(app)
+	registerUndo(app)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
@@ -74,6 +78,17 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 			return nil
 		},
 	})
+}
+
+func registerStatusSections(app *ext.App) {
+	// Left side
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyApp, Side: ext.StatusLeft, Order: 0})
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyModel, Side: ext.StatusLeft, Order: 10})
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyBg, Side: ext.StatusLeft, Order: 20})
+
+	// Right side
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyTokens, Side: ext.StatusRight, Order: 0})
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyCost, Side: ext.StatusRight, Order: 10})
 }
 
 func registerHelp(app *ext.App) {
@@ -142,6 +157,22 @@ func registerCompact(app *ext.App) {
 				return nil
 			}
 			before := len(msgs)
+
+			// Use registered compactor if available
+			if c := a.Compactor(); c != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				compacted, err := c.Compact(ctx, msgs)
+				if err != nil {
+					a.ShowMessage("Compact error: " + err.Error())
+					return nil
+				}
+				a.SetConversationMessages(compacted)
+				a.ShowMessage(fmt.Sprintf("Compacted: %d → %d messages", before, len(compacted)))
+				return nil
+			}
+
+			// Fallback: static summary
 			summary := fmt.Sprintf("[%d earlier messages compacted]", len(msgs)-7)
 			compacted := core.CompactMessages(msgs, summary)
 			a.SetConversationMessages(compacted)
@@ -482,6 +513,66 @@ func registerBgCancel(app *ext.App) {
 			}
 			a.CancelBackground()
 			a.ShowMessage("Background task cancelled")
+			return nil
+		},
+	})
+}
+
+func registerUndo(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "undo",
+		Description: "Restore files to pre-edit state",
+		Handler: func(args string, a *ext.App) error {
+			snapshots, err := tool.UndoSnapshots()
+			if err != nil || len(snapshots) == 0 {
+				a.ShowMessage("No undo snapshots available")
+				return nil
+			}
+
+			target := strings.TrimSpace(args)
+
+			// If a specific file is given, restore it directly
+			if target != "" {
+				for path, data := range snapshots {
+					if path == target || strings.HasSuffix(path, "/"+target) {
+						if err := os.WriteFile(path, data, 0644); err != nil {
+							a.ShowMessage("Undo failed: " + err.Error())
+							return nil
+						}
+						a.ShowMessage("Restored: " + path)
+						return nil
+					}
+				}
+				a.ShowMessage("No snapshot for: " + target)
+				return nil
+			}
+
+			// Show picker with all changed files
+			items := make([]ext.PickerItem, 0, len(snapshots))
+			for path, data := range snapshots {
+				items = append(items, ext.PickerItem{
+					ID:    path,
+					Label: filepath.Base(path),
+					Desc:  fmt.Sprintf("%s (%s)", path, tool.FormatSize(int64(len(data)))),
+				})
+			}
+			// Sort for deterministic order
+			slices.SortFunc(items, func(a, b ext.PickerItem) int {
+				return strings.Compare(a.ID, b.ID)
+			})
+
+			a.ShowPicker("Undo — select file to restore", items, func(selected ext.PickerItem) {
+				data, ok := snapshots[selected.ID]
+				if !ok {
+					a.ShowMessage("Snapshot expired")
+					return
+				}
+				if err := os.WriteFile(selected.ID, data, 0644); err != nil {
+					a.ShowMessage("Undo failed: " + err.Error())
+					return
+				}
+				a.ShowMessage("Restored: " + selected.ID)
+			})
 			return nil
 		},
 	})

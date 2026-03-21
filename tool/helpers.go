@@ -1,12 +1,16 @@
 package tool
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 )
 
@@ -150,10 +154,101 @@ func (w *boundedWriter) Len() int       { return w.buf.Len() }
 func (w *boundedWriter) Truncated() bool { return w.buf.Len() >= w.limit }
 
 // ---------------------------------------------------------------------------
+// Undo snapshots
+// ---------------------------------------------------------------------------
+
+// snapshotFile saves a copy of the file at path to the undo directory.
+// Uses ~/.config/piglet/undo/ with a hash of the file path as the filename.
+// Only the most recent snapshot per file is kept (overwritten on each write).
+// Errors are silently ignored — undo is best-effort.
+func snapshotFile(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // new file, nothing to snapshot
+	}
+
+	dir, err := undoDir()
+	if err != nil {
+		return
+	}
+
+	// Use sha256 of absolute path as filename to avoid path separator issues
+	h := sha256.Sum256([]byte(path))
+	name := hex.EncodeToString(h[:16]) // 32-char hex
+	snapPath := filepath.Join(dir, name+".snap")
+
+	// Skip if snapshot already exists with same content
+	existing, err := os.ReadFile(snapPath)
+	if err == nil && bytes.Equal(existing, data) {
+		return
+	}
+
+	// Write snapshot: <hash>.snap (content) + <hash>.path (original path)
+	_ = os.WriteFile(snapPath, data, 0600)
+	_ = os.WriteFile(filepath.Join(dir, name+".path"), []byte(path), 0600)
+}
+
+// undoDir returns ~/.config/piglet/undo/, creating it if needed.
+func undoDir() (string, error) {
+	cfgDir, err := config.ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(cfgDir, "undo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// UndoSnapshots returns all undo snapshots as path→content pairs.
+func UndoSnapshots() (map[string][]byte, error) {
+	dir, err := undoDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte)
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".path") {
+			continue
+		}
+		base := strings.TrimSuffix(e.Name(), ".path")
+		pathData, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		snapData, err := os.ReadFile(filepath.Join(dir, base+".snap"))
+		if err != nil {
+			continue
+		}
+		result[string(pathData)] = snapData
+	}
+	return result, nil
+}
+
+// ClearUndoSnapshots removes all undo snapshots.
+func ClearUndoSnapshots() {
+	dir, err := undoDir()
+	if err != nil {
+		return
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		os.Remove(filepath.Join(dir, e.Name()))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Display formatting
 // ---------------------------------------------------------------------------
 
-func formatSize(bytes int64) string {
+func FormatSize(bytes int64) string {
 	switch {
 	case bytes >= 1<<30:
 		return fmt.Sprintf("%.1fG", float64(bytes)/(1<<30))

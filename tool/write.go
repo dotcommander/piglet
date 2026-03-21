@@ -35,6 +35,9 @@ func writeTool(app *ext.App) *ext.ToolDef {
 				return textResult(fmt.Sprintf("error creating directory: %v", err)), nil
 			}
 
+			// Snapshot for undo
+			snapshotFile(path)
+
 			if err := atomicWrite(path, []byte(content)); err != nil {
 				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
 			}

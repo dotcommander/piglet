@@ -50,6 +50,9 @@ func editTool(app *ext.App) *ext.ToolDef {
 
 			updated := strings.Replace(content, oldText, newText, 1)
 
+			// Snapshot for undo
+			snapshotFile(path)
+
 			if err := atomicWrite(path, []byte(updated)); err != nil {
 				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
 			}
