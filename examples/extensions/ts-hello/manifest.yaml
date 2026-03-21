@@ -1,0 +1,7 @@
+name: hello
+version: 0.1.0
+runtime: bun
+entry: index.ts
+capabilities:
+  - tools
+  - commands
