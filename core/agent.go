@@ -223,6 +223,20 @@ func (a *Agent) IsRunning() bool {
 	return a.running
 }
 
+// System returns the current system prompt.
+func (a *Agent) System() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.cfg.System
+}
+
+// Provider returns the current streaming provider.
+func (a *Agent) Provider() StreamProvider {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.cfg.Provider
+}
+
 // ---------------------------------------------------------------------------
 // Internal: main loop
 // ---------------------------------------------------------------------------
