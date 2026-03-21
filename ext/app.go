@@ -16,11 +16,12 @@ import (
 //
 // CAPABILITY GATE — before adding a new callback or field to App, answer:
 //
-//  1. Can this be a Tool?        → RegisterTool (agent-callable action)
-//  2. Can this be a Command?     → RegisterCommand (user-invoked /slash)
-//  3. Can this be a Shortcut?    → RegisterShortcut (keyboard binding)
+//  1. Can this be a Tool?         → RegisterTool (agent-callable action)
+//  2. Can this be a Command?      → RegisterCommand (user-invoked /slash)
+//  3. Can this be a Shortcut?     → RegisterShortcut (keyboard binding)
 //  4. Can this be a PromptSection? → RegisterPromptSection (system prompt injection)
-//  5. Can this be an Interceptor? → RegisterInterceptor (before/after tool hook)
+//  5. Can this be an Interceptor?  → RegisterInterceptor (before/after tool hook)
+//  6. Can this be a MessageHook?   → RegisterMessageHook (before user message reaches LLM)
 //
 // Only add a new BindOption/callback when NONE of the above apply — typically
 // for TUI-specific lifecycle that extensions cannot express through existing
@@ -35,6 +36,7 @@ type App struct {
 	commands       map[string]*Command
 	shortcuts      map[string]*Shortcut
 	interceptors   []Interceptor
+	messageHooks   []MessageHook
 	renderers      map[string]Renderer
 	providers      map[string]*ProviderConfig
 	promptSections []PromptSection
@@ -64,11 +66,14 @@ type AgentAPI interface {
 	SetTools(tools []core.Tool)
 	SetModel(m core.Model)
 	SetProvider(p core.StreamProvider)
+	SetTurnContext(ctx []string)
 	Messages() []core.Message
 	IsRunning() bool
 	StepMode() bool
 	SetStepMode(on bool)
 	SetMessages(msgs []core.Message)
+	Provider() core.StreamProvider
+	System() string
 }
 
 // NewApp creates an extension App for the given working directory.
@@ -116,6 +121,41 @@ func (a *App) RegisterInterceptor(i Interceptor) {
 	sort.Slice(a.interceptors, func(x, y int) bool {
 		return a.interceptors[x].Priority > a.interceptors[y].Priority
 	})
+}
+
+// RegisterMessageHook adds a hook that runs before user messages reach the LLM.
+// Sorted by priority ascending (lower = earlier).
+func (a *App) RegisterMessageHook(h MessageHook) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messageHooks = append(a.messageHooks, h)
+	sort.Slice(a.messageHooks, func(i, j int) bool {
+		return a.messageHooks[i].Priority < a.messageHooks[j].Priority
+	})
+}
+
+// RunMessageHooks executes all message hooks in priority order.
+// Returns collected non-empty context strings for ephemeral injection.
+func (a *App) RunMessageHooks(ctx context.Context, msg string) ([]string, error) {
+	a.mu.RLock()
+	hooks := make([]MessageHook, len(a.messageHooks))
+	copy(hooks, a.messageHooks)
+	a.mu.RUnlock()
+
+	var injections []string
+	for _, h := range hooks {
+		if h.OnMessage == nil {
+			continue
+		}
+		extra, err := h.OnMessage(ctx, msg)
+		if err != nil {
+			return nil, fmt.Errorf("message hook %s: %w", h.Name, err)
+		}
+		if extra != "" {
+			injections = append(injections, extra)
+		}
+	}
+	return injections, nil
 }
 
 // RegisterRenderer adds a custom message type renderer.
@@ -549,6 +589,40 @@ func (a *App) SyncModels() (int, error) {
 		return 0, fmt.Errorf("model manager not configured")
 	}
 	return mm.Sync()
+}
+
+// ResolveModel returns a model and configured provider for the given model ID
+// without switching the main agent. Used by sub-agents to run on different models.
+func (a *App) ResolveModel(id string) (core.Model, core.StreamProvider, error) {
+	a.mu.RLock()
+	mm := a.models
+	a.mu.RUnlock()
+	if mm == nil {
+		return core.Model{}, nil, fmt.Errorf("model manager not configured")
+	}
+	return mm.Switch(id)
+}
+
+// Provider returns the current agent's streaming provider.
+func (a *App) Provider() core.StreamProvider {
+	a.mu.RLock()
+	agent := a.agent
+	a.mu.RUnlock()
+	if agent == nil {
+		return nil
+	}
+	return agent.Provider()
+}
+
+// SystemPrompt returns the current agent's system prompt.
+func (a *App) SystemPrompt() string {
+	a.mu.RLock()
+	agent := a.agent
+	a.mu.RUnlock()
+	if agent == nil {
+		return ""
+	}
+	return agent.System()
 }
 
 // RunBackground starts a background agent with the given prompt.

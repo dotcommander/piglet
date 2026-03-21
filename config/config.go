@@ -27,6 +27,7 @@ type Settings struct {
 	RTK             *bool             `yaml:"rtk,omitempty"`         // nil = auto-detect; true/false = explicit
 	Debug           bool              `yaml:"debug,omitempty"`       // log all request/response payloads
 	Safeguard       *bool             `yaml:"safeguard,omitempty"`   // nil/true = enabled; false = disabled
+	SubAgent        SubAgentSettings  `yaml:"subagent,omitempty"`
 }
 
 // ProjectDoc maps a filename to a prompt section title.
@@ -76,6 +77,11 @@ type BashSettings struct {
 	MaxTimeout     int `yaml:"maxTimeout,omitempty"`     // seconds, default 300
 	MaxStdout      int `yaml:"maxStdout,omitempty"`      // bytes, default 100000
 	MaxStderr      int `yaml:"maxStderr,omitempty"`      // bytes, default 50000
+}
+
+// SubAgentSettings controls the dispatch tool's sub-agent defaults.
+type SubAgentSettings struct {
+	MaxTurns int `yaml:"maxTurns,omitempty"` // default 10
 }
 
 // ConfigDir returns ~/.config/piglet/, respecting XDG_CONFIG_HOME.
