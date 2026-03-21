@@ -25,6 +25,8 @@ type Settings struct {
 	PromptOrder     map[string]int    `yaml:"promptOrder,omitempty"` // section title → order override
 	ProjectDocs     []ProjectDoc      `yaml:"projectDocs,omitempty"` // files to auto-read for context
 	RTK             *bool             `yaml:"rtk,omitempty"`         // nil = auto-detect; true/false = explicit
+	Debug           bool              `yaml:"debug,omitempty"`       // log all request/response payloads
+	Safeguard       *bool             `yaml:"safeguard,omitempty"`   // nil/true = enabled; false = disabled
 }
 
 // ProjectDoc maps a filename to a prompt section title.

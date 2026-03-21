@@ -20,15 +20,11 @@ func registerPromptSection(app *ext.App, store *Store) {
 func buildMemoryPrompt(store *Store) string {
 	var b strings.Builder
 
-	b.WriteString("You have persistent project memory that survives across sessions. USE IT PROACTIVELY:\n")
-	b.WriteString("- When the user tells you something important about the project, their preferences, or asks you to remember something → call memory_set immediately\n")
-	b.WriteString("- When you discover project patterns, conventions, or key facts → call memory_set\n")
-	b.WriteString("- When you need context from previous sessions → call memory_list or memory_get\n")
-	b.WriteString("- Memory persists to disk — anything saved here will be available in future sessions\n\n")
+	b.WriteString("Tools: memory_set (save), memory_get (retrieve by key), memory_list (browse all)\n\n")
 
 	facts := store.List("")
 	if len(facts) == 0 {
-		b.WriteString("No memories stored yet. Start saving important facts!")
+		b.WriteString("No memories stored yet.")
 		return b.String()
 	}
 

@@ -622,6 +622,13 @@ func registerConfig(app *ext.App) {
 				} else {
 					b.WriteString("(not created — run /config --setup)\n")
 				}
+				behaviorPath := filepath.Join(dir, "behavior.md")
+				b.WriteString("  behavior.md:  ")
+				if _, err := os.Stat(behaviorPath); err == nil {
+					b.WriteString(behaviorPath + "\n")
+				} else {
+					b.WriteString("(not created)\n")
+				}
 				b.WriteString("  auth.json:    ")
 				if _, err := os.Stat(authPath); err == nil {
 					b.WriteString(authPath + "\n")
@@ -650,6 +657,8 @@ defaultModel: gpt-5.1
 
 # System prompt override (or use ~/.config/piglet/prompt.md)
 # systemPrompt: "You are piglet, a helpful coding assistant."
+#
+# Behavioral guidelines: ~/.config/piglet/behavior.md
 
 # Shell path (default: $SHELL or /bin/sh)
 # shellPath: /bin/zsh

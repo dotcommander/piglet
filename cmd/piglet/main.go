@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"maps"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -20,6 +22,7 @@ import (
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/rtk"
+	"github.com/dotcommander/piglet/safeguard"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 	"github.com/dotcommander/piglet/tui"
@@ -34,19 +37,25 @@ func main() {
 
 func run() error {
 	// Handle flags before anything else
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
+	var debug bool
+	var promptArgs []string
+	for _, arg := range os.Args[1:] {
+		switch arg {
 		case "--help", "-h":
 			printHelp()
 			return nil
 		case "--version", "-v":
 			fmt.Println("piglet dev")
 			return nil
+		case "--debug":
+			debug = true
+		default:
+			promptArgs = append(promptArgs, arg)
 		}
 	}
 
 	// Determine prompt: args after flags or stdin
-	userPrompt := strings.Join(os.Args[1:], " ")
+	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
 
 	// Load config
@@ -85,6 +94,19 @@ func run() error {
 		return fmt.Errorf("create provider: %w", err)
 	}
 
+	// Debug logging (--debug flag or debug: true in config)
+	if debug || settings.Debug {
+		logger, cleanup, err := openDebugLog()
+		if err != nil {
+			return fmt.Errorf("debug log: %w", err)
+		}
+		defer cleanup()
+		if d, ok := prov.(provider.Debuggable); ok {
+			d.SetLogger(logger)
+		}
+		logger.Info("session start", "model", model.ID, "provider", model.Provider)
+	}
+
 	// Working directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -117,8 +139,14 @@ func run() error {
 	// Project memory (tools, /memory command, prompt section)
 	memory.Register(app)
 
+	// Core behavioral guidelines (tool usage, output style, safety)
+	prompt.RegisterBehavior(app)
+
 	// Project docs (configurable context files → system prompt)
 	prompt.RegisterProjectDocs(app, settings.ProjectDocs)
+
+	// Safeguard: block dangerous bash commands (enabled by default)
+	safeguard.Register(app, settings.Safeguard)
 
 	// RTK token optimization (auto-detects rtk in PATH)
 	rtk.Register(app, settings.RTK)
@@ -140,11 +168,8 @@ func run() error {
 	// Self-knowledge (dynamic tools/commands/shortcuts listing)
 	prompt.RegisterSelfKnowledge(app)
 
-	// System prompt: config.yaml systemPrompt → fallback default
+	// System prompt: config.yaml systemPrompt or prompt.md (no hardcoded fallback)
 	basePrompt := settings.SystemPrompt
-	if basePrompt == "" {
-		basePrompt = "You are piglet, a helpful coding assistant."
-	}
 	system := prompt.Build(app, basePrompt, prompt.BuildOptions{
 		OrderOverrides: settings.PromptOrder,
 	})
@@ -274,6 +299,21 @@ func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
 	return agentErr
 }
 
+func openDebugLog() (*slog.Logger, func(), error) {
+	dir, err := config.ConfigDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	path := filepath.Join(dir, "debug.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return nil, nil, err
+	}
+	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	fmt.Fprintf(os.Stderr, "debug: logging to %s\n", path)
+	return logger, func() { f.Close() }, nil
+}
+
 func printHelp() {
 	fmt.Print(`piglet — minimalist coding assistant
 
@@ -282,6 +322,7 @@ Usage:
   piglet <prompt>         Single-shot mode (prints response and exits)
   piglet --help           Show this help
   piglet --version        Show version
+  piglet --debug          Log all request/response payloads
 
 Interactive commands:
   /help                   List all commands
@@ -298,6 +339,9 @@ Config:
   ~/.config/piglet/auth.json      API keys
   ~/.config/piglet/prompt.md      System prompt
   ~/.config/piglet/models.yaml    Model catalog
+
+Debug:
+  ~/.config/piglet/debug.log      Payload log (--debug or debug: true)
 
 Environment:
   PIGLET_DEFAULT_MODEL    Override default model
