@@ -20,38 +20,61 @@ import (
 	"github.com/dotcommander/piglet/session"
 )
 
+// Default keyboard shortcut bindings.
+const (
+	shortcutModel   = "model"
+	shortcutSession = "session"
+	keyModel        = "ctrl+p"
+	keySession      = "ctrl+s"
+)
+
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
-func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registry *provider.Registry, auth *config.Auth) {
+func RegisterBuiltins(app *ext.App, models []core.Model, sessDir string, registry *provider.Registry, auth *config.Auth, settings *config.Settings) {
 	registerHelp(app)
 	registerClear(app)
 	registerStep(app)
-	registerCompact(app)
+	registerCompact(app, settings)
 	registerExport(app)
 	registerExtensions(app)
 	registerExtInit(app)
 	registerModel(app, models, registry, auth)
 	registerSession(app, sessDir)
 	registerModelsSync(app, registry, auth)
+	registerBranch(app)
+	registerBg(app)
+	registerBgCancel(app)
+	registerSearch(app, sessDir)
+	registerTitle(app)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
+	shortcuts := map[string]string{
+		shortcutModel:   keyModel,
+		shortcutSession: keySession,
+	}
+	if settings != nil {
+		for action, key := range settings.Shortcuts {
+			shortcuts[action] = key
+		}
+	}
+
 	app.RegisterShortcut(&ext.Shortcut{
-		Key:         "ctrl+p",
+		Key:         shortcuts[shortcutModel],
 		Description: "Open model selector",
 		Handler: func(a *ext.App) error {
 			cmds := a.Commands()
-			if cmd, ok := cmds["model"]; ok {
+			if cmd, ok := cmds[shortcutModel]; ok {
 				return cmd.Handler("", a)
 			}
 			return nil
 		},
 	})
 	app.RegisterShortcut(&ext.Shortcut{
-		Key:         "ctrl+s",
+		Key:         shortcuts[shortcutSession],
 		Description: "Open session picker",
 		Handler: func(a *ext.App) error {
 			cmds := a.Commands()
-			if cmd, ok := cmds["session"]; ok {
+			if cmd, ok := cmds[shortcutSession]; ok {
 				return cmd.Handler("", a)
 			}
 			return nil
@@ -77,8 +100,8 @@ func registerHelp(app *ext.App) {
 
 			b.WriteString("\nShortcuts:\n")
 			b.WriteString("  ctrl+c    — stop agent / quit\n")
-			b.WriteString("  ctrl+p    — model selector\n")
-			b.WriteString("  ctrl+s    — session picker\n")
+			b.WriteString(fmt.Sprintf("  %-10s — model selector\n", keyModel))
+			b.WriteString(fmt.Sprintf("  %-10s — session picker\n", keySession))
 			b.WriteString("\nExtensions: /extensions to see loaded extensions\n")
 
 			a.ShowMessage(b.String())
@@ -114,7 +137,11 @@ func registerStep(app *ext.App) {
 	})
 }
 
-func registerCompact(app *ext.App) {
+func registerCompact(app *ext.App, settings *config.Settings) {
+	keepRecent := 6
+	if settings != nil {
+		keepRecent = config.IntOr(settings.Agent.CompactKeepRecent, 6)
+	}
 	app.RegisterCommand(&ext.Command{
 		Name:        "compact",
 		Description: "Compact conversation history",
@@ -125,7 +152,7 @@ func registerCompact(app *ext.App) {
 				return nil
 			}
 			before := len(msgs)
-			compacted := session.Compact(msgs, session.CompactOptions{KeepRecent: 6})
+			compacted := session.Compact(msgs, session.CompactOptions{KeepRecent: keepRecent})
 			a.SetConversationMessages(compacted)
 			a.ShowMessage(fmt.Sprintf("Compacted: %d → %d messages", before, len(compacted)))
 			return nil
@@ -205,28 +232,15 @@ func registerSession(app *ext.App, sessDir string) {
 				a.ShowMessage("No sessions found")
 				return nil
 			}
-			items := make([]ext.PickerItem, len(summaries))
-			for i, s := range summaries {
-				label := s.Title
-				if label == "" {
-					label = s.ID[:8]
-				}
-				items[i] = ext.PickerItem{
-					ID:    s.Path,
-					Label: label,
-					Desc:  s.CreatedAt.Format("2006-01-02 15:04"),
-				}
-			}
+			items := sessionPickerItems(summaries)
 			a.ShowPicker("Select Session", items, func(selected ext.PickerItem) {
 				sess, err := session.Open(selected.ID)
 				if err != nil {
 					a.ShowMessage("Failed to open session: " + err.Error())
 					return
 				}
-				msgs := sess.Messages()
-				a.SetConversationMessages(msgs)
+				a.SwapSession(sess)
 				a.ShowMessage("Loaded session: " + selected.Label)
-				// Note: session file handle management is handled by the TUI
 			})
 			return nil
 		},
@@ -362,6 +376,22 @@ piglet.registerCommand({
 	})
 }
 
+func registerBranch(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "branch",
+		Description: "Fork conversation into a new session",
+		Handler: func(args string, a *ext.App) error {
+			parentID, count, err := a.ForkSession()
+			if err != nil {
+				a.ShowMessage("Branch failed: " + err.Error())
+				return nil
+			}
+			a.ShowMessage(fmt.Sprintf("Branched from %s (%d messages)", parentID, count))
+			return nil
+		},
+	})
+}
+
 func registerQuit(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "quit",
@@ -371,6 +401,137 @@ func registerQuit(app *ext.App) {
 			return nil
 		},
 	})
+}
+
+func registerSearch(app *ext.App, sessDir string) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "search",
+		Description: "Search sessions by title or directory",
+		Handler: func(args string, a *ext.App) error {
+			query := strings.TrimSpace(args)
+			if query == "" {
+				a.ShowMessage("Usage: /search <query>")
+				return nil
+			}
+			if sessDir == "" {
+				a.ShowMessage("Sessions not configured")
+				return nil
+			}
+			summaries, err := session.List(sessDir)
+			if err != nil || len(summaries) == 0 {
+				a.ShowMessage("No sessions found")
+				return nil
+			}
+
+			q := strings.ToLower(query)
+			var matched []session.Summary
+			for _, s := range summaries {
+				if strings.Contains(strings.ToLower(s.Title), q) || strings.Contains(strings.ToLower(s.CWD), q) {
+					matched = append(matched, s)
+				}
+			}
+			items := sessionPickerItems(matched)
+
+			if len(items) == 0 {
+				a.ShowMessage("No sessions matching: " + query)
+				return nil
+			}
+
+			a.ShowPicker(fmt.Sprintf("Search: %s (%d results)", query, len(items)), items, func(selected ext.PickerItem) {
+				sess, err := session.Open(selected.ID)
+				if err != nil {
+					a.ShowMessage("Failed to open session: " + err.Error())
+					return
+				}
+				a.SwapSession(sess)
+				a.ShowMessage("Loaded session: " + selected.Label)
+			})
+			return nil
+		},
+	})
+}
+
+func registerTitle(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "title",
+		Description: "Set session title",
+		Handler: func(args string, a *ext.App) error {
+			title := strings.TrimSpace(args)
+			if title == "" {
+				a.ShowMessage("Usage: /title <title>")
+				return nil
+			}
+			if err := a.SetSessionTitle(title); err != nil {
+				a.ShowMessage("Failed to set title: " + err.Error())
+				return nil
+			}
+			a.ShowMessage("Session title: " + title)
+			return nil
+		},
+	})
+}
+
+func registerBg(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "bg",
+		Description: "Run a read-only background task",
+		Handler: func(args string, a *ext.App) error {
+			prompt := strings.TrimSpace(args)
+			if prompt == "" {
+				a.ShowMessage("Usage: /bg <prompt>\nRuns a read-only background agent (max 5 turns).")
+				return nil
+			}
+			if err := a.RunBackground(prompt); err != nil {
+				a.ShowMessage("Background task failed: " + err.Error())
+				return nil
+			}
+			a.ShowMessage("Background task started: " + prompt)
+			return nil
+		},
+	})
+}
+
+func registerBgCancel(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "bg-cancel",
+		Description: "Cancel running background task",
+		Handler: func(args string, a *ext.App) error {
+			if !a.IsBackgroundRunning() {
+				a.ShowMessage("No background task running")
+				return nil
+			}
+			a.CancelBackground()
+			a.ShowMessage("Background task cancelled")
+			return nil
+		},
+	})
+}
+
+func sessionPickerItems(summaries []session.Summary) []ext.PickerItem {
+	items := make([]ext.PickerItem, len(summaries))
+	for i, s := range summaries {
+		label := s.Title
+		if label == "" {
+			label = s.ID[:8]
+		}
+		desc := s.CreatedAt.Format("2006-01-02 15:04")
+		if s.CWD != "" {
+			desc += " — " + s.CWD
+		}
+		if s.ParentID != "" {
+			parentShort := s.ParentID
+			if len(parentShort) > 8 {
+				parentShort = parentShort[:8]
+			}
+			desc += " (forked from " + parentShort + ")"
+		}
+		items[i] = ext.PickerItem{
+			ID:    s.Path,
+			Label: label,
+			Desc:  desc,
+		}
+	}
+	return items
 }
 
 func exportMarkdown(messages []core.Message, path string) error {
