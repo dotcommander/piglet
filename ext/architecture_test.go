@@ -37,6 +37,10 @@ var forbiddenImports = map[string][]string{
 		"github.com/dotcommander/piglet/session",
 		"github.com/dotcommander/piglet/provider",
 		"github.com/dotcommander/piglet/config",
+		"github.com/dotcommander/piglet/skill",
+		"github.com/dotcommander/piglet/safeguard",
+		"github.com/dotcommander/piglet/rtk",
+		"github.com/dotcommander/piglet/subagent",
 	},
 	// ext/ must never import extension implementations or UI
 	"github.com/dotcommander/piglet/ext": {
@@ -47,6 +51,10 @@ var forbiddenImports = map[string][]string{
 		"github.com/dotcommander/piglet/tui",
 		"github.com/dotcommander/piglet/session",
 		"github.com/dotcommander/piglet/provider",
+		"github.com/dotcommander/piglet/skill",
+		"github.com/dotcommander/piglet/safeguard",
+		"github.com/dotcommander/piglet/rtk",
+		"github.com/dotcommander/piglet/subagent",
 	},
 }
 

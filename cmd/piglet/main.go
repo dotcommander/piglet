@@ -23,6 +23,8 @@ import (
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/rtk"
 	"github.com/dotcommander/piglet/safeguard"
+	"github.com/dotcommander/piglet/skill"
+	"github.com/dotcommander/piglet/subagent"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 	"github.com/dotcommander/piglet/tui"
@@ -151,6 +153,14 @@ func run() error {
 	// RTK token optimization (auto-detects rtk in PATH)
 	rtk.Register(app, settings.RTK)
 
+	// Skills: on-demand methodology loading from ~/.config/piglet/skills/
+	skill.Register(app)
+
+	// Sub-agent delegation (dispatch tool)
+	subagent.Register(app, subagent.Config{
+		MaxTurns: config.IntOr(settings.SubAgent.MaxTurns, 10),
+	})
+
 	// Git context (diff + recent commits in system prompt)
 	prompt.RegisterGitContext(app, prompt.GitContextConfig{
 		MaxDiffStatFiles: settings.Git.MaxDiffStatFiles,
@@ -234,12 +244,17 @@ func run() error {
 		})
 	}
 
-	return runPrint(ag, sess, userPrompt)
+	return runPrint(ag, app, sess, userPrompt)
 }
 
-func runPrint(ag *core.Agent, sess *session.Session, userPrompt string) error {
+func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	// Run message hooks for ephemeral turn context
+	if injections, err := app.RunMessageHooks(ctx, userPrompt); err == nil && len(injections) > 0 {
+		ag.SetTurnContext(injections)
+	}
 
 	// Persist user message first
 	if sess != nil {
