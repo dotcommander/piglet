@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -288,7 +289,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	}
 
 	// Start agent
-	ch := m.cfg.Agent.Start(nil, text)
+	ch := m.cfg.Agent.Start(context.Background(), text)
 	m.eventCh = ch
 	m.streaming = true
 

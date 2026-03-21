@@ -69,6 +69,11 @@ func (m *InputModel) Reset() { m.textarea.Reset() }
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		// Filter out terminal response sequences that leak through as key events.
+		// These contain raw escape codes (OSC, CSI) that shouldn't reach the textarea.
+		if msg.Text != "" && strings.ContainsAny(msg.Text, "\x1b\x9c") {
+			return m, nil
+		}
 		switch {
 		case msg.Code == tea.KeyTab:
 			if m.showing && len(m.suggestions) > 0 {
