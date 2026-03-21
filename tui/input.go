@@ -69,12 +69,6 @@ func (m *InputModel) Reset() { m.textarea.Reset() }
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		// Filter terminal response sequences (OSC, CSI) that leak as key events.
-		// These are multi-char sequences like "\x1b]11;rgb:..." or "\x1b[?2026;2$y".
-		// Normal keys have Text of length 0-1; escape sequences are longer.
-		if len(msg.Text) > 1 && (strings.HasPrefix(msg.Text, "\x1b[") || strings.HasPrefix(msg.Text, "\x1b]") || strings.HasPrefix(msg.Text, "\x9c")) {
-			return m, nil
-		}
 		switch {
 		case msg.Code == tea.KeyTab:
 			if m.showing && len(m.suggestions) > 0 {

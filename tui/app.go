@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/session"
@@ -209,9 +210,27 @@ func (m Model) View() tea.View {
 // Run starts the TUI.
 func Run(cfg Config) error {
 	m := New(cfg)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithFilter(filterTerminalResponses))
 	_, err := p.Run()
 	return err
+}
+
+// filterTerminalResponses drops unknown terminal response sequences
+// (OSC, CSI, DCS, etc.) that bubbletea's ultraviolet parser doesn't
+// recognize. Without this, they leak through as raw events.
+func filterTerminalResponses(_ tea.Model, msg tea.Msg) tea.Msg {
+	switch msg.(type) {
+	case uv.UnknownEvent,
+		uv.UnknownCsiEvent,
+		uv.UnknownOscEvent,
+		uv.UnknownSs3Event,
+		uv.UnknownDcsEvent,
+		uv.UnknownSosEvent,
+		uv.UnknownPmEvent,
+		uv.UnknownApcEvent:
+		return nil
+	}
+	return msg
 }
 
 // ---------------------------------------------------------------------------
