@@ -31,6 +31,8 @@ type Meta struct {
 	Model     string    `json:"model,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	Title     string    `json:"title,omitempty"`
+	ParentID  string    `json:"parentId,omitzero"`
+	ForkPoint int       `json:"forkPoint,omitzero"`
 }
 
 // Summary is returned by List.
@@ -42,6 +44,7 @@ type Summary struct {
 	CWD       string    `json:"cwd"`
 	CreatedAt time.Time `json:"createdAt"`
 	Messages  int       `json:"messages"`
+	ParentID  string    `json:"parentId,omitzero"`
 }
 
 // Session manages a single conversation.
@@ -211,15 +214,27 @@ func (s *Session) Fork(keepMessages int) (*Session, error) {
 	meta := s.meta
 	s.mu.Unlock()
 
+	limit := len(msgs)
+	if keepMessages > 0 && keepMessages < limit {
+		limit = keepMessages
+	}
+
 	newSess, err := New(s.dir, meta.CWD)
 	if err != nil {
 		return nil, err
 	}
-	newSess.meta.Model = meta.Model
 
-	limit := len(msgs)
-	if keepMessages > 0 && keepMessages < limit {
-		limit = keepMessages
+	// Set branch metadata and rewrite the initial meta entry so there's only one.
+	newSess.meta.Model = meta.Model
+	newSess.meta.ParentID = meta.ID
+	newSess.meta.ForkPoint = limit
+	if err := newSess.appendEntry(Entry{
+		Type:      "meta",
+		Timestamp: time.Now(),
+		Data:      mustJSON(newSess.meta),
+	}); err != nil {
+		newSess.Close()
+		return nil, fmt.Errorf("fork: write metadata: %w", err)
 	}
 
 	for _, msg := range msgs[:limit] {
@@ -287,6 +302,7 @@ func scanSummary(path string) Summary {
 				s.Model = meta.Model
 				s.CWD = meta.CWD
 				s.CreatedAt = meta.CreatedAt
+				s.ParentID = meta.ParentID
 			}
 		} else {
 			s.Messages++

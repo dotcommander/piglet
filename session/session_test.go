@@ -136,6 +136,113 @@ func TestFork(t *testing.T) {
 	assert.Equal(t, "c", msgs[2].(*core.UserMessage).Content)
 }
 
+func TestForkMetadata(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	for i := range 5 {
+		require.NoError(t, s.Append(&core.UserMessage{Content: string(rune('a' + i)), Timestamp: time.Now()}))
+	}
+
+	forked, err := s.Fork(3)
+	require.NoError(t, err)
+	defer forked.Close()
+	defer s.Close()
+
+	// Verify branch metadata
+	assert.Equal(t, s.ID(), forked.Meta().ParentID, "forked session should reference parent ID")
+	assert.Equal(t, 3, forked.Meta().ForkPoint, "fork point should match keepMessages")
+
+	// Verify parent has no branch metadata
+	assert.Empty(t, s.Meta().ParentID)
+	assert.Zero(t, s.Meta().ForkPoint)
+}
+
+func TestForkMetadataPersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+
+	forked, err := s.Fork(1)
+	require.NoError(t, err)
+	forkedPath := forked.Path()
+	parentID := s.ID()
+	require.NoError(t, forked.Close())
+	require.NoError(t, s.Close())
+
+	// Reload forked session — metadata should survive
+	reloaded, err := session.Open(forkedPath)
+	require.NoError(t, err)
+	defer reloaded.Close()
+
+	assert.Equal(t, parentID, reloaded.Meta().ParentID)
+	assert.Equal(t, 1, reloaded.Meta().ForkPoint)
+}
+
+func TestForkIndependentHistories(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	require.NoError(t, s.Append(&core.UserMessage{Content: "shared", Timestamp: time.Now()}))
+
+	forked, err := s.Fork(1)
+	require.NoError(t, err)
+
+	// Append different messages to each
+	require.NoError(t, s.Append(&core.UserMessage{Content: "parent-only", Timestamp: time.Now()}))
+	require.NoError(t, forked.Append(&core.UserMessage{Content: "fork-only", Timestamp: time.Now()}))
+
+	defer s.Close()
+	defer forked.Close()
+
+	parentMsgs := s.Messages()
+	forkMsgs := forked.Messages()
+
+	require.Len(t, parentMsgs, 2)
+	require.Len(t, forkMsgs, 2)
+
+	assert.Equal(t, "shared", parentMsgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "parent-only", parentMsgs[1].(*core.UserMessage).Content)
+	assert.Equal(t, "shared", forkMsgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "fork-only", forkMsgs[1].(*core.UserMessage).Content)
+}
+
+func TestListShowsParentID(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	require.NoError(t, s.Append(&core.UserMessage{Content: "msg", Timestamp: time.Now()}))
+
+	forked, err := s.Fork(1)
+	require.NoError(t, err)
+	require.NoError(t, forked.Close())
+	require.NoError(t, s.Close())
+
+	summaries, err := session.List(dir)
+	require.NoError(t, err)
+	require.Len(t, summaries, 2)
+
+	// Find the forked session in summaries
+	var found bool
+	for _, sum := range summaries {
+		if sum.ParentID != "" {
+			assert.Equal(t, s.ID(), sum.ParentID)
+			found = true
+		}
+	}
+	assert.True(t, found, "should find a forked session with ParentID")
+}
+
 func TestForkAll(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
