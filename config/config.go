@@ -32,6 +32,7 @@ type AgentSettings struct {
 	AutoTitle         *bool `yaml:"autoTitle,omitempty"`          // default true; pointer distinguishes false from unset
 	CompactKeepRecent int   `yaml:"compactKeepRecent,omitempty"` // default 6
 	CompactAt         int   `yaml:"compactAt,omitempty"`         // token threshold for auto-compact; 0 = disabled
+	MaxMessages       int   `yaml:"maxMessages,omitempty"`       // hard cap on messages; 0 = unlimited
 }
 
 // AutoTitleEnabled returns whether auto-title generation is on (default true).

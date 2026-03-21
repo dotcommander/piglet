@@ -33,7 +33,8 @@ type AgentConfig struct {
 	Tools    []Tool
 	Options  StreamOptions
 
-	MaxTurns int // 0 = unlimited
+	MaxTurns    int // 0 = unlimited
+	MaxMessages int // hard cap on message count; 0 = unlimited
 
 	// OnCompact is called when token usage exceeds CompactAt.
 	// It receives the current messages and should return a summary string.
@@ -339,6 +340,11 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 
 		a.emit(EventTurnEnd{Assistant: assistant, ToolResults: toolResults})
 
+		// Hard message cap — truncate oldest if over limit
+		if a.cfg.MaxMessages > 0 {
+			a.enforceMessageCap()
+		}
+
 		// Auto-compact if token usage exceeds threshold
 		if a.cfg.CompactAt > 0 && a.cfg.OnCompact != nil {
 			a.maybeCompact()
@@ -421,6 +427,23 @@ func (a *Agent) maybeCompact() {
 	a.mu.Unlock()
 
 	a.emit(EventCompact{Before: len(msgs), After: len(a.messages), TokensAtCompact: total})
+}
+
+// enforceMessageCap drops oldest messages (keeping the first) when over MaxMessages.
+func (a *Agent) enforceMessageCap() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	cap := a.cfg.MaxMessages
+	if len(a.messages) <= cap {
+		return
+	}
+
+	// Keep first message + last (cap-1) messages
+	trimmed := make([]Message, 0, cap)
+	trimmed = append(trimmed, a.messages[0])
+	trimmed = append(trimmed, a.messages[len(a.messages)-cap+1:]...)
+	a.messages = trimmed
 }
 
 // CompactMessages keeps first message + summary + last keepRecent messages.

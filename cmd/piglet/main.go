@@ -130,12 +130,13 @@ func run() error {
 	coreTools := app.CoreTools()
 	compactAt := config.IntOr(settings.Agent.CompactAt, 0)
 	ag := core.NewAgent(core.AgentConfig{
-		Provider:  prov,
-		System:    system,
-		Tools:     coreTools,
-		MaxTurns:  config.IntOr(settings.Agent.MaxTurns, 10),
-		CompactAt: compactAt,
-		OnCompact: makeCompactor(prov),
+		Provider:    prov,
+		System:      system,
+		Tools:       coreTools,
+		MaxTurns:    config.IntOr(settings.Agent.MaxTurns, 10),
+		MaxMessages: config.IntOr(settings.Agent.MaxMessages, 200),
+		CompactAt:   compactAt,
+		OnCompact:   makeCompactor(prov),
 	})
 
 	// Bind domain managers so commands work through ext.App

@@ -124,7 +124,7 @@ func (a *Agent) executeOneToolWorker(
 
 	a.emit(EventToolStart{ToolCallID: tc.ID, ToolName: tc.Name, Args: tc.Arguments})
 
-	result, err := tool.Execute(ctx, tc.ID, tc.Arguments)
+	result, err := safeExecute(ctx, tool, tc)
 
 	if err != nil {
 		r := errorResult(tc, err.Error())
@@ -145,6 +145,17 @@ func (a *Agent) executeOneToolWorker(
 	steer := a.dequeueSteer()
 
 	resultCh <- toolExecResult{index: idx, result: tr, steer: steer}
+}
+
+// safeExecute wraps tool execution with panic recovery so one bad tool
+// doesn't crash the agent.
+func safeExecute(ctx context.Context, tool *Tool, tc ToolCall) (result *ToolResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tool %s panicked: %v", tc.Name, r)
+		}
+	}()
+	return tool.Execute(ctx, tc.ID, tc.Arguments)
 }
 
 func extractToolCalls(msg *AssistantMessage) []ToolCall {

@@ -521,6 +521,77 @@ func TestNewAgentDefaults(t *testing.T) {
 	assert.Empty(t, ag.Messages())
 }
 
+func TestAgentPanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	panicTool := core.Tool{
+		ToolSchema: core.ToolSchema{
+			Name:        "boom",
+			Description: "Panics",
+			Parameters:  map[string]any{"type": "object"},
+		},
+		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
+			panic("kaboom")
+		},
+	}
+
+	prov := newMockProvider(
+		toolCallReply("tc1", "boom", map[string]any{}),
+		textReply("recovered"),
+	)
+
+	ag := core.NewAgent(core.AgentConfig{
+		Provider: prov,
+		Tools:    []core.Tool{panicTool},
+	})
+
+	events := collectEvents(ag.Start(context.Background(), "trigger panic"))
+
+	// Agent should survive and emit a tool error, not crash
+	var toolErrors int
+	var turnEnds int
+	for _, e := range events {
+		if te, ok := e.(core.EventToolEnd); ok && te.IsError {
+			toolErrors++
+		}
+		if _, ok := e.(core.EventTurnEnd); ok {
+			turnEnds++
+		}
+	}
+	assert.Equal(t, 1, toolErrors, "panicking tool should produce a tool error")
+	// Agent should continue past the panic to the second LLM call
+	assert.GreaterOrEqual(t, turnEnds, 2, "agent should continue after tool panic")
+}
+
+func TestAgentMaxMessages(t *testing.T) {
+	t.Parallel()
+
+	// 3 tool-call turns = 3*(assistant+tool_result) + 1 user = 7 messages, then final assistant = 8
+	prov := newMockProvider(
+		toolCallReply("tc1", "echo", map[string]any{"text": "a"}),
+		toolCallReply("tc2", "echo", map[string]any{"text": "b"}),
+		toolCallReply("tc3", "echo", map[string]any{"text": "c"}),
+		textReply("done"),
+	)
+
+	ag := core.NewAgent(core.AgentConfig{
+		Provider:    prov,
+		Tools:       []core.Tool{echoTool()},
+		MaxMessages: 5,
+	})
+
+	collectEvents(ag.Start(context.Background(), "test"))
+
+	msgs := ag.Messages()
+	assert.LessOrEqual(t, len(msgs), 5, "messages should be capped at MaxMessages")
+	// First message (user prompt) should always be preserved
+	if um, ok := msgs[0].(*core.UserMessage); ok {
+		assert.Equal(t, "test", um.Content)
+	} else {
+		t.Error("first message should be the user prompt")
+	}
+}
+
 func TestAgentAutoCompact(t *testing.T) {
 	t.Parallel()
 
