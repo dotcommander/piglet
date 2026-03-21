@@ -83,6 +83,43 @@ func TestLoadFrom_InvalidYAML(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse config")
 }
 
+func TestConfigDir_XDGOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	dir, err := config.ConfigDir()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/piglet", dir)
+}
+
+func TestConfigDir_DefaultsToHomeConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	dir, err := config.ConfigDir()
+	require.NoError(t, err)
+
+	home, _ := os.UserHomeDir()
+	assert.Equal(t, home+"/.config/piglet", dir)
+}
+
+func TestSessionsDir_DeriveFromConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	dir, err := config.SessionsDir()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/piglet/sessions", dir)
+}
+
+func TestAuthPath_DeriveFromConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	path, err := config.AuthPath()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/piglet/auth.json", path)
+}
+
+func TestSettingsPath_DeriveFromConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	path, err := config.SettingsPath()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/piglet/config.yaml", path)
+}
+
 func TestResolve_EnvFirst(t *testing.T) {
 	t.Setenv("PIGLET_DEFAULT_PROVIDER", "anthropic")
 	result := config.Resolve("DEFAULT_PROVIDER", "openai", "google")

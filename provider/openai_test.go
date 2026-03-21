@@ -151,11 +151,14 @@ func TestOpenAI_StreamCancellation(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		// Send one delta then hang
+		flusher, _ := w.(http.Flusher)
 		fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\n")
-		// Block until client disconnects
+		if flusher != nil {
+			flusher.Flush()
+		}
 		<-r.Context().Done()
 	}))
+	defer server.CloseClientConnections()
 	defer server.Close()
 
 	model := core.Model{ID: "test", Provider: "test", API: core.APIOpenAI, BaseURL: server.URL}
@@ -168,7 +171,6 @@ func TestOpenAI_StreamCancellation(t *testing.T) {
 		Messages: []core.Message{&core.UserMessage{Content: "test", Timestamp: time.Now()}},
 	})
 
-	// Drain — should complete due to context cancellation
 	for range ch {
 	}
 }

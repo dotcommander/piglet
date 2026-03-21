@@ -520,3 +520,44 @@ func TestNewAgentDefaults(t *testing.T) {
 	assert.False(t, ag.StepMode())
 	assert.Empty(t, ag.Messages())
 }
+
+func TestAgentAutoCompact(t *testing.T) {
+	t.Parallel()
+
+	withTokens := func(msg *core.AssistantMessage, input int) *core.AssistantMessage {
+		msg.Usage = core.Usage{InputTokens: input, OutputTokens: 50}
+		return msg
+	}
+
+	// 4 tool-call turns = 4*(assistant+tool_result) + 1 user = 9 messages → above keepRecent+1 guard
+	prov := newMockProvider(
+		withTokens(toolCallReply("tc1", "echo", map[string]any{"text": "a"}), 2000),
+		withTokens(toolCallReply("tc2", "echo", map[string]any{"text": "b"}), 3000),
+		withTokens(toolCallReply("tc3", "echo", map[string]any{"text": "c"}), 3000),
+		withTokens(toolCallReply("tc4", "echo", map[string]any{"text": "d"}), 3000), // total: 11000 > 8000
+		withTokens(textReply("final"), 1000),
+	)
+
+	var compactCalled int
+	ag := core.NewAgent(core.AgentConfig{
+		Provider:  prov,
+		Tools:     []core.Tool{echoTool()},
+		CompactAt: 8000,
+		OnCompact: func(msgs []core.Message) (string, error) {
+			compactCalled++
+			return "Summary of earlier conversation.", nil
+		},
+	})
+
+	events := collectEvents(ag.Start(context.Background(), "test"))
+
+	assert.GreaterOrEqual(t, compactCalled, 1, "OnCompact should have been called")
+
+	var compactEvents int
+	for _, e := range events {
+		if _, ok := e.(core.EventCompact); ok {
+			compactEvents++
+		}
+	}
+	assert.GreaterOrEqual(t, compactEvents, 1, "should emit EventCompact")
+}

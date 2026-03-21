@@ -10,6 +10,55 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mockSessionMgr implements ext.SessionManager for testing.
+type mockSessionMgr struct {
+	sessions   []ext.SessionSummary
+	loadResult any
+	loadErr    error
+	forkParent string
+	forkResult any
+	forkCount  int
+	forkErr    error
+	titleErr   error
+}
+
+func (m *mockSessionMgr) List() ([]ext.SessionSummary, error) {
+	return m.sessions, nil
+}
+
+func (m *mockSessionMgr) Load(path string) (any, error) {
+	return m.loadResult, m.loadErr
+}
+
+func (m *mockSessionMgr) Fork() (string, any, int, error) {
+	return m.forkParent, m.forkResult, m.forkCount, m.forkErr
+}
+
+func (m *mockSessionMgr) SetTitle(title string) error {
+	return m.titleErr
+}
+
+// mockModelMgr implements ext.ModelManager for testing.
+type mockModelMgr struct {
+	models     []core.Model
+	switchMod  core.Model
+	switchErr  error
+	syncCount  int
+	syncErr    error
+}
+
+func (m *mockModelMgr) Available() []core.Model {
+	return m.models
+}
+
+func (m *mockModelMgr) Switch(id string) (core.Model, core.StreamProvider, error) {
+	return m.switchMod, nil, m.switchErr
+}
+
+func (m *mockModelMgr) Sync() (int, error) {
+	return m.syncCount, m.syncErr
+}
+
 func echoToolDef() *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
@@ -234,6 +283,160 @@ func TestCWD(t *testing.T) {
 	assert.Equal(t, "/home/user/project", app.CWD())
 }
 
+// ---------------------------------------------------------------------------
+// Action queue tests
+// ---------------------------------------------------------------------------
+
+func TestShowMessageEnqueuesAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.ShowMessage("hello")
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionShowMessage)
+	require.True(t, ok)
+	assert.Equal(t, "hello", act.Text)
+}
+
+func TestNotifyEnqueuesAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Notify("alert")
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionNotify)
+	require.True(t, ok)
+	assert.Equal(t, "alert", act.Message)
+}
+
+func TestRequestQuitEnqueuesAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.RequestQuit()
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	_, ok := actions[0].(ext.ActionQuit)
+	assert.True(t, ok)
+}
+
+func TestSetStatusEnqueuesAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.SetStatus("model", "claude-sonnet")
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionSetStatus)
+	require.True(t, ok)
+	assert.Equal(t, "model", act.Key)
+	assert.Equal(t, "claude-sonnet", act.Text)
+}
+
+func TestShowPickerEnqueuesAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	called := false
+	items := []ext.PickerItem{{ID: "1", Label: "One"}}
+	app.ShowPicker("Pick", items, func(p ext.PickerItem) { called = true })
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionShowPicker)
+	require.True(t, ok)
+	assert.Equal(t, "Pick", act.Title)
+	require.Len(t, act.Items, 1)
+	assert.Equal(t, "One", act.Items[0].Label)
+
+	// Callback should be preserved
+	act.OnSelect(ext.PickerItem{})
+	assert.True(t, called)
+}
+
+func TestLoadSessionEnqueuesSwapAction(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithSessionManager(&mockSessionMgr{
+		loadResult: "fake-session-obj",
+	}))
+
+	err := app.LoadSession("/path/to/session.jsonl")
+	require.NoError(t, err)
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionSwapSession)
+	require.True(t, ok)
+	assert.Equal(t, "fake-session-obj", act.Session)
+}
+
+func TestPendingActionsClearsQueue(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.ShowMessage("first")
+	app.ShowMessage("second")
+
+	actions := app.PendingActions()
+	assert.Len(t, actions, 2)
+
+	// Second drain should be empty
+	actions = app.PendingActions()
+	assert.Empty(t, actions)
+}
+
+func TestMultipleActionsPreserveOrder(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.ShowMessage("msg")
+	app.SetStatus("model", "claude")
+	app.RequestQuit()
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 3)
+	assert.IsType(t, ext.ActionShowMessage{}, actions[0])
+	assert.IsType(t, ext.ActionSetStatus{}, actions[1])
+	assert.IsType(t, ext.ActionQuit{}, actions[2])
+}
+
+func TestBindClearsStaleActions(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.ShowMessage("stale")
+
+	// Bind should clear previous actions
+	app.Bind(nil)
+
+	actions := app.PendingActions()
+	assert.Empty(t, actions)
+}
+
+func TestCommandHandlerActionsTestable(t *testing.T) {
+	t.Parallel()
+
+	// Simulate testing a command handler without a TUI
+	app := ext.NewApp("/tmp")
+	app.RegisterCommand(&ext.Command{
+		Name:        "greet",
+		Description: "Greet the user",
+		Handler: func(args string, a *ext.App) error {
+			a.ShowMessage("Hello, " + args + "!")
+			return nil
+		},
+	})
+
+	cmds := app.Commands()
+	err := cmds["greet"].Handler("world", app)
+	require.NoError(t, err)
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act := actions[0].(ext.ActionShowMessage)
+	assert.Equal(t, "Hello, world!", act.Text)
+}
+
 func TestMultipleTools(t *testing.T) {
 	t.Parallel()
 
@@ -250,4 +453,132 @@ func TestMultipleTools(t *testing.T) {
 	tools := app.Tools()
 	assert.Len(t, tools, 7)
 	assert.Equal(t, "bash", tools[0]) // sorted
+}
+
+// ---------------------------------------------------------------------------
+// Domain facade tests (SessionManager, ModelManager)
+// ---------------------------------------------------------------------------
+
+func TestSessionsWithoutManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	_, err := app.Sessions()
+	assert.ErrorContains(t, err, "sessions not configured")
+}
+
+func TestSessionsWithManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithSessionManager(&mockSessionMgr{
+		sessions: []ext.SessionSummary{
+			{ID: "abc", Title: "Test"},
+		},
+	}))
+
+	summaries, err := app.Sessions()
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, "Test", summaries[0].Title)
+}
+
+func TestForkSessionEnqueuesSwap(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithSessionManager(&mockSessionMgr{
+		forkParent: "abcd1234",
+		forkResult: "forked-session",
+		forkCount:  5,
+	}))
+
+	parentID, count, err := app.ForkSession()
+	require.NoError(t, err)
+	assert.Equal(t, "abcd1234", parentID)
+	assert.Equal(t, 5, count)
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionSwapSession)
+	require.True(t, ok)
+	assert.Equal(t, "forked-session", act.Session)
+}
+
+func TestSetSessionTitleWithManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithSessionManager(&mockSessionMgr{}))
+
+	err := app.SetSessionTitle("new title")
+	assert.NoError(t, err)
+}
+
+func TestSetSessionTitleWithoutManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	err := app.SetSessionTitle("title")
+	assert.ErrorContains(t, err, "no active session")
+}
+
+func TestAvailableModelsWithManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithModelManager(&mockModelMgr{
+		models: []core.Model{{ID: "test", Name: "Test Model"}},
+	}))
+
+	models := app.AvailableModels()
+	require.Len(t, models, 1)
+	assert.Equal(t, "Test Model", models[0].Name)
+}
+
+func TestAvailableModelsWithoutManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	models := app.AvailableModels()
+	assert.Empty(t, models)
+}
+
+func TestSwitchModelEnqueuesStatus(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithModelManager(&mockModelMgr{
+		switchMod: core.Model{ID: "claude-3", Name: "Claude 3", Provider: "anthropic"},
+	}))
+
+	err := app.SwitchModel("anthropic/claude-3")
+	require.NoError(t, err)
+
+	actions := app.PendingActions()
+	require.Len(t, actions, 1)
+	act, ok := actions[0].(ext.ActionSetStatus)
+	require.True(t, ok)
+	assert.Equal(t, "model", act.Key)
+}
+
+func TestSwitchModelWithoutManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	err := app.SwitchModel("test/model")
+	assert.ErrorContains(t, err, "model manager not configured")
+}
+
+func TestSyncModelsWithManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+	app.Bind(nil, ext.WithModelManager(&mockModelMgr{syncCount: 3}))
+
+	updated, err := app.SyncModels()
+	require.NoError(t, err)
+	assert.Equal(t, 3, updated)
+}
+
+func TestSyncModelsWithoutManager(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp("/tmp")
+
+	_, err := app.SyncModels()
+	assert.ErrorContains(t, err, "model manager not configured")
 }

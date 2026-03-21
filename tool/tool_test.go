@@ -234,17 +234,48 @@ func TestFind_GlobPattern(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "c.go"), []byte(""), 0644))
 
-	out := execTool(t, app, "find", map[string]any{"pattern": "*.go"})
+	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.go"})
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "c.go")
 	assert.NotContains(t, out, "b.txt")
+}
+
+func TestFind_DoubleStarWithPrefix(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src", "pkg"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "pkg", "util.go"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docs", "readme.go"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "root.go"), []byte(""), 0644))
+
+	out := execTool(t, app, "find", map[string]any{"pattern": "src/**/*.go"})
+	assert.Contains(t, out, "main.go")
+	assert.Contains(t, out, "util.go")
+	assert.NotContains(t, out, "readme.go", "should not match files outside src/")
+	assert.NotContains(t, out, "root.go", "should not match files outside src/")
+}
+
+func TestFind_SkipsHiddenDirs(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "objects", "abc.go"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real.go"), []byte(""), 0644))
+
+	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.go"})
+	assert.Contains(t, out, "real.go")
+	assert.NotContains(t, out, "abc.go", "should skip .git directory")
 }
 
 func TestFind_NoResults(t *testing.T) {
 	t.Parallel()
 	app, _ := setupApp(t)
 
-	out := execTool(t, app, "find", map[string]any{"pattern": "*.xyz"})
+	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.xyz"})
 	assert.Contains(t, out, "no files found")
 }
 
