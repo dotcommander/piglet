@@ -108,7 +108,7 @@ Values can be literal keys, `$ENV_VAR` references, or `!shell commands`.
 
 | Variable | Effect |
 |----------|--------|
-| `PIGLET_DEFAULT_MODEL` | Override model (e.g. `gpt-4o-mini`) |
+| `PIGLET_DEFAULT_MODEL` | Override model (e.g. `gpt-4.1-mini`) |
 | `OPENAI_API_KEY` | OpenAI key (auto-detected) |
 | `ANTHROPIC_API_KEY` | Anthropic key (auto-detected) |
 | `GOOGLE_API_KEY` | Google key (auto-detected) |
@@ -117,14 +117,15 @@ Values can be literal keys, `$ENV_VAR` references, or `!shell commands`.
 
 | Provider | Example Models | Key Env Var |
 |----------|---------------|-------------|
-| OpenAI | `gpt-4o`, `gpt-4o-mini`, `o3-mini` | `OPENAI_API_KEY` |
-| Anthropic | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | `ANTHROPIC_API_KEY` |
+| OpenAI | `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o`, `o3` | `OPENAI_API_KEY` |
+| Anthropic | `claude-sonnet-4-20250514`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | Google | `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
 | xAI | `grok-3` | `XAI_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
+| LM Studio | `local-model` (localhost:1234) | — |
 
-Specify a model with `PIGLET_DEFAULT_MODEL` or set `defaultModel` in config. You can use just the model ID (`gpt-4o`) or the full `provider/model-id` form (`openai/gpt-4o`).
+Specify a model with `PIGLET_DEFAULT_MODEL` or set `defaultModel` in config. You can use just the model ID (`gpt-4.1`) or the full `provider/model-id` form (`openai/gpt-4.1`).
 
 ## Commands
 
