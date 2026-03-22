@@ -8,12 +8,12 @@ import (
 
 // Agent buffer and concurrency constants.
 const (
-	EventBufferSize    = 100
-	EmitTimeout        = 250 * time.Millisecond
-	ToolConcurrency    = 10
-	MaxRetryAttempts   = 3
-	RetryBaseDelay     = 500 * time.Millisecond
-	RetryMaxDelay      = 5 * time.Second
+	EventBufferSize  = 100
+	EmitTimeout      = 250 * time.Millisecond
+	ToolConcurrency  = 10
+	MaxRetryAttempts = 3
+	RetryBaseDelay   = 500 * time.Millisecond
+	RetryMaxDelay    = 5 * time.Second
 )
 
 // StepAction is the user's response when step mode pauses before a tool.
@@ -71,9 +71,9 @@ type Agent struct {
 	running  bool
 
 	// Queues
-	steerMu  sync.Mutex
-	steerQ   []Message
-	followQ  []Message
+	steerMu sync.Mutex
+	steerQ  []Message
+	followQ []Message
 
 	// Ephemeral turn context (injected by message hooks, cleared after use)
 	turnContext []string
@@ -308,9 +308,7 @@ func (a *Agent) run(ctx context.Context, prompt string) {
 
 		// Add follow-up messages and continue
 		a.mu.Lock()
-		for _, m := range follow {
-			a.messages = append(a.messages, m)
-		}
+		a.messages = append(a.messages, follow...)
 		a.mu.Unlock()
 	}
 
@@ -332,9 +330,7 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 		// Add any pending steering messages to history
 		if len(pending) > 0 {
 			a.mu.Lock()
-			for _, m := range pending {
-				a.messages = append(a.messages, m)
-			}
+			a.messages = append(a.messages, pending...)
 			a.mu.Unlock()
 		}
 
@@ -436,10 +432,13 @@ func (a *Agent) dequeueSteer() []Message {
 
 func (a *Agent) maybeCompact() {
 	a.mu.RLock()
-	total := 0
-	for _, m := range a.messages {
-		if am, ok := m.(*AssistantMessage); ok {
-			total += am.Usage.InputTokens
+	// Use the most recent assistant message's InputTokens — that IS the current
+	// context window size (the API reports full context per turn, not incremental).
+	var total int
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if am, ok := a.messages[i].(*AssistantMessage); ok {
+			total = am.Usage.InputTokens
+			break
 		}
 	}
 	threshold := a.cfg.CompactAt
@@ -449,6 +448,7 @@ func (a *Agent) maybeCompact() {
 		msgs = make([]Message, msgCount)
 		copy(msgs, a.messages)
 	}
+	snapshotLen := msgCount
 	a.mu.RUnlock()
 
 	if msgs == nil {
@@ -480,21 +480,23 @@ func (a *Agent) maybeCompact() {
 			return
 		}
 
+		// Preserve any messages appended while compaction was running.
 		a.mu.Lock()
-		a.messages = compacted
+		if snapshotLen > len(a.messages) {
+			snapshotLen = len(a.messages)
+		}
+		tail := a.messages[snapshotLen:]
+		if len(tail) == 0 {
+			a.messages = compacted
+		} else {
+			merged := make([]Message, len(compacted)+len(tail))
+			copy(merged, compacted)
+			copy(merged[len(compacted):], tail)
+			a.messages = merged
+		}
 		a.mu.Unlock()
 
-		timer := time.NewTimer(EmitTimeout)
-		select {
-		case a.events <- EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total}:
-		case <-timer.C:
-		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
+		a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total})
 	}()
 }
 
@@ -503,15 +505,15 @@ func (a *Agent) enforceMessageCap() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	cap := a.cfg.MaxMessages
-	if len(a.messages) <= cap {
+	maxMsg := a.cfg.MaxMessages
+	if len(a.messages) <= maxMsg {
 		return
 	}
 
-	// Keep first message + last (cap-1) messages
-	trimmed := make([]Message, 0, cap)
+	// Keep first message + last (maxMsg-1) messages
+	trimmed := make([]Message, 0, maxMsg)
 	trimmed = append(trimmed, a.messages[0])
-	trimmed = append(trimmed, a.messages[len(a.messages)-cap+1:]...)
+	trimmed = append(trimmed, a.messages[len(a.messages)-maxMsg+1:]...)
 	a.messages = trimmed
 }
 

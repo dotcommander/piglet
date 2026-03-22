@@ -113,7 +113,7 @@ func (a *Agent) streamOnce(ctx context.Context) (*AssistantMessage, error) {
 }
 
 func retryDelay(attempt int) time.Duration {
-	d := RetryBaseDelay * (1 << uint(attempt))
+	d := RetryBaseDelay * (1 << max(attempt, 0))
 	if d > RetryMaxDelay {
 		d = RetryMaxDelay
 	}

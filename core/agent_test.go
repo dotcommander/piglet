@@ -601,11 +601,12 @@ func TestAgentAutoCompact(t *testing.T) {
 	}
 
 	// 4 tool-call turns = 4*(assistant+tool_result) + 1 user = 9 messages → above keepRecent+1 guard
+	// CompactAt checks the most recent assistant message's InputTokens (current context window size).
 	prov := newMockProvider(
 		withTokens(toolCallReply("tc1", "echo", map[string]any{"text": "a"}), 2000),
 		withTokens(toolCallReply("tc2", "echo", map[string]any{"text": "b"}), 3000),
-		withTokens(toolCallReply("tc3", "echo", map[string]any{"text": "c"}), 3000),
-		withTokens(toolCallReply("tc4", "echo", map[string]any{"text": "d"}), 3000), // total: 11000 > 8000
+		withTokens(toolCallReply("tc3", "echo", map[string]any{"text": "c"}), 5000),
+		withTokens(toolCallReply("tc4", "echo", map[string]any{"text": "d"}), 9000), // 9000 > 8000 threshold
 		withTokens(textReply("final"), 1000),
 	)
 
