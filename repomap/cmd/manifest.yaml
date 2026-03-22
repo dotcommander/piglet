@@ -1,0 +1,7 @@
+name: repomap
+version: 0.1.0
+runtime: ./repomap
+capabilities:
+  - tools
+  - prompt
+  - events
