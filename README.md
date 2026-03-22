@@ -47,6 +47,8 @@ Requires Go 1.26+.
 go install github.com/dotcommander/piglet/cmd/piglet@latest
 ```
 
+Verify: `piglet --version`
+
 Set an API key and run it. First launch auto-detects your keys, picks a default model, and writes config to `~/.config/piglet/`.
 
 ```bash
@@ -54,17 +56,19 @@ export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GOOGLE_API_KEY, etc.
 piglet
 ```
 
+> If no API key is set, piglet tells you exactly which environment variables to set and still writes its config files so you're ready once you add a key.
+
 ### Extensions
 
-The base install ships 7 tools and 18 commands. For the full experience (memory, skills, code intelligence, safeguard, and more), install the [official extensions](https://github.com/dotcommander/piglet-extensions):
+The base install ships 7 tools and 18 commands. For the full experience (memory, skills, code intelligence, safeguard, and more), install the [official extensions](https://github.com/dotcommander/piglet-extensions) from inside piglet:
 
-```bash
-git clone https://github.com/dotcommander/piglet-extensions
-cd piglet-extensions
-make extensions
+```
+/extensions install
 ```
 
-This builds 10 extension binaries to `~/.config/piglet/extensions/`. Piglet discovers them automatically on next launch.
+This clones, builds, and installs 11 extension binaries to `~/.config/piglet/extensions/`. Restart piglet to load them. Run `/extensions update` anytime to rebuild from latest source.
+
+> Without extensions, piglet works but has no project memory, no skill loading, no LSP intelligence, and no command safeguards. You can add extensions later — piglet discovers them automatically.
 
 ### Build from Source
 
@@ -73,6 +77,23 @@ git clone https://github.com/dotcommander/piglet
 cd piglet
 go build -o piglet ./cmd/piglet/
 ```
+
+## First Things to Try
+
+```
+piglet                          # interactive mode — ask anything
+piglet "explain this repo"      # one-shot from any project directory
+```
+
+Inside a session:
+
+| Try this | What happens |
+|----------|-------------|
+| Ask a question about your code | Piglet reads the relevant files and answers |
+| `fix the failing test` | Reads test output, edits code, runs tests again |
+| `/help` | See all available commands |
+| `/model` | Switch to a different LLM mid-session |
+| `Ctrl+C` | Stop streaming or exit |
 
 ## How It Works
 
@@ -101,17 +122,19 @@ Everything is an extension. The core agent loop knows nothing about files, git, 
 
 Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 
-| Provider | Models | Env Variable |
-|----------|--------|--------------|
+| Provider | Example models | Env Variable |
+|----------|----------------|--------------|
 | Anthropic | `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | OpenAI | `gpt-5`, `gpt-5-mini`, `gpt-5.1`, `o4-mini` | `OPENAI_API_KEY` |
 | Google | `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
 | xAI | `grok-3` | `XAI_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
-| LM Studio | `local-model` (localhost:1234) | — |
+| LM Studio | Any local model (localhost:1234) | — |
 
 Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config.
+
+> Piglet writes `models.yaml` to `~/.config/piglet/` on first run with the current model catalog. To update available models after a piglet upgrade, delete the file and restart — it regenerates automatically.
 
 ## Commands and Shortcuts
 

@@ -167,9 +167,12 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 Extensions live in a separate repo: `dotcommander/piglet-extensions` (`~/go/src/piglet-extensions/`).
 
 ```bash
-make extensions              # Delegates to piglet-extensions Makefile
-cd ~/go/src/piglet-extensions && make extensions   # Direct build
-cd ~/go/src/piglet-extensions && make extensions-safeguard  # Build a single extension
+/extensions install          # From inside piglet — clones, builds, installs all
+/extensions update           # Rebuild from latest source
+
+# Or manually:
+cd ~/go/src/piglet-extensions && make extensions           # Build all
+cd ~/go/src/piglet-extensions && make extensions-safeguard  # Build one
 ```
 
 Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (22 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
