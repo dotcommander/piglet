@@ -16,7 +16,6 @@ import (
 type sessionMgr struct {
 	dir     string
 	current **session.Session // pointer to the active session pointer (swappable)
-	agent   ext.AgentAPI
 }
 
 func (m *sessionMgr) List() ([]ext.SessionSummary, error) {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"maps"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -25,6 +25,9 @@ import (
 	"github.com/dotcommander/piglet/tui"
 )
 
+// version is set at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -42,7 +45,7 @@ func run() error {
 			printHelp()
 			return nil
 		case "--version", "-v":
-			fmt.Println("piglet dev")
+			fmt.Println("piglet " + version)
 			return nil
 		case "--debug":
 			debug = true
@@ -51,9 +54,21 @@ func run() error {
 		}
 	}
 
+	// Subcommands (after flag parsing so --debug init works)
+	if len(promptArgs) == 1 && promptArgs[0] == "init" {
+		return config.RunSetup(provider.WriteDefaultModels)
+	}
+
 	// Determine prompt: args after flags or stdin
 	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
+
+	// First-run setup: auto-detect missing config and run interactive setup
+	if config.NeedsSetup() {
+		if err := config.RunSetup(provider.WriteDefaultModels); err != nil {
+			return fmt.Errorf("setup: %w", err)
+		}
+	}
 
 	// Load config
 	settings, err := config.Load()
@@ -74,7 +89,7 @@ func run() error {
 		modelQuery = settings.DefaultModel
 	}
 	if modelQuery == "" {
-		return fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet /config --setup")
+		return fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet init")
 	}
 
 	model, ok := registry.Resolve(modelQuery)
@@ -175,11 +190,6 @@ func run() error {
 
 	// Agent
 	coreTools := app.CoreTools()
-	compactAt := config.IntOr(settings.Agent.CompactAt, 0)
-
-	// Register LLM-powered compactor extension
-	command.RegisterCompactor(app, prov, compactAt)
-
 	// Build agent config, pulling compactor from ext if registered
 	var opts core.StreamOptions
 	if settings.Agent.MaxTokens > 0 {
@@ -187,10 +197,10 @@ func run() error {
 		opts.MaxTokens = &mt
 	}
 	agCfg := core.AgentConfig{
-		Provider:    prov,
-		System:      system,
-		Tools:       coreTools,
-		Options:     opts,
+		Provider:        prov,
+		System:          system,
+		Tools:           coreTools,
+		Options:         opts,
 		MaxTurns:        config.IntOr(settings.Agent.MaxTurns, 10),
 		MaxMessages:     config.IntOr(settings.Agent.MaxMessages, 200),
 		MaxRetries:      settings.Agent.MaxRetries,
@@ -331,8 +341,9 @@ func printHelp() {
 	fmt.Print(`piglet — minimalist coding assistant
 
 Usage:
-  piglet                  Interactive TUI mode
+  piglet                  Interactive TUI mode (runs setup on first launch)
   piglet <prompt>         Single-shot mode (prints response and exits)
+  piglet init             Run first-time setup (config, models, API key detection)
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads
@@ -360,4 +371,3 @@ Environment:
   PIGLET_DEFAULT_MODEL    Override default model
 `)
 }
-

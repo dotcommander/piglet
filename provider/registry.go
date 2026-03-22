@@ -3,11 +3,11 @@ package provider
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"gopkg.in/yaml.v3"
 )
@@ -137,7 +137,7 @@ type modelEntry struct {
 }
 
 func (r *Registry) loadModels() error {
-	path, err := modelsPath()
+	path, err := config.ModelsPath()
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func (r *Registry) loadModels() error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("models.yaml not found at %s — run: piglet /config --setup", path)
+			return fmt.Errorf("models.yaml not found at %s — run: piglet init", path)
 		}
 		return fmt.Errorf("read models: %w", err)
 	}
@@ -185,14 +185,3 @@ func parseAPI(s string) core.API {
 	}
 }
 
-func modelsPath() (string, error) {
-	dir := os.Getenv("XDG_CONFIG_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("models path: %w", err)
-		}
-		dir = filepath.Join(home, ".config")
-	}
-	return filepath.Join(dir, "piglet", "models.yaml"), nil
-}
