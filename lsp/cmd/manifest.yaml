@@ -1,0 +1,6 @@
+name: lsp
+version: 0.1.0
+runtime: ./lsp
+capabilities:
+  - tools
+  - prompt
