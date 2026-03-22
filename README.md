@@ -4,15 +4,69 @@
 
 <h1 align="center">piglet</h1>
 
-<p align="center">A coding assistant that lives in your terminal.</p>
+<p align="center">
+  A coding assistant that lives in your terminal.<br>
+  Multi-provider, extension-first, built in Go.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> · <a href="#extensions">Extensions</a> · <a href="#models">Models</a> · <a href="docs/extensions.md">Write Your Own</a>
+</p>
+
+---
+
+## What It Does
+
+Piglet is a terminal-native coding assistant. It reads your files, runs commands, edits code in place, and persists sessions across days. No copy-pasting, no browser, no IDE plugin.
+
+```
+$ piglet
+> refactor the auth middleware to use errgroup
+
+  Reading cmd/server/middleware.go...
+  Editing cmd/server/middleware.go...
+  Running go build ./...
+  Running go test ./cmd/server/...
+
+  Done. Replaced sequential error handling with errgroup.
+  3 files changed, tests passing.
+```
+
+One-shot mode for quick questions:
+
+```bash
+piglet "what does this function do"
+piglet "find everywhere we call the payments API"
+```
 
 ## Install
+
+Requires Go 1.26+.
 
 ```bash
 go install github.com/dotcommander/piglet/cmd/piglet@latest
 ```
 
-Or build from source:
+Set an API key and run it. First launch auto-detects your keys, picks a default model, and writes config to `~/.config/piglet/`.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GOOGLE_API_KEY, etc.
+piglet
+```
+
+### Extensions
+
+The base install ships 7 tools and 18 commands. For the full experience (memory, skills, code intelligence, safeguard, and more), install the [official extensions](https://github.com/dotcommander/piglet-extensions):
+
+```bash
+git clone https://github.com/dotcommander/piglet-extensions
+cd piglet-extensions
+make extensions
+```
+
+This builds 10 extension binaries to `~/.config/piglet/extensions/`. Piglet discovers them automatically on next launch.
+
+### Build from Source
 
 ```bash
 git clone https://github.com/dotcommander/piglet
@@ -20,119 +74,163 @@ cd piglet
 go build -o piglet ./cmd/piglet/
 ```
 
-For full functionality, install [extensions](https://github.com/dotcommander/piglet-extensions):
+## How It Works
 
-```bash
-git clone https://github.com/dotcommander/piglet-extensions
-cd piglet-extensions
-make extensions   # build + install to ~/.config/piglet/extensions/
+Piglet is an agent loop: you send a message, the LLM responds with text or tool calls, piglet executes the tools, feeds results back, and repeats until the LLM is done. Streaming output appears as it's generated.
+
+**Built-in tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` — everything the LLM needs to navigate and modify a codebase.
+
+**Extensions** add everything else: project memory that persists across sessions, on-demand skill loading, LSP-powered code intelligence, repository structure maps, dangerous command blocking, clipboard image pasting, sub-agent delegation, and structured task planning. Extensions are standalone binaries that communicate via JSON-RPC — write them in Go, TypeScript, or Python.
+
+### Architecture
+
+```
+core/       Agent loop, streaming, types. Imports nothing from piglet.
+ext/        Registration surface (ext.App) — the central API.
+tool/       7 built-in tools (read, write, edit, bash, grep, find, ls).
+command/    18 slash commands, 2 keyboard shortcuts, 5 status sections.
+prompt/     System prompt builder + 4 prompt sections.
+provider/   OpenAI, Anthropic, Google streaming providers.
+tui/        Bubble Tea v2 terminal UI.
+sdk/go/     Go SDK for building external extensions.
 ```
 
-## Use it
-
-Set an API key and run it. First launch auto-detects your keys, picks a model, and writes config to `~/.config/piglet/`.
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-piglet
-```
-
-One-shot mode -- answers and exits:
-
-```bash
-piglet "what does this function do"
-piglet "refactor main.go to use errgroup"
-```
-
-It reads your actual files, runs real commands, and edits in place. No copy-pasting. Sessions persist -- come back days later and pick up exactly where you stopped.
+Everything is an extension. The core agent loop knows nothing about files, git, or code — tools and extensions provide all capabilities through a single registration API (`ext.App`). The [architecture test](ext/architecture_test.go) enforces dependency boundaries at build time.
 
 ## Models
 
-Switch mid-session with `Ctrl+P`. No restart needed.
+Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 
-| Provider | Models | Key |
-|----------|--------|-----|
+| Provider | Models | Env Variable |
+|----------|--------|--------------|
+| Anthropic | `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | OpenAI | `gpt-5`, `gpt-5-mini`, `gpt-5.1`, `o4-mini` | `OPENAI_API_KEY` |
-| Anthropic | `claude-sonnet-4-20250514`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | Google | `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
 | xAI | `grok-3` | `XAI_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
-| LM Studio | `local-model` (localhost:1234) | -- |
+| LM Studio | `local-model` (localhost:1234) | — |
 
-Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override at startup with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config.
+Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config.
 
-## Config
-
-Everything in `~/.config/piglet/`:
-
-| File | Purpose |
-|------|---------|
-| `config.yaml` | Model, theme, shell, extensions |
-| `auth.json` | API keys -- literals, `$ENV_VAR`, or `!shell command` |
-| `prompt.md` | Your system prompt. Overrides `systemPrompt` in config. |
-| `behavior.md` | Behavioral guidelines |
-| `sessions/` | Conversation history |
-| `skills/` | Markdown methodology files |
-| `prompts/` | Templates that become slash commands |
-
-```yaml
-# config.yaml
-defaultProvider: anthropic
-defaultModel: claude-sonnet-4-20250514
-systemPrompt: "You are a senior Go developer. Always write tests."
-theme: dark
-shellPath: /bin/zsh
-```
-
-Auth supports env references and shell commands:
-
-```json
-{
-  "openai": "$OPENAI_API_KEY",
-  "anthropic": "sk-ant-...",
-  "google": "!op read op://vault/google/key"
-}
-```
-
-## Commands
+## Commands and Shortcuts
 
 | Command | Action |
 |---------|--------|
-| `/help` | Available commands |
-| `/clear` | Clear conversation |
-| `/step` | Toggle step-by-step mode |
+| `/help` | List available commands |
 | `/model` | Switch model |
-| `/session` | List and load sessions |
+| `/session` | List and switch sessions |
 | `/branch` | Fork current session |
-| `/compact` | Summarize conversation to free context |
-| `/search` | Search history |
-| `/export` | Export session |
+| `/clear` | Clear conversation |
+| `/compact` | Summarize to free context |
+| `/search` | Search session history |
+| `/export` | Export current session |
 | `/undo` | Undo last file change |
+| `/step` | Toggle step-by-step tool approval |
+| `/bg` | Run a prompt in a background agent |
 | `/config` | Show or set up configuration |
 | `/extensions` | List loaded extensions |
-| `/bg` | Run a background agent |
 | `/quit` | Exit |
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+C` | Stop streaming / quit |
 | `Ctrl+P` | Model selector |
 | `Ctrl+S` | Session picker |
 | `Ctrl+V` | Paste clipboard image |
+| `Ctrl+C` | Stop streaming / quit |
 | `Enter` | Send |
 | `Alt+Enter` | Newline |
 
 ## Extensions
 
-Ten extensions run as standalone binaries from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan):
+Piglet's extension system is the same API used by its own built-in tools. Extensions register through five primitives:
+
+| Primitive | What it does | Example |
+|-----------|-------------|---------|
+| **Inject** | Add text to the system prompt | Memory facts, skill instructions |
+| **React** | Respond to triggers | Tools the LLM calls, slash commands |
+| **Intercept** | Modify or block tool calls | Safeguard blocks `rm -rf /`, RTK rewrites bash for token savings |
+| **Hook** | Process user messages before the LLM | Skill trigger matching |
+| **Observe** | React to lifecycle events | Auto-title sessions after first exchange |
+
+### Official Extensions
+
+Install with [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions):
+
+| Extension | What it adds |
+|-----------|-------------|
+| **memory** | Project-scoped facts that persist across sessions |
+| **skill** | Load markdown methodology files on demand |
+| **lsp** | Go-to-definition, references, hover, rename via LSP |
+| **repomap** | Ranked repository structure map |
+| **plan** | Structured task tracking with propose/execute modes |
+| **safeguard** | Block dangerous commands (configurable profiles) |
+| **rtk** | Rewrite bash commands for 60-90% token savings |
+| **subagent** | Delegate work to independent sub-agents |
+| **clipboard** | Paste images from clipboard into conversation |
+| **autotitle** | Auto-generate session titles |
+
+### Write Your Own
+
+Scaffold a new extension:
 
 ```bash
-/extensions            # list what's loaded
-/ext-init my-tool      # scaffold a new one
+/ext-init my-extension
 ```
 
-Extensions register tools, commands, shortcuts, prompt sections, interceptors, and event handlers -- same API whether compiled-in or external. Write them in Go, TypeScript, or Python. See [`docs/extensions.md`](docs/extensions.md).
+Or build one from scratch in Go, TypeScript, or Python. Extensions communicate via JSON-RPC over stdin/stdout — no linking, no shared memory, any language works.
+
+See [docs/extensions.md](docs/extensions.md) for the full guide, SDK reference, and examples.
+
+## Configuration
+
+Everything lives in `~/.config/piglet/`:
+
+| File | Purpose |
+|------|---------|
+| `config.yaml` | Model, shell, theme, agent limits |
+| `auth.json` | API keys — literals, `$ENV_VAR`, or `!shell command` |
+| `prompt.md` | System prompt (overrides config) |
+| `behavior.md` | Behavioral guidelines |
+| `models.yaml` | Model catalog |
+| `sessions/` | Conversation history (JSONL) |
+| `skills/` | Markdown methodology files |
+| `prompts/` | Templates that become slash commands |
+| `extensions/` | Extension binaries |
+
+```yaml
+# config.yaml
+defaultModel: claude-sonnet-4-20250514
+smallModel: claude-haiku-4-5-20251001   # for background tasks
+shellPath: /bin/zsh
+agent:
+  maxTurns: 10
+  maxMessages: 200
+  toolConcurrency: 10
+```
+
+Auth supports environment variable references and shell commands:
+
+```json
+{
+  "anthropic": "$ANTHROPIC_API_KEY",
+  "openai": "sk-...",
+  "google": "!op read op://vault/google/key"
+}
+```
+
+Prompt templates in `prompts/` register as slash commands — `prompts/review.md` becomes `/review`:
+
+```markdown
+---
+description: Review code for issues
+---
+Review the following for bugs and style problems:
+
+$@
+```
+
+See [docs/configuration.md](docs/configuration.md) for the full settings reference.
 
 ## License
 
