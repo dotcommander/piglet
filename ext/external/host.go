@@ -41,6 +41,7 @@ type Host struct {
 	eventHandlers  []RegisterEventHandlerParams
 	shortcuts      []RegisterShortcutParams
 	messageHooks   []RegisterMessageHookParams
+	compactor      *RegisterCompactorParams
 }
 
 // NewHost creates a host for the given manifest.
@@ -150,6 +151,9 @@ func (h *Host) Shortcuts() []RegisterShortcutParams { return h.shortcuts }
 
 // MessageHooks returns the message hooks registered during handshake.
 func (h *Host) MessageHooks() []RegisterMessageHookParams { return h.messageHooks }
+
+// Compactor returns the compactor registered during handshake, or nil.
+func (h *Host) Compactor() *RegisterCompactorParams { return h.compactor }
 
 // ExecuteTool sends a tool/execute request and waits for the response.
 func (h *Host) ExecuteTool(ctx context.Context, callID, name string, args map[string]any) (*ToolExecuteResult, error) {
@@ -283,6 +287,24 @@ func (h *Host) OnMessage(ctx context.Context, msg string) (string, error) {
 		return "", fmt.Errorf("unmarshal message hook: %w", err)
 	}
 	return result.Injection, nil
+}
+
+// ExecuteCompact sends a compact/execute request with messages and waits for compacted result.
+func (h *Host) ExecuteCompact(ctx context.Context, messages []CompactMessage) ([]CompactMessage, error) {
+	resp, err := h.request(ctx, MethodCompactExecute, CompactExecuteParams{
+		Messages: messages,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("compact execute: %s", resp.Error.Message)
+	}
+	var result CompactExecuteResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal compact result: %w", err)
+	}
+	return result.Messages, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +459,11 @@ func (h *Host) handleMessage(msg *Message) {
 		var p RegisterMessageHookParams
 		if json.Unmarshal(msg.Params, &p) == nil {
 			h.messageHooks = append(h.messageHooks, p)
+		}
+	case MethodRegisterCompactor:
+		var p RegisterCompactorParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.compactor = &p
 		}
 	case MethodNotify:
 		var p NotifyParams

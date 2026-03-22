@@ -106,6 +106,13 @@ type MessageHookDef struct {
 	OnMessage func(ctx context.Context, msg string) (string, error)
 }
 
+// CompactorDef defines a conversation compactor.
+type CompactorDef struct {
+	Name      string
+	Threshold int // 0 = use config default
+	Compact   func(ctx context.Context, messages json.RawMessage) (json.RawMessage, error)
+}
+
 // Action represents a result action to return to the host.
 type Action struct {
 	Type    string
@@ -158,6 +165,7 @@ type Extension struct {
 	eventHandlers  []EventHandlerDef
 	shortcuts      map[string]*ShortcutDef
 	messageHooks   []MessageHookDef
+	compactor      *CompactorDef
 
 	onInit   func(e *Extension) // called after initialize, before responding
 	writeMu  sync.Mutex
@@ -209,6 +217,10 @@ func (e *Extension) RegisterShortcut(s ShortcutDef) {
 
 func (e *Extension) RegisterMessageHook(h MessageHookDef) {
 	e.messageHooks = append(e.messageHooks, h)
+}
+
+func (e *Extension) RegisterCompactor(c CompactorDef) {
+	e.compactor = &c
 }
 
 // OnInit sets a callback that runs after the host sends initialize (CWD is available)
@@ -287,7 +299,7 @@ func (e *Extension) CallHostTool(ctx context.Context, name string, args map[stri
 
 	blocks := make([]ContentBlock, len(result.Content))
 	for i, b := range result.Content {
-		blocks[i] = ContentBlock{Type: b.Type, Text: b.Text, Data: b.Data, Mime: b.Mime}
+		blocks[i] = ContentBlock(b)
 	}
 	return &ToolResult{Content: blocks, IsError: result.IsError}, nil
 }
@@ -448,6 +460,8 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 		go e.handleShortcutHandle(msg)
 	case "messageHook/onMessage":
 		go e.handleMessageHook(msg)
+	case "compact/execute":
+		go e.handleCompactExecute(msg)
 	case "shutdown":
 		e.sendResponse(*msg.ID, nil)
 		// Cancel all in-flight requests
@@ -523,6 +537,12 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 			"priority": h.Priority,
 		})
 	}
+	if e.compactor != nil {
+		e.sendNotification("register/compactor", map[string]any{
+			"name":      e.compactor.Name,
+			"threshold": e.compactor.Threshold,
+		})
+	}
 
 	// Respond
 	e.sendResponse(*msg.ID, map[string]string{
@@ -555,7 +575,7 @@ func (e *Extension) handleToolExecute(msg *rpcMessage) {
 
 	blocks := make([]wireContentBlock, len(result.Content))
 	for i, b := range result.Content {
-		blocks[i] = wireContentBlock{Type: b.Type, Text: b.Text, Data: b.Data, Mime: b.Mime}
+		blocks[i] = wireContentBlock(b)
 	}
 	e.sendResponse(*msg.ID, map[string]any{
 		"content": blocks,
@@ -734,6 +754,24 @@ func (e *Extension) handleMessageHook(msg *rpcMessage) {
 	}
 
 	e.sendResponse(*msg.ID, map[string]any{"injection": injection})
+}
+
+func (e *Extension) handleCompactExecute(msg *rpcMessage) {
+	if e.compactor == nil || e.compactor.Compact == nil {
+		e.sendError(*msg.ID, -32603, "no compactor registered")
+		return
+	}
+
+	ctx, cleanup := e.requestCtx(*msg.ID)
+	defer cleanup()
+
+	result, err := e.compactor.Compact(ctx, msg.Params)
+	if err != nil {
+		e.sendError(*msg.ID, -32603, err.Error())
+		return
+	}
+
+	e.sendResponse(*msg.ID, result)
 }
 
 // ---------------------------------------------------------------------------

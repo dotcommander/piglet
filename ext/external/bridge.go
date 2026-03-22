@@ -155,11 +155,21 @@ func bridge(app *ext.App, h *Host) {
 	// Register message hooks
 	for _, mh := range h.MessageHooks() {
 		app.RegisterMessageHook(ext.MessageHook{
-			Name:     mh.Name,
-			Priority: mh.Priority,
+			Name:      mh.Name,
+			Priority:  mh.Priority,
 			OnMessage: proxyMessageHook(h),
 		})
 		info.MessageHooks = append(info.MessageHooks, mh.Name)
+	}
+
+	// Register compactor
+	if cp := h.Compactor(); cp != nil {
+		app.RegisterCompactor(ext.Compactor{
+			Name:      cp.Name,
+			Threshold: cp.Threshold,
+			Compact:   proxyCompactExecute(h),
+		})
+		info.Compactor = cp.Name
 	}
 }
 
@@ -241,6 +251,60 @@ func proxyShortcutHandle(h *Host, key string) func(app *ext.App) (ext.Action, er
 func proxyMessageHook(h *Host) func(ctx context.Context, msg string) (string, error) {
 	return func(ctx context.Context, msg string) (string, error) {
 		return h.OnMessage(ctx, msg)
+	}
+}
+
+// proxyCompactExecute returns a Compact function that proxies to the extension.
+func proxyCompactExecute(h *Host) func(ctx context.Context, msgs []core.Message) ([]core.Message, error) {
+	return func(ctx context.Context, msgs []core.Message) ([]core.Message, error) {
+		// Serialize messages with type discriminator
+		wire := make([]CompactMessage, 0, len(msgs))
+		for _, m := range msgs {
+			var msgType string
+			switch m.(type) {
+			case *core.UserMessage:
+				msgType = "user"
+			case *core.AssistantMessage:
+				msgType = "assistant"
+			case *core.ToolResultMessage:
+				msgType = "tool_result"
+			default:
+				continue
+			}
+			data, err := json.Marshal(m)
+			if err != nil {
+				continue
+			}
+			wire = append(wire, CompactMessage{Type: msgType, Data: data})
+		}
+
+		result, err := h.ExecuteCompact(ctx, wire)
+		if err != nil {
+			return nil, err
+		}
+
+		// Deserialize back to core.Message
+		out := make([]core.Message, 0, len(result))
+		for _, cm := range result {
+			switch cm.Type {
+			case "user":
+				var msg core.UserMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					out = append(out, &msg)
+				}
+			case "assistant":
+				var msg core.AssistantMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					out = append(out, &msg)
+				}
+			case "tool_result":
+				var msg core.ToolResultMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					out = append(out, &msg)
+				}
+			}
+		}
+		return out, nil
 	}
 }
 

@@ -4,14 +4,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/dotcommander/piglet/config"
+	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/memory"
+	"github.com/dotcommander/piglet/provider"
 	sdk "github.com/dotcommander/piglet/sdk/go"
 )
 
-var store *memory.Store
+var (
+	store     *memory.Store
+	extractor *memory.Extractor
+)
 
 func main() {
 	e := sdk.New("memory", "0.1.0")
@@ -23,13 +31,53 @@ func main() {
 			return
 		}
 		store = s
+		extractor = memory.NewExtractor(s)
 
 		// Register prompt section with current memory contents
 		x.RegisterPromptSection(sdk.PromptSectionDef{
 			Title:   "Project Memory",
-			Content: buildMemoryPrompt(s),
+			Content: memory.BuildMemoryPrompt(s),
 			Order:   50,
 		})
+
+		// Register compactor (uses memory store + optional LLM refinement)
+		settings, _ := config.Load()
+		prov := createProvider(settings)
+		threshold := config.IntOr(settings.Agent.CompactAt, 0)
+		x.RegisterCompactor(sdk.CompactorDef{
+			Name:      "rolling-memory",
+			Threshold: threshold,
+			Compact:   makeCompactHandler(s, prov),
+		})
+	})
+
+	// EventAgentStart handler — clear stale context facts on new session
+	e.RegisterEventHandler(sdk.EventHandlerDef{
+		Name:     "memory-context-reset",
+		Priority: 10,
+		Events:   []string{"EventAgentStart"},
+		Handle: func(_ context.Context, _ string, _ json.RawMessage) *sdk.Action {
+			if store != nil {
+				facts := store.List("_context")
+				for _, f := range facts {
+					_ = store.Delete(f.Key)
+				}
+			}
+			return nil
+		},
+	})
+
+	// EventTurnEnd handler — deterministic fact extraction
+	e.RegisterEventHandler(sdk.EventHandlerDef{
+		Name:     "memory-extractor",
+		Priority: 50,
+		Events:   []string{"EventTurnEnd"},
+		Handle: func(_ context.Context, _ string, data json.RawMessage) *sdk.Action {
+			if extractor != nil {
+				_ = extractor.Extract(data)
+			}
+			return nil
+		},
 	})
 
 	// Tools
@@ -152,6 +200,12 @@ func main() {
 					return nil
 				}
 				e.ShowMessage("Project memory cleared.")
+			case args == "clear context":
+				facts := store.List("_context")
+				for _, f := range facts {
+					_ = store.Delete(f.Key)
+				}
+				e.ShowMessage(fmt.Sprintf("Cleared %d context fact(s).", len(facts)))
 			case strings.HasPrefix(args, "delete "):
 				key := strings.TrimSpace(strings.TrimPrefix(args, "delete "))
 				if err := store.Delete(key); err != nil {
@@ -160,7 +214,7 @@ func main() {
 				}
 				e.ShowMessage(fmt.Sprintf("Deleted: %s", key))
 			default:
-				e.ShowMessage("Usage: /memory [clear|delete <key>]")
+				e.ShowMessage("Usage: /memory [clear|clear context|delete <key>]")
 			}
 			return nil
 		},
@@ -169,23 +223,107 @@ func main() {
 	e.Run()
 }
 
-func buildMemoryPrompt(s *memory.Store) string {
-	var b strings.Builder
-	b.WriteString("Tools: memory_set (save), memory_get (retrieve by key), memory_list (browse all)\n\n")
-
-	facts := s.List("")
-	if len(facts) == 0 {
-		b.WriteString("No memories stored yet.")
-		return b.String()
+// createProvider creates a lightweight LLM provider for summary refinement.
+func createProvider(settings config.Settings) core.StreamProvider {
+	auth, err := config.NewAuthDefault()
+	if err != nil {
+		return nil
 	}
 
-	b.WriteString("Current memories:\n")
-	for _, f := range facts {
-		if f.Category != "" {
-			b.WriteString("- " + f.Key + ": " + f.Value + " (" + f.Category + ")\n")
-		} else {
-			b.WriteString("- " + f.Key + ": " + f.Value + "\n")
-		}
+	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
+	if modelQuery == "" {
+		modelQuery = settings.DefaultModel
 	}
-	return b.String()
+	if modelQuery == "" {
+		return nil
+	}
+
+	registry := provider.NewRegistry()
+	model, ok := registry.Resolve(modelQuery)
+	if !ok {
+		return nil
+	}
+
+	prov, err := registry.Create(model, func() string {
+		return auth.GetAPIKey(model.Provider)
+	})
+	if err != nil {
+		return nil
+	}
+	return prov
 }
+
+// makeCompactHandler returns the SDK compact handler that bridges JSON messages
+// to the memory.CompactFn logic.
+func makeCompactHandler(s *memory.Store, prov core.StreamProvider) func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	compactFn := memory.CompactFn(s, prov)
+
+	return func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+		// Parse incoming messages
+		var params struct {
+			Messages []struct {
+				Type string          `json:"type"`
+				Data json.RawMessage `json:"data"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, fmt.Errorf("unmarshal compact params: %w", err)
+		}
+
+		// Deserialize to core.Message
+		msgs := make([]core.Message, 0, len(params.Messages))
+		for _, cm := range params.Messages {
+			switch cm.Type {
+			case "user":
+				var msg core.UserMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					msgs = append(msgs, &msg)
+				}
+			case "assistant":
+				var msg core.AssistantMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					msgs = append(msgs, &msg)
+				}
+			case "tool_result":
+				var msg core.ToolResultMessage
+				if json.Unmarshal(cm.Data, &msg) == nil {
+					msgs = append(msgs, &msg)
+				}
+			}
+		}
+
+		// Run compaction
+		compacted, err := compactFn(ctx, msgs)
+		if err != nil {
+			return nil, err
+		}
+
+		// Serialize result
+		type wireMsg struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		wire := make([]wireMsg, 0, len(compacted))
+		for _, m := range compacted {
+			var msgType string
+			switch m.(type) {
+			case *core.UserMessage:
+				msgType = "user"
+			case *core.AssistantMessage:
+				msgType = "assistant"
+			case *core.ToolResultMessage:
+				msgType = "tool_result"
+			default:
+				continue
+			}
+			data, err := json.Marshal(m)
+			if err != nil {
+				continue
+			}
+			wire = append(wire, wireMsg{Type: msgType, Data: data})
+		}
+
+		return json.Marshal(map[string]any{"messages": wire})
+	}
+}
+

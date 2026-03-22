@@ -196,6 +196,7 @@ type ExtInfo struct {
 	EventHandlers []string // event handler names
 	Shortcuts     []string // shortcut keys
 	MessageHooks  []string // message hook names
+	Compactor     string   // compactor name, empty if none
 }
 
 // ProviderConfig registers a custom LLM provider from an extension.

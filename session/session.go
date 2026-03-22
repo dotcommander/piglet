@@ -6,9 +6,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/dotcommander/piglet/core"
 	"os"
 	"path/filepath"
-	"github.com/dotcommander/piglet/core"
 	"sort"
 	"strings"
 	"sync"
@@ -19,7 +19,7 @@ import (
 
 // Entry is a single line in the JSONL session file.
 type Entry struct {
-	Type      string          `json:"type"`                // "user", "assistant", "tool_result", "meta"
+	Type      string          `json:"type"` // "user", "assistant", "tool_result", "meta"
 	Timestamp time.Time       `json:"ts"`
 	Data      json.RawMessage `json:"data"`
 }
@@ -90,7 +90,7 @@ func New(dir, cwd string) (*Session, error) {
 		Timestamp: meta.CreatedAt,
 		Data:      mustJSON(meta),
 	}); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
@@ -233,13 +233,13 @@ func (s *Session) Fork(keepMessages int) (*Session, error) {
 		Timestamp: time.Now(),
 		Data:      mustJSON(newSess.meta),
 	}); err != nil {
-		newSess.Close()
+		_ = newSess.Close()
 		return nil, fmt.Errorf("fork: write metadata: %w", err)
 	}
 
 	for _, msg := range msgs[:limit] {
 		if err := newSess.Append(msg); err != nil {
-			newSess.Close()
+			_ = newSess.Close()
 			return nil, err
 		}
 	}

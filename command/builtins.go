@@ -106,13 +106,13 @@ func registerHelp(app *ext.App) {
 
 			for _, name := range names {
 				cmd := cmds[name]
-				b.WriteString(fmt.Sprintf("  /%-10s — %s\n", name, cmd.Description))
+				fmt.Fprintf(&b, "  /%-10s — %s\n", name, cmd.Description)
 			}
 
 			b.WriteString("\nShortcuts:\n")
 			b.WriteString("  ctrl+c    — stop agent / quit\n")
-			b.WriteString(fmt.Sprintf("  %-10s — model selector\n", keyModel))
-			b.WriteString(fmt.Sprintf("  %-10s — session picker\n", keySession))
+			fmt.Fprintf(&b, "  %-10s — model selector\n", keyModel)
+			fmt.Fprintf(&b, "  %-10s — session picker\n", keySession)
 			b.WriteString("\nExtensions: /extensions to see loaded extensions\n")
 
 			a.ShowMessage(b.String())
@@ -228,6 +228,13 @@ func registerModel(app *ext.App) {
 					a.ShowMessage("Failed to switch model: " + err.Error())
 					return
 				}
+				if cfg, err := config.Load(); err == nil {
+					cfg.DefaultModel = selected.ID
+					if err := config.Save(cfg); err != nil {
+						a.ShowMessage("Switched to " + selected.Label + " (failed to save: " + err.Error() + ")")
+						return
+					}
+				}
 				a.ShowMessage("Switched to " + selected.Label)
 			})
 			return nil
@@ -296,12 +303,12 @@ func registerExtensions(app *ext.App) {
 			} else {
 				b.WriteString("Loaded extensions:\n\n")
 				for _, info := range infos {
-					b.WriteString(fmt.Sprintf("  %s (%s, %s)\n", info.Name, info.Kind, info.Runtime))
+					fmt.Fprintf(&b, "  %s (%s, %s)\n", info.Name, info.Kind, info.Runtime)
 					if len(info.Tools) > 0 {
-						b.WriteString(fmt.Sprintf("    tools: %s\n", strings.Join(info.Tools, ", ")))
+						fmt.Fprintf(&b, "    tools: %s\n", strings.Join(info.Tools, ", "))
 					}
 					if len(info.Commands) > 0 {
-						b.WriteString(fmt.Sprintf("    commands: /%s\n", strings.Join(info.Commands, ", /")))
+						fmt.Fprintf(&b, "    commands: /%s\n", strings.Join(info.Commands, ", /"))
 					}
 					b.WriteString("\n")
 				}
@@ -309,7 +316,7 @@ func registerExtensions(app *ext.App) {
 
 			extDir, err := external.ExtensionsDir()
 			if err == nil {
-				b.WriteString(fmt.Sprintf("Extensions dir: %s/\n", extDir))
+				fmt.Fprintf(&b, "Extensions dir: %s/\n", extDir)
 			}
 			b.WriteString("Docs: https://github.com/dotcommander/piglet/blob/main/docs/extensions.md")
 
@@ -587,25 +594,7 @@ func registerConfig(app *ext.App) {
 		Handler: func(args string, a *ext.App) error {
 			switch strings.TrimSpace(args) {
 			case "--setup":
-				path, err := config.SettingsPath()
-				if err != nil {
-					a.ShowMessage("Config path error: " + err.Error())
-					return nil
-				}
-				if _, err := os.Stat(path); err == nil {
-					a.ShowMessage("Config already exists: " + path)
-					return nil
-				}
-				dir := filepath.Dir(path)
-				if err := os.MkdirAll(dir, 0700); err != nil {
-					a.ShowMessage("Setup failed: " + err.Error())
-					return nil
-				}
-				if err := os.WriteFile(path, []byte(configTemplate), 0600); err != nil {
-					a.ShowMessage("Setup failed: " + err.Error())
-					return nil
-				}
-				a.ShowMessage("Created config: " + path)
+				a.ShowMessage("Run 'piglet init' from the command line to set up config.")
 				return nil
 
 			default:
@@ -648,72 +637,6 @@ func registerConfig(app *ext.App) {
 	})
 }
 
-const configTemplate = `# Piglet configuration
-# Docs: https://github.com/dotcommander/piglet/blob/main/docs/configuration.md
-
-# Default provider and model (required)
-# defaultProvider: anthropic
-defaultModel: gpt-5.1
-
-# System prompt override (or use ~/.config/piglet/prompt.md)
-# systemPrompt: "You are piglet, a helpful coding assistant."
-#
-# Behavioral guidelines: ~/.config/piglet/behavior.md
-
-# Shell path (default: $SHELL or /bin/sh)
-# shellPath: /bin/zsh
-
-# Theme: dark, light
-# theme: dark
-
-# Agent settings
-# agent:
-#   maxTurns: 10
-#   bgMaxTurns: 5
-#   autoTitle: true
-#   maxTokens: 4096
-#   maxRetries: 3
-#   toolConcurrency: 10
-#   compactAt: 80000
-#   compactKeepRecent: 6
-
-# Tool defaults
-# tools:
-#   readLimit: 2000
-#   grepLimit: 100
-
-# Git context in system prompt
-# git:
-#   maxDiffStatFiles: 30
-#   maxLogLines: 5
-#   maxDiffHunkLines: 50
-#   commandTimeout: 5
-
-# Bash tool limits
-# bash:
-#   defaultTimeout: 30
-#   maxTimeout: 300
-#   maxStdout: 100000
-#   maxStderr: 50000
-
-# Keyboard shortcuts (action: keybind)
-# shortcuts:
-#   model: ctrl+p
-#   session: ctrl+s
-
-# Provider base URL overrides
-# providers:
-#   openai: https://api.openai.com/v1
-
-# Prompt section ordering (section title: order)
-# promptOrder:
-#   "Recent Changes": 40
-#   "Project Memory": 50
-
-# External extensions (paths to extension directories)
-# extensions: []
-`
-
 func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	items := make([]ext.PickerItem, len(summaries))
 	for i, s := range summaries {
@@ -741,7 +664,6 @@ func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	return items
 }
 
-
 func exportMarkdown(messages []core.Message, path string) error {
 	var b strings.Builder
 	b.WriteString("# Piglet Conversation\n\n")
@@ -766,7 +688,7 @@ func exportMarkdown(messages []core.Message, path string) error {
 			}
 			b.WriteString("\n\n")
 		case *core.ToolResultMessage:
-			b.WriteString(fmt.Sprintf("### Tool: %s\n\n", m.ToolName))
+			fmt.Fprintf(&b, "### Tool: %s\n\n", m.ToolName)
 			for _, c := range m.Content {
 				if tc, ok := c.(core.TextContent); ok {
 					b.WriteString(tc.Text)

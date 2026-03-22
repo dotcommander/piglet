@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/dotcommander/piglet/ext"
@@ -9,7 +10,7 @@ import (
 const promptContentCap = 8000
 
 func registerPromptSection(app *ext.App, store *Store) {
-	content := buildMemoryPrompt(store)
+	content := BuildMemoryPrompt(store)
 	app.RegisterPromptSection(ext.PromptSection{
 		Title:   "Project Memory",
 		Content: content,
@@ -17,40 +18,80 @@ func registerPromptSection(app *ext.App, store *Store) {
 	})
 }
 
-func buildMemoryPrompt(store *Store) string {
+// BuildMemoryPrompt generates the prompt section content from memory store.
+func BuildMemoryPrompt(store *Store) string {
 	var b strings.Builder
 
 	b.WriteString("Tools: memory_set (save), memory_get (retrieve by key), memory_list (browse all)\n\n")
 
-	facts := store.List("")
-	if len(facts) == 0 {
+	allFacts := store.List("")
+	if len(allFacts) == 0 {
 		b.WriteString("No memories stored yet.")
 		return b.String()
 	}
 
-	b.WriteString("Current memories:\n")
-
-	lines := make([]string, len(facts))
-	total := 0
-	for i, f := range facts {
-		if f.Category != "" {
-			lines[i] = "- " + f.Key + ": " + f.Value + " (" + f.Category + ")"
+	// Partition user facts vs context facts
+	var userFacts, contextFacts []Fact
+	for _, f := range allFacts {
+		if f.Category == "_context" {
+			contextFacts = append(contextFacts, f)
 		} else {
-			lines[i] = "- " + f.Key + ": " + f.Value
+			userFacts = append(userFacts, f)
 		}
-		total += len(lines[i]) + 1
 	}
 
-	// Trim oldest entries to fit cap
-	start := 0
-	for total > promptContentCap && start < len(lines) {
-		total -= len(lines[start]) + 1
-		start++
+	// User facts first (full display)
+	if len(userFacts) > 0 {
+		b.WriteString("Current memories:\n")
+		total := 0
+		lines := make([]string, len(userFacts))
+		for i, f := range userFacts {
+			if f.Category != "" {
+				lines[i] = "- " + f.Key + ": " + f.Value + " (" + f.Category + ")"
+			} else {
+				lines[i] = "- " + f.Key + ": " + f.Value
+			}
+			total += len(lines[i]) + 1
+		}
+
+		// Trim oldest entries to fit cap
+		start := 0
+		userCap := promptContentCap - 500 // reserve space for context section
+		for total > userCap && start < len(lines) {
+			total -= len(lines[start]) + 1
+			start++
+		}
+
+		for _, l := range lines[start:] {
+			b.WriteString(l)
+			b.WriteByte('\n')
+		}
 	}
 
-	for _, l := range lines[start:] {
-		b.WriteString(l)
-		b.WriteByte('\n')
+	// Context facts as brief summary
+	if len(contextFacts) > 0 {
+		// Check for a stored summary first
+		if summary, ok := store.Get("ctx:summary"); ok {
+			b.WriteString("\nSession context:\n")
+			b.WriteString(summary.Value)
+			b.WriteByte('\n')
+		} else {
+			counts := countContextFacts(contextFacts)
+			files, edits, errors, cmds := counts.files, counts.edits, counts.errors, counts.cmds
+			b.WriteString("\nSession context (use memory_get for details):\n")
+			if files > 0 {
+				fmt.Fprintf(&b, "- %d file(s) read/searched\n", files)
+			}
+			if edits > 0 {
+				fmt.Fprintf(&b, "- %d file(s) edited\n", edits)
+			}
+			if errors > 0 {
+				fmt.Fprintf(&b, "- %d error(s) encountered\n", errors)
+			}
+			if cmds > 0 {
+				fmt.Fprintf(&b, "- %d command(s) run\n", cmds)
+			}
+		}
 	}
 
 	return b.String()

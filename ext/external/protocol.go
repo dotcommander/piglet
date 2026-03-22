@@ -93,6 +93,12 @@ type RegisterMessageHookParams struct {
 	Priority int    `json:"priority,omitempty"`
 }
 
+// RegisterCompactorParams registers a conversation compactor.
+type RegisterCompactorParams struct {
+	Name      string `json:"name"`
+	Threshold int    `json:"threshold,omitempty"` // 0 = use config default
+}
+
 // ---------------------------------------------------------------------------
 // Tool execution: host → extension (request/response)
 // ---------------------------------------------------------------------------
@@ -225,6 +231,26 @@ type MessageHookResult struct {
 }
 
 // ---------------------------------------------------------------------------
+// Compactor execution: host → extension (request/response)
+// ---------------------------------------------------------------------------
+
+// CompactExecuteParams is sent when the token threshold is exceeded.
+type CompactExecuteParams struct {
+	Messages []CompactMessage `json:"messages"`
+}
+
+// CompactMessage wraps a message with a type discriminator for JSON transport.
+type CompactMessage struct {
+	Type string          `json:"type"` // "user", "assistant", "tool_result"
+	Data json.RawMessage `json:"data"`
+}
+
+// CompactExecuteResult is the extension's response.
+type CompactExecuteResult struct {
+	Messages []CompactMessage `json:"messages"`
+}
+
+// ---------------------------------------------------------------------------
 // Serializable action (replaces Go Action interface over the wire)
 // ---------------------------------------------------------------------------
 
@@ -301,6 +327,8 @@ const (
 	MethodRegisterEventHandler  = "register/eventHandler"
 	MethodRegisterShortcut      = "register/shortcut"
 	MethodRegisterMessageHook   = "register/messageHook"
+	MethodRegisterCompactor     = "register/compactor"
+	MethodCompactExecute        = "compact/execute"
 	MethodToolExecute           = "tool/execute"
 	MethodCommandExecute        = "command/execute"
 	MethodInterceptorBefore     = "interceptor/before"
