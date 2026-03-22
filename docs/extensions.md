@@ -2,7 +2,7 @@
 
 Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
 
-Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Eight additional extensions run as standalone binaries via JSON-RPC, providing the full experience (19 tools, 20 commands, 3 shortcuts, interceptors, event handlers, message hooks). Build them with `make extensions`.
+Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Ten additional extensions run as standalone binaries via JSON-RPC, providing the full experience (22 tools, 20 commands, 3 shortcuts, interceptors, event handlers, message hooks). Build them with `make extensions`.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ To see what's loaded: `/extensions`
 
 ## External Extensions (Go, TypeScript, Python, etc.)
 
-External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp) are all external Go binaries.
+External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan) are all external Go binaries.
 
 ### Directory Structure
 
@@ -131,7 +131,7 @@ piglet.registerPromptSection({
 
 ### Go SDK
 
-The Go SDK (`sdk/go/`) provides the same capabilities for compiled Go extensions. All 8 of piglet's own extensions use this SDK.
+The Go SDK (`sdk/go/`) provides the same capabilities for compiled Go extensions. All 10 of piglet's own extensions use this SDK.
 
 ```go
 package main
@@ -395,7 +395,7 @@ The same applies to commands — register a command named `help` and your handle
 2. Compiled-in commands (`command/` — 18 total)
 3. Compiled-in shortcuts, prompt sections
 4. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
-   - Built-in externals: safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp
+   - Built-in externals: safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan
    - User extensions: anything else in the extensions directory
 
 Later registrations overwrite earlier ones for the same name.
@@ -403,7 +403,7 @@ Later registrations overwrite earlier ones for the same name.
 ## Building Extensions
 
 ```bash
-make extensions              # Build + install all 8 to ~/.config/piglet/extensions/
+make extensions              # Build + install all 10 to ~/.config/piglet/extensions/
 make extensions-safeguard    # Build a single extension
 ```
 

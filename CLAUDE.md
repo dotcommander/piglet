@@ -43,7 +43,7 @@ tui/, cmd/  → anything (wiring layer)
 | `subagent` | `subagent/cmd/` | 1 tool |
 | `lsp` | `lsp/cmd/` | 5 tools, 1 prompt section |
 | `repomap` | `repomap/cmd/` | 2 tools, 1 prompt section, 1 event handler |
-| `plan` | `plan/cmd/` | 2 tools, 1 command, 1 prompt section |
+| `plan` | `plan/cmd/` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
@@ -67,7 +67,7 @@ All extensions map to these primitives — no special access:
 | `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts | compiled-in |
 | `command/` | React | Commands respond to user slash input | compiled-in |
 | `memory/` | Inject + React | Prompt section + tools | external |
-| `safeguard/` | Intercept | Before hook blocks dangerous bash | external |
+| `safeguard/` | Intercept | Before hook blocks dangerous commands (profiles: strict/balanced/off) | external |
 | `rtk/` | Inject + Intercept | Prompt section + bash rewriter | external |
 | `skill/` | Inject + React + Hook | Tools + message hook | external |
 | `subagent/` | React | Dispatch tool delegates to sub-agents | external |
@@ -75,7 +75,7 @@ All extensions map to these primitives — no special access:
 | `autotitle/` | Observe | Event handler for session titles | external |
 | `lsp/` | Inject + React | Prompt section + tools (code intelligence) | external |
 | `repomap/` | Inject + React + Observe | Prompt section + tools + stale-check event handler | external |
-| `plan/` | Inject + React | Prompt section + tools + command | external |
+| `plan/` | Inject + Intercept + React | Prompt section + interceptor + tools + command | external |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -129,7 +129,7 @@ session/       JSONL conversation persistence, compaction
 tui/           Bubble Tea v2 UI
 
 # External extensions (standalone binaries, source in-repo):
-safeguard/     Dangerous command blocking — 1 interceptor
+safeguard/     Command blocking with profiles (strict/balanced/off) — 1 interceptor
   cmd/         Binary entry point + manifest.yaml
 rtk/           Token-optimized bash rewriting — 1 interceptor, 1 prompt section
   cmd/         Binary entry point + manifest.yaml
@@ -147,7 +147,7 @@ lsp/           Code intelligence via LSP — 5 tools, 1 prompt section
   cmd/         Binary entry point + manifest.yaml
 repomap/       Repository structure map — 2 tools, 1 prompt section, 1 event handler
   cmd/         Binary entry point + manifest.yaml
-plan/          Persistent structured task tracking — 2 tools, 1 command, 1 prompt section
+plan/          Persistent structured task tracking — 3 tools, 1 command, 1 prompt section, 1 interceptor
   cmd/         Binary entry point + manifest.yaml
 ```
 
@@ -183,11 +183,11 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 ## Extensions
 
 ```bash
-make extensions              # Build + install all 9 to ~/.config/piglet/extensions/
+make extensions              # Build + install all 10 to ~/.config/piglet/extensions/
 make extensions-safeguard    # Build a single extension
 ```
 
-Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (21 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
+Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (22 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
 
 ## Config
 
