@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"runtime/debug"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -25,8 +26,37 @@ import (
 	"github.com/dotcommander/piglet/tui"
 )
 
-// version is set at build time via -ldflags.
+// version is set at build time via -ldflags. Falls back to VCS info from
+// debug.ReadBuildInfo (works with go install).
 var version = "dev"
+
+func resolveVersion() string {
+	if version != "dev" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var rev, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value[:min(8, len(s.Value))]
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if rev != "" {
+		return "dev-" + rev + dirty
+	}
+	return "dev"
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -45,7 +75,7 @@ func run() error {
 			printHelp()
 			return nil
 		case "--version", "-v":
-			fmt.Println("piglet " + version)
+			fmt.Println("piglet " + resolveVersion())
 			return nil
 		case "--debug":
 			debug = true
