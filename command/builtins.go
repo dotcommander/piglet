@@ -293,8 +293,12 @@ func registerModelsSync(app *ext.App) {
 func registerExtensions(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "extensions",
-		Description: "List loaded extensions",
+		Description: "List loaded extensions, or install/update official extensions",
 		Handler: func(args string, a *ext.App) error {
+			if sub := strings.TrimSpace(args); sub == "install" || sub == "update" {
+				return installExtensions(a)
+			}
+
 			infos := a.ExtInfos()
 
 			var b strings.Builder
