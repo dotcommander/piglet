@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Nine extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Ten extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -43,6 +43,7 @@ tui/, cmd/  → anything (wiring layer)
 | `subagent` | `subagent/cmd/` | 1 tool |
 | `lsp` | `lsp/cmd/` | 5 tools, 1 prompt section |
 | `repomap` | `repomap/cmd/` | 2 tools, 1 prompt section, 1 event handler |
+| `plan` | `plan/cmd/` | 2 tools, 1 command, 1 prompt section |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
@@ -74,6 +75,7 @@ All extensions map to these primitives — no special access:
 | `autotitle/` | Observe | Event handler for session titles | external |
 | `lsp/` | Inject + React | Prompt section + tools (code intelligence) | external |
 | `repomap/` | Inject + React + Observe | Prompt section + tools + stale-check event handler | external |
+| `plan/` | Inject + React | Prompt section + tools + command | external |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -144,6 +146,8 @@ subagent/      Sub-agent delegation — 1 tool (dispatch)
 lsp/           Code intelligence via LSP — 5 tools, 1 prompt section
   cmd/         Binary entry point + manifest.yaml
 repomap/       Repository structure map — 2 tools, 1 prompt section, 1 event handler
+  cmd/         Binary entry point + manifest.yaml
+plan/          Persistent structured task tracking — 2 tools, 1 command, 1 prompt section
   cmd/         Binary entry point + manifest.yaml
 ```
 

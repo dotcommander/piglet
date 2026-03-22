@@ -1,0 +1,182 @@
+// Package plan provides persistent structured task tracking for piglet.
+package plan
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+	"unicode"
+)
+
+const (
+	StatusPending    = "pending"
+	StatusInProgress = "in_progress"
+	StatusDone       = "done"
+	StatusSkipped    = "skipped"
+	StatusFailed     = "failed"
+)
+
+type Plan struct {
+	Title   string    `yaml:"title"`
+	Slug    string    `yaml:"slug"`
+	Created time.Time `yaml:"created"`
+	Updated time.Time `yaml:"updated"`
+	Active  bool      `yaml:"active"`
+	Steps   []Step    `yaml:"steps"`
+}
+
+type Step struct {
+	ID     int    `yaml:"id"`
+	Text   string `yaml:"text"`
+	Status string `yaml:"status"`
+	Notes  string `yaml:"notes,omitempty"`
+}
+
+func NewPlan(title string, steps []string) (*Plan, error) {
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("plan: title is required")
+	}
+	if len(steps) == 0 {
+		return nil, fmt.Errorf("plan: at least one step is required")
+	}
+
+	now := time.Now().UTC()
+	p := &Plan{
+		Title:   title,
+		Slug:    slugify(title),
+		Created: now,
+		Updated: now,
+		Active:  true,
+		Steps:   make([]Step, len(steps)),
+	}
+	for i, text := range steps {
+		p.Steps[i] = Step{
+			ID:     i + 1,
+			Text:   text,
+			Status: StatusPending,
+		}
+	}
+	return p, nil
+}
+
+func (p *Plan) UpdateStep(id int, status, notes string) error {
+	idx := p.stepIndex(id)
+	if idx < 0 {
+		return fmt.Errorf("plan: step %d not found", id)
+	}
+
+	if status != "" {
+		if !validStatus(status) {
+			return fmt.Errorf("plan: invalid status %q", status)
+		}
+		if status == StatusInProgress {
+			for i := range p.Steps {
+				if p.Steps[i].Status == StatusInProgress {
+					p.Steps[i].Status = StatusPending
+				}
+			}
+		}
+		p.Steps[idx].Status = status
+	}
+	if notes != "" {
+		p.Steps[idx].Notes = notes
+	}
+	p.Updated = time.Now().UTC()
+	return nil
+}
+
+func (p *Plan) AddStepAfter(afterID int, text string) error {
+	idx := p.stepIndex(afterID)
+	if idx < 0 {
+		return fmt.Errorf("plan: step %d not found", afterID)
+	}
+
+	newID := p.nextID()
+	step := Step{ID: newID, Text: text, Status: StatusPending}
+
+	p.Steps = slices.Insert(p.Steps, idx+1, step)
+	p.Updated = time.Now().UTC()
+	return nil
+}
+
+func (p *Plan) RemoveStep(id int) error {
+	idx := p.stepIndex(id)
+	if idx < 0 {
+		return fmt.Errorf("plan: step %d not found", id)
+	}
+
+	p.Steps = append(p.Steps[:idx], p.Steps[idx+1:]...)
+	p.Updated = time.Now().UTC()
+	return nil
+}
+
+func (p *Plan) Progress() (done, total int) {
+	total = len(p.Steps)
+	for _, s := range p.Steps {
+		if s.Status == StatusDone {
+			done++
+		}
+	}
+	return done, total
+}
+
+// IsComplete returns true when every step has a terminal status (done, skipped,
+// or failed). Returns false if there are no steps.
+func (p *Plan) IsComplete() bool {
+	if len(p.Steps) == 0 {
+		return false
+	}
+	for _, s := range p.Steps {
+		switch s.Status {
+		case StatusDone, StatusSkipped, StatusFailed:
+			// terminal — continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (p *Plan) stepIndex(id int) int {
+	for i, s := range p.Steps {
+		if s.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p *Plan) nextID() int {
+	max := 0
+	for _, s := range p.Steps {
+		if s.ID > max {
+			max = s.ID
+		}
+	}
+	return max + 1
+}
+
+func validStatus(s string) bool {
+	switch s {
+	case StatusPending, StatusInProgress, StatusDone, StatusSkipped, StatusFailed:
+		return true
+	}
+	return false
+}
+
+func slugify(title string) string {
+	var b strings.Builder
+	prev := false
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			prev = false
+		case !prev && b.Len() > 0:
+			b.WriteByte('-')
+			prev = true
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
+}

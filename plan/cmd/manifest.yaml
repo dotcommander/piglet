@@ -1,0 +1,7 @@
+name: plan
+version: 0.1.0
+runtime: ./plan
+capabilities:
+  - tools
+  - commands
+  - prompt
