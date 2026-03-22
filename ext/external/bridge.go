@@ -171,17 +171,7 @@ func proxyToolExecute(h *Host, toolName string) core.ToolExecuteFn {
 			return nil, fmt.Errorf("ext %s tool %s: %w", h.Name(), toolName, err)
 		}
 
-		blocks := make([]core.ContentBlock, 0, len(result.Content))
-		for _, b := range result.Content {
-			switch b.Type {
-			case "image":
-				blocks = append(blocks, core.ImageContent{Data: b.Data, MimeType: b.Mime})
-			default:
-				blocks = append(blocks, core.TextContent{Text: b.Text})
-			}
-		}
-
-		return &core.ToolResult{Content: blocks}, nil
+		return &core.ToolResult{Content: wireToCore(result.Content)}, nil
 	}
 }
 
@@ -304,4 +294,34 @@ func actionResultToAction(ar *ActionResult) ext.Action {
 		slog.Debug("unknown action type from extension", "type", ar.Type)
 		return nil
 	}
+}
+
+// wireToCore converts wire ContentBlocks to core.ContentBlocks.
+func wireToCore(blocks []ContentBlock) []core.ContentBlock {
+	out := make([]core.ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case "image":
+			out = append(out, core.ImageContent{Data: b.Data, MimeType: b.Mime})
+		default:
+			out = append(out, core.TextContent{Text: b.Text})
+		}
+	}
+	return out
+}
+
+// coreToWire converts core.ContentBlocks to wire ContentBlocks.
+func coreToWire(blocks []core.ContentBlock) []ContentBlock {
+	out := make([]ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch cb := b.(type) {
+		case core.ImageContent:
+			out = append(out, ContentBlock{Type: "image", Data: cb.Data, Mime: cb.MimeType})
+		case core.TextContent:
+			out = append(out, ContentBlock{Type: "text", Text: cb.Text})
+		default:
+			out = append(out, ContentBlock{Type: "text", Text: fmt.Sprintf("%v", cb)})
+		}
+	}
+	return out
 }

@@ -381,7 +381,7 @@ func (h *Host) readLoop() {
 }
 
 func (h *Host) handleMessage(msg *Message) {
-	// Response to a pending request
+	// Response to a pending request (has ID, no method)
 	if msg.ID != nil && msg.Method == "" {
 		h.pendingMu.Lock()
 		ch, ok := h.pending[*msg.ID]
@@ -395,7 +395,13 @@ func (h *Host) handleMessage(msg *Message) {
 		return
 	}
 
-	// Notification from extension
+	// Request from extension to host (has ID + method) — needs a response
+	if msg.ID != nil && msg.Method != "" {
+		h.handleRequest(msg)
+		return
+	}
+
+	// Notification from extension (no ID)
 	switch msg.Method {
 	case MethodRegisterTool:
 		var p RegisterToolParams
@@ -450,6 +456,100 @@ func (h *Host) handleMessage(msg *Message) {
 			slog.Log(context.Background(), level, p.Message, "ext", h.manifest.Name)
 		}
 	}
+}
+
+// handleRequest processes a request from the extension that expects a response.
+func (h *Host) handleRequest(msg *Message) {
+	switch msg.Method {
+	case MethodHostListTools:
+		h.handleHostListTools(msg)
+	case MethodHostExecuteTool:
+		h.handleHostExecuteTool(msg)
+	default:
+		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
+	}
+}
+
+// handleHostListTools returns the list of available host tools with their schemas.
+func (h *Host) handleHostListTools(msg *Message) {
+	var params HostListToolsParams
+	_ = json.Unmarshal(msg.Params, &params)
+
+	if h.app == nil {
+		h.respond(*msg.ID, HostListToolsResult{})
+		return
+	}
+
+	var defs []*ext.ToolDef
+	if params.Filter == FilterBackgroundSafe {
+		for _, td := range h.app.ToolDefs() {
+			if td.BackgroundSafe {
+				defs = append(defs, td)
+			}
+		}
+	} else {
+		defs = h.app.ToolDefs()
+	}
+
+	infos := make([]HostToolInfo, len(defs))
+	for i, td := range defs {
+		infos[i] = HostToolInfo{
+			Name:        td.Name,
+			Description: td.Description,
+			Parameters:  td.Parameters,
+		}
+	}
+	h.respond(*msg.ID, HostListToolsResult{Tools: infos})
+}
+
+// handleHostExecuteTool executes a host-registered tool on behalf of the extension.
+func (h *Host) handleHostExecuteTool(msg *Message) {
+	var params HostExecuteToolParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+
+	// Look up the tool in the host registry
+	tool := h.app.FindTool(params.Name)
+	if tool == nil {
+		h.respondError(*msg.ID, -32604, "unknown tool: "+params.Name)
+		return
+	}
+
+	// Execute the tool
+	result, err := tool.Execute(context.Background(), "", params.Args)
+	if err != nil {
+		h.respond(*msg.ID, HostExecuteToolResult{
+			Content: []ContentBlock{{Type: "text", Text: err.Error()}},
+			IsError: true,
+		})
+		return
+	}
+
+	h.respond(*msg.ID, HostExecuteToolResult{Content: coreToWire(result.Content)})
+}
+
+func (h *Host) respond(id int, result any) {
+	data, _ := json.Marshal(result)
+	_ = h.send(&Message{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Result:  data,
+	})
+}
+
+func (h *Host) respondError(id int, code int, message string) {
+	_ = h.send(&Message{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Error:   &RPCError{Code: code, Message: message},
+	})
 }
 
 // logWriter forwards extension stderr to slog.

@@ -236,6 +236,45 @@ type ActionResult struct {
 }
 
 // ---------------------------------------------------------------------------
+// Host tool execution: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// Tool filter constants for HostListToolsParams.
+const (
+	FilterAll            = "all"
+	FilterBackgroundSafe = "background_safe"
+)
+
+// HostListToolsParams requests the list of available host tools.
+type HostListToolsParams struct {
+	Filter string `json:"filter,omitempty"` // FilterAll or FilterBackgroundSafe (default: FilterAll)
+}
+
+// HostListToolsResult is the host's response.
+type HostListToolsResult struct {
+	Tools []HostToolInfo `json:"tools"`
+}
+
+// HostToolInfo describes a single host-registered tool.
+type HostToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"` // JSON Schema
+}
+
+// HostExecuteToolParams is sent by the extension to execute a host-registered tool.
+type HostExecuteToolParams struct {
+	Name string         `json:"name"`
+	Args map[string]any `json:"args"`
+}
+
+// HostExecuteToolResult is the host's response.
+type HostExecuteToolResult struct {
+	Content []ContentBlock `json:"content"`
+	IsError bool           `json:"isError,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle: host → extension
 // ---------------------------------------------------------------------------
 
@@ -269,6 +308,8 @@ const (
 	MethodEventDispatch         = "event/dispatch"
 	MethodShortcutHandle        = "shortcut/handle"
 	MethodMessageHookOnMessage  = "messageHook/onMessage"
+	MethodHostListTools         = "host/listTools"
+	MethodHostExecuteTool       = "host/executeTool"
 	MethodNotify                = "notify"
 	MethodLog                   = "log"
 	MethodShowMessage           = "showMessage"

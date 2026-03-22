@@ -22,6 +22,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,11 @@ type Extension struct {
 	writeMu  sync.Mutex
 	cancelMu sync.Mutex
 	cancels  map[int]context.CancelFunc // request ID → cancel
+
+	// Outgoing request tracking (extension → host)
+	nextID    atomic.Int64
+	pendingMu sync.Mutex
+	pending   map[int]chan *rpcMessage // request ID → response channel
 }
 
 // New creates a new extension with the given name and version.
@@ -173,6 +179,7 @@ func New(name, version string) *Extension {
 		commands:  make(map[string]*CommandDef),
 		shortcuts: make(map[string]*ShortcutDef),
 		cancels:   make(map[int]context.CancelFunc),
+		pending:   make(map[int]chan *rpcMessage),
 	}
 }
 
@@ -226,6 +233,117 @@ func (e *Extension) ShowMessage(text string) {
 // Log sends a log message to the host.
 func (e *Extension) Log(level, msg string) {
 	e.sendNotification("log", map[string]string{"level": level, "message": msg})
+}
+
+// ListHostTools returns the schemas of tools available in the host.
+// Filter can be "all" (default) or "background_safe".
+func (e *Extension) ListHostTools(ctx context.Context, filter string) ([]HostToolInfo, error) {
+	resp, err := e.request(ctx, "host/listTools", map[string]any{"filter": filter})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("list host tools: %s", resp.Error.Message)
+	}
+
+	var result struct {
+		Tools []HostToolInfo `json:"tools"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal host tools: %w", err)
+	}
+	return result.Tools, nil
+}
+
+// HostToolInfo describes a host-registered tool.
+type HostToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
+}
+
+// CallHostTool executes a host-registered tool and returns the result.
+// This allows extensions to use tools like Read, Edit, Grep, Bash that are
+// registered in the host process. The call blocks until the host responds.
+func (e *Extension) CallHostTool(ctx context.Context, name string, args map[string]any) (*ToolResult, error) {
+	resp, err := e.request(ctx, "host/executeTool", map[string]any{
+		"name": name,
+		"args": args,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("host tool %s: %s", name, resp.Error.Message)
+	}
+
+	var result struct {
+		Content []wireContentBlock `json:"content"`
+		IsError bool               `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal host tool result: %w", err)
+	}
+
+	blocks := make([]ContentBlock, len(result.Content))
+	for i, b := range result.Content {
+		blocks[i] = ContentBlock{Type: b.Type, Text: b.Text, Data: b.Data, Mime: b.Mime}
+	}
+	return &ToolResult{Content: blocks, IsError: result.IsError}, nil
+}
+
+// HostTools returns core.Tool wrappers that proxy tool calls to the host.
+// Use this to give a sub-agent access to host-registered tools.
+func (e *Extension) HostTools(names ...string) []HostTool {
+	tools := make([]HostTool, len(names))
+	for i, name := range names {
+		name := name
+		tools[i] = HostTool{
+			Name: name,
+			Execute: func(ctx context.Context, args map[string]any) (*ToolResult, error) {
+				return e.CallHostTool(ctx, name, args)
+			},
+		}
+	}
+	return tools
+}
+
+// HostTool is a thin tool wrapper that proxies execution to a host-registered tool.
+type HostTool struct {
+	Name    string
+	Execute func(ctx context.Context, args map[string]any) (*ToolResult, error)
+}
+
+// request sends a JSON-RPC request to the host and waits for the response.
+func (e *Extension) request(ctx context.Context, method string, params any) (*rpcMessage, error) {
+	id := int(e.nextID.Add(1))
+
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshal params: %w", err)
+	}
+
+	ch := make(chan *rpcMessage, 1)
+	e.pendingMu.Lock()
+	e.pending[id] = ch
+	e.pendingMu.Unlock()
+
+	e.write(&rpcMessage{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  method,
+		Params:  paramsJSON,
+	})
+
+	select {
+	case resp := <-ch:
+		return resp, nil
+	case <-ctx.Done():
+		e.pendingMu.Lock()
+		delete(e.pending, id)
+		e.pendingMu.Unlock()
+		return nil, ctx.Err()
+	}
 }
 
 // Run starts the JSON-RPC read loop. Blocks until stdin closes.
@@ -296,23 +414,40 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 		return
 	}
 
+	// Response to an outgoing request (has ID, no method)
+	if msg.Method == "" {
+		e.pendingMu.Lock()
+		ch, ok := e.pending[*msg.ID]
+		if ok {
+			delete(e.pending, *msg.ID)
+		}
+		e.pendingMu.Unlock()
+		if ok {
+			ch <- msg
+		}
+		return
+	}
+
+	// Requests from host — dispatched in goroutines so handlers can call
+	// back to the host (e.g. CallHostTool) without deadlocking the read loop.
 	switch msg.Method {
 	case "initialize":
+		// Initialize must be synchronous (registrations happen before response)
 		e.handleInitialize(msg)
 	case "tool/execute":
-		e.handleToolExecute(msg)
+		go e.handleToolExecute(msg)
 	case "command/execute":
-		e.handleCommandExecute(msg)
+		go e.handleCommandExecute(msg)
 	case "interceptor/before":
-		e.handleInterceptorBefore(msg)
+		go e.handleInterceptorBefore(msg)
 	case "interceptor/after":
-		e.handleInterceptorAfter(msg)
+		go e.handleInterceptorAfter(msg)
 	case "event/dispatch":
-		e.handleEventDispatch(msg)
+		go e.handleEventDispatch(msg)
 	case "shortcut/handle":
-		e.handleShortcutHandle(msg)
+		go e.handleShortcutHandle(msg)
 	case "messageHook/onMessage":
-		e.handleMessageHook(msg)
+		go e.handleMessageHook(msg)
 	case "shutdown":
 		e.sendResponse(*msg.ID, nil)
 		// Cancel all in-flight requests

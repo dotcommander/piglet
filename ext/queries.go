@@ -21,6 +21,21 @@ func (a *App) Tools() []string {
 	return names
 }
 
+// FindTool looks up a tool by name and returns a core.Tool with interceptors applied.
+// Returns nil if no tool with that name is registered.
+func (a *App) FindTool(name string) *core.Tool {
+	a.mu.RLock()
+	td, ok := a.tools[name]
+	a.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return &core.Tool{
+		ToolSchema: td.ToolSchema,
+		Execute:    a.wrapWithInterceptors(td.Name, td.Execute),
+	}
+}
+
 // ToolDefs returns all registered tool definitions.
 func (a *App) ToolDefs() []*ToolDef {
 	a.mu.RLock()

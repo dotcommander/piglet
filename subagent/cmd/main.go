@@ -1,10 +1,9 @@
 // Subagent extension binary. Delegates tasks to independent sub-agents.
 // Communicates with piglet host via JSON-RPC over stdin/stdout.
 //
-// NOTE: The subagent extension creates full agent loops internally, requiring
-// access to all registered tools and a StreamProvider. As an external binary,
-// it creates its own provider and uses a limited tool set (read-only file tools).
-// For full tool access, use the compiled-in version.
+// Uses host/listTools and host/executeTool to give sub-agents access to the
+// host's registered tools (Read, Edit, Grep, Bash, etc.) without needing
+// direct Go function references.
 package main
 
 import (
@@ -20,11 +19,11 @@ import (
 )
 
 func main() {
-	e := sdk.New("subagent", "0.1.0")
+	ext := sdk.New("subagent", "0.1.0")
 
 	prompt, _ := config.ReadExtensionConfig("subagent")
 
-	e.RegisterTool(sdk.ToolDef{
+	ext.RegisterTool(sdk.ToolDef{
 		Name:        "dispatch",
 		Description: "Delegate a task to an independent sub-agent that runs to completion and returns results. Use for research, analysis, or any task that benefits from focused execution with its own context.",
 		Parameters: map[string]any{
@@ -32,6 +31,7 @@ func main() {
 			"properties": map[string]any{
 				"task":      map[string]any{"type": "string", "description": "Task instructions for the sub-agent"},
 				"context":   map[string]any{"type": "string", "description": "Additional context to include in the sub-agent's system prompt"},
+				"tools":     map[string]any{"type": "string", "enum": []any{"read_only", "all"}, "description": "Tool access level (default: read_only)"},
 				"max_turns": map[string]any{"type": "integer", "description": "Maximum turns for the sub-agent"},
 				"model":     map[string]any{"type": "string", "description": "Model override (e.g. anthropic/claude-haiku-4-5)"},
 			},
@@ -59,10 +59,17 @@ func main() {
 				maxTurns = int(mt)
 			}
 
+			// Get host tools via the protocol
+			filter := "background_safe"
+			if access, _ := args["tools"].(string); access == "all" {
+				filter = "all"
+			}
+			tools := resolveHostTools(ctx, ext, filter)
+
 			sub := core.NewAgent(core.AgentConfig{
 				System:   system,
 				Provider: prov,
-				Tools:    nil, // External subagent runs without tools (text-only)
+				Tools:    tools,
 				MaxTurns: maxTurns,
 			})
 
@@ -90,13 +97,69 @@ func main() {
 			}
 
 			var b strings.Builder
-			fmt.Fprintf(&b, "[sub-agent: %d turns, %d in / %d out tokens]\n\n", turns, totalIn, totalOut)
+			fmt.Fprintf(&b, "[sub-agent: %d turns, %dk in / %dk out tokens]\n\n", turns, totalIn/1000, totalOut/1000)
 			b.WriteString(result)
 			return sdk.TextResult(b.String()), nil
 		},
 	})
 
-	e.Run()
+	ext.Run()
+}
+
+// Tool caches — host tools don't change during a session.
+var (
+	cachedAllTools []core.Tool
+	cachedBgTools  []core.Tool
+)
+
+// resolveHostTools returns host tool proxies, caching after first query per filter.
+func resolveHostTools(ctx context.Context, ext *sdk.Extension, filter string) []core.Tool {
+	if filter == "all" && cachedAllTools != nil {
+		return cachedAllTools
+	}
+	if filter == "background_safe" && cachedBgTools != nil {
+		return cachedBgTools
+	}
+
+	infos, err := ext.ListHostTools(ctx, filter)
+	if err != nil || len(infos) == 0 {
+		return nil
+	}
+
+	tools := make([]core.Tool, len(infos))
+	for i, info := range infos {
+		name := info.Name
+		tools[i] = core.Tool{
+			ToolSchema: core.ToolSchema{
+				Name:        info.Name,
+				Description: info.Description,
+				Parameters:  info.Parameters,
+			},
+			Execute: func(ctx context.Context, _ string, args map[string]any) (*core.ToolResult, error) {
+				result, err := ext.CallHostTool(ctx, name, args)
+				if err != nil {
+					return nil, err
+				}
+				blocks := make([]core.ContentBlock, len(result.Content))
+				for j, b := range result.Content {
+					switch b.Type {
+					case "image":
+						blocks[j] = core.ImageContent{Data: b.Data, MimeType: b.Mime}
+					default:
+						blocks[j] = core.TextContent{Text: b.Text}
+					}
+				}
+				return &core.ToolResult{Content: blocks}, nil
+			},
+		}
+	}
+
+	if filter == "all" {
+		cachedAllTools = tools
+	} else {
+		cachedBgTools = tools
+	}
+	return tools
 }
 
 func createProvider(args map[string]any) core.StreamProvider {
