@@ -9,6 +9,7 @@ Piglet stores configuration in `~/.config/piglet/`.
 ```yaml
 defaultProvider: openai
 defaultModel: gpt-5
+smallModel: anthropic/claude-haiku-4-5
 systemPrompt: "You are piglet, a helpful coding assistant."
 theme: dark
 shellPath: /bin/zsh
@@ -24,6 +25,7 @@ providers:
 |-----|------|---------|-------------|
 | `defaultProvider` | string | `""` | Preferred provider |
 | `defaultModel` | string | `""` | Model ID or `provider/model-id` |
+| `smallModel` | string | `""` | Cheaper model for background tasks (autotitle, compaction) |
 | `systemPrompt` | string | `""` | Base identity (overridden by `prompt.md`) |
 | `theme` | string | `""` | Color theme |
 | `shellPath` | string | system default | Shell for bash tool |
@@ -98,6 +100,7 @@ projectDocs:
 | Variable | Effect |
 |----------|--------|
 | `PIGLET_DEFAULT_MODEL` | Override default model |
+| `PIGLET_SMALL_MODEL` | Override small model for background tasks |
 
 ## Prompt Templates
 

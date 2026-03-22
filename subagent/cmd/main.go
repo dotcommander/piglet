@@ -9,7 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
@@ -34,6 +34,7 @@ func main() {
 				"tools":     map[string]any{"type": "string", "enum": []any{"read_only", "all"}, "description": "Tool access level (default: read_only)"},
 				"max_turns": map[string]any{"type": "integer", "description": "Maximum turns for the sub-agent"},
 				"model":     map[string]any{"type": "string", "description": "Model override (e.g. anthropic/claude-haiku-4-5)"},
+				"prefer":    map[string]any{"type": "string", "enum": []any{"default", "small"}, "description": "Model preference: default (main model) or small (cheaper model for background tasks)"},
 			},
 			"required": []any{"task"},
 		},
@@ -177,10 +178,12 @@ func createProvider(args map[string]any) core.StreamProvider {
 
 	modelQuery, _ := args["model"].(string)
 	if modelQuery == "" {
-		modelQuery = os.Getenv("PIGLET_DEFAULT_MODEL")
-	}
-	if modelQuery == "" {
-		modelQuery = settings.DefaultModel
+		prefer, _ := args["prefer"].(string)
+		if prefer == "small" {
+			modelQuery = settings.ResolveSmallModel()
+		} else {
+			modelQuery = settings.ResolveDefaultModel()
+		}
 	}
 	if modelQuery == "" {
 		return nil

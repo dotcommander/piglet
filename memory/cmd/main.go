@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
@@ -230,10 +230,7 @@ func createProvider(settings config.Settings) core.StreamProvider {
 		return nil
 	}
 
-	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
-	if modelQuery == "" {
-		modelQuery = settings.DefaultModel
-	}
+	modelQuery := settings.ResolveSmallModel()
 	if modelQuery == "" {
 		return nil
 	}

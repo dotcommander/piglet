@@ -25,6 +25,7 @@ func TestSaveToAndLoadFrom(t *testing.T) {
 	s := config.Settings{
 		DefaultProvider: "openai",
 		DefaultModel:    "gpt-4o",
+		SmallModel:      "gpt-4o-mini",
 		Theme:           "dark",
 		Extensions:      []string{"git-tool"},
 		Providers:       map[string]string{"custom": "https://example.com/v1"},

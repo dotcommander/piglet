@@ -400,5 +400,6 @@ Debug:
 
 Environment:
   PIGLET_DEFAULT_MODEL    Override default model
+  PIGLET_SMALL_MODEL      Override small model (autotitle, compaction)
 `)
 }

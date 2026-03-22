@@ -12,6 +12,7 @@ import (
 type Settings struct {
 	DefaultProvider string            `yaml:"defaultProvider,omitempty"`
 	DefaultModel    string            `yaml:"defaultModel,omitempty"`
+	SmallModel      string            `yaml:"smallModel,omitempty"`
 	SystemPrompt    string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
 	Theme           string            `yaml:"theme,omitempty"`
 	ShellPath       string            `yaml:"shellPath,omitempty"`
@@ -190,4 +191,25 @@ func IntOr(v, fallback int) int {
 		return v
 	}
 	return fallback
+}
+
+// ResolveSmallModel returns the first non-empty value from the small model
+// cascade: PIGLET_SMALL_MODEL env → SmallModel config → PIGLET_DEFAULT_MODEL env → DefaultModel config.
+func (s Settings) ResolveSmallModel() string {
+	if v := os.Getenv("PIGLET_SMALL_MODEL"); v != "" {
+		return v
+	}
+	if s.SmallModel != "" {
+		return s.SmallModel
+	}
+	return s.ResolveDefaultModel()
+}
+
+// ResolveDefaultModel returns the first non-empty value from the default model
+// cascade: PIGLET_DEFAULT_MODEL env → DefaultModel config.
+func (s Settings) ResolveDefaultModel() string {
+	if v := os.Getenv("PIGLET_DEFAULT_MODEL"); v != "" {
+		return v
+	}
+	return s.DefaultModel
 }

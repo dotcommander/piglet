@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"sync/atomic"
 
 	"github.com/dotcommander/piglet/autotitle"
@@ -82,10 +81,7 @@ func createProvider() core.StreamProvider {
 		return nil
 	}
 
-	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
-	if modelQuery == "" {
-		modelQuery = settings.DefaultModel
-	}
+	modelQuery := settings.ResolveSmallModel()
 	if modelQuery == "" {
 		return nil
 	}
