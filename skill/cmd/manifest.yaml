@@ -1,0 +1,8 @@
+name: skill
+version: 0.1.0
+runtime: ./skill
+capabilities:
+  - tools
+  - commands
+  - prompt
+  - messageHooks

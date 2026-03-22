@@ -1,0 +1,5 @@
+name: safeguard
+version: 0.1.0
+runtime: ./safeguard
+capabilities:
+  - interceptors

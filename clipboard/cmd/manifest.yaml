@@ -1,0 +1,6 @@
+name: clipboard
+version: 0.1.0
+runtime: ./clipboard
+capabilities:
+  - tools
+  - shortcuts

@@ -1,0 +1,6 @@
+name: rtk
+version: 0.1.0
+runtime: ./rtk
+capabilities:
+  - interceptors
+  - prompt

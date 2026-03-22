@@ -1,0 +1,7 @@
+name: memory
+version: 0.1.0
+runtime: ./memory
+capabilities:
+  - tools
+  - commands
+  - prompt
