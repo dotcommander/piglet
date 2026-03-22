@@ -21,22 +21,23 @@ tui/, cmd/  → anything (wiring layer)
 
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
-| Tools | 12 | `tool/` (7), `memory/` (2), `skill/` (2), `subagent/` (1) | `RegisterTool` |
+| Tools | 13 | `tool/` (7), `memory/` (2), `skill/` (2), `subagent/` (1), `clipboard/` (1) | `RegisterTool` |
 | Commands | 20 | `command/` (18), `memory/` (1), `skill/` (1) | `RegisterCommand` |
-| Shortcuts | 2 | `command/` | `RegisterShortcut` |
+| Shortcuts | 3 | `command/` (2), `clipboard/` (1) | `RegisterShortcut` |
 | Status sections | 5 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 5+ | `prompt/` (3), `memory/` (1), `skill/` (1) | `RegisterPromptSection` |
 | Message hooks | 1+ | `skill/` (1) | `RegisterMessageHook` |
 | Compactor | 1 | `command/` | `RegisterCompactor` |
 | Interceptors | varies | any extension | `RegisterInterceptor` |
+| Event handlers | 1 | `autotitle/` (1) | `RegisterEventHandler` |
 | Renderers | 0 built-in | any extension | `RegisterRenderer` |
 | Providers | 0 built-in | any extension | `RegisterProvider` |
 
 External extensions (TypeScript, Python, Go) use identical API via JSON-RPC over stdin/stdout.
 
-### Four Primitives
+### Five Primitives
 
-Every extension capability reduces to four orchestrator primitives:
+Every extension capability reduces to five orchestrator primitives:
 
 | Primitive | What it does | ext.App API |
 |-----------|-------------|-------------|
@@ -44,6 +45,7 @@ Every extension capability reduces to four orchestrator primitives:
 | **Intercept** | Modify or block requests/responses passing through | `RegisterInterceptor` (before/after hooks on tool calls) |
 | **React** | Respond to triggers | `RegisterCommand` (user input), `RegisterTool` (model-initiated) |
 | **Hook** | React to user messages before the LLM sees them | `RegisterMessageHook` (ephemeral turn-scoped context injection) |
+| **Observe** | React to agent lifecycle events | `RegisterEventHandler` (EventAgentEnd, EventTurnEnd, etc.) |
 
 All built-in extensions map to these primitives — no special access:
 
@@ -57,6 +59,8 @@ All built-in extensions map to these primitives — no special access:
 | `command/` | React | Commands respond to user slash input |
 | `skill/` | Inject + React + Hook | Tools for on-demand loading, message hook for auto-triggering |
 | `subagent/` | React | Dispatch tool delegates tasks to independent sub-agents |
+| `clipboard/` | React | Tool reads images from system clipboard; shortcut attaches to next message |
+| `autotitle/` | Observe | Event handler generates session title after first exchange |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -81,13 +85,21 @@ func Register(app *ext.App) {
 cmd/piglet/    Wiring layer — creates ext.App, calls Register(), runs TUI
 core/          Agent loop, streaming, types. Imports nothing from piglet.
 ext/           Registration surface (ext.App) — the central API
+  app.go       Struct, NewApp, Bind, action queue
+  registry.go  Register* methods, interceptor chain
+  queries.go   Getter methods (Tools, Commands, etc.)
+  runtime.go   Agent facade (SendMessage, Provider, etc.)
+  domain.go    Session/model domain methods
+  events.go    Event handler dispatch (Observe primitive)
   external/    JSON-RPC bridge for TypeScript/Python/Go extensions
 tool/          7 built-in tools — extension, not core
 command/       18 built-in commands, 5 status sections, 2 shortcuts — extension, not core
+clipboard/     Clipboard image reading — 1 tool, 1 shortcut (ctrl+v)
 prompt/        System prompt builder + prompt section extensions
 memory/        Per-project persistent memory — 2 tools, 1 command, 1 prompt section
 skill/         On-demand methodology loading — 2 tools, 1 command, 1 prompt section, 1 message hook
 subagent/      Sub-agent delegation — 1 tool (dispatch)
+autotitle/     Session title generation — 1 event handler (Observe)
 config/        Settings (YAML), auth (JSON)
 provider/      OpenAI, Anthropic, Google streaming providers
 session/       JSONL conversation persistence, compaction
@@ -106,6 +118,7 @@ tui/           Bubble Tea v2 UI
 | `Interceptor` | ext | Before/after tool hooks, priority-sorted |
 | `MessageHook` | ext | Before-message hooks, priority-sorted, ephemeral context injection |
 | `PromptSection` | ext | System prompt injection (title, content, order) |
+| `EventHandler` | ext | Agent lifecycle event observer (Observe primitive) |
 
 ## Build & Test
 
@@ -131,6 +144,7 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 - Skills: `~/.config/piglet/skills/` (markdown with YAML frontmatter)
 - Sessions: `~/.config/piglet/sessions/`
 - Extensions: `~/.config/piglet/extensions/`
+- Extension configs: `~/.config/piglet/<name>.md` (read via `config.ReadExtensionConfig`)
 
 **All prompt content, behavioral text, and default strings live in config files above. Go code reads these files. It never contains the content. See Go workspace CLAUDE.md "Configuration Data" for the pre-flight gate.**
 

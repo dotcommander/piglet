@@ -208,9 +208,9 @@ Built-in shortcuts (Ctrl+P for model selector, Ctrl+S for session picker) regist
 app.RegisterShortcut(&ext.Shortcut{
     Key:         "ctrl+g",
     Description: "Show git status",
-    Handler: func(a *ext.App) error {
+    Handler: func(a *ext.App) (ext.Action, error) {
         a.SendMessage("show me git status")
-        return nil
+        return nil, nil
     },
 })
 ```
