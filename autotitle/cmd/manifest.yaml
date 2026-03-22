@@ -1,5 +1,0 @@
-name: autotitle
-version: 0.1.0
-runtime: ./autotitle
-capabilities:
-  - eventHandlers
