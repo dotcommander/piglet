@@ -3,8 +3,6 @@ package subagent
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
@@ -123,17 +121,6 @@ func registerTool(app *ext.App, cfg Config, cachedPrompt string) {
 // loadPrompt reads the sub-agent system prompt from ~/.config/piglet/subagent.md.
 // Returns empty string if the file doesn't exist.
 func loadPrompt() string {
-	dir, err := config.ConfigDir()
-	if err != nil {
-		return ""
-	}
-	path := filepath.Join(dir, "subagent.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	if s := strings.TrimSpace(string(data)); s != "" {
-		return s
-	}
-	return ""
+	s, _ := config.ReadExtensionConfig("subagent")
+	return s
 }

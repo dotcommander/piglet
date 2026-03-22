@@ -1,10 +1,6 @@
 package prompt
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 )
@@ -28,13 +24,6 @@ func RegisterBehavior(app *ext.App) {
 }
 
 func loadBehavior() string {
-	dir, err := config.ConfigDir()
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "behavior.md"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	s, _ := config.ReadExtensionConfig("behavior")
+	return s
 }

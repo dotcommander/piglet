@@ -3,8 +3,6 @@ package prompt
 
 import (
 	"cmp"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -87,13 +85,6 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 // loadUserPrompt reads ~/.config/piglet/prompt.md if it exists.
 func loadUserPrompt() string {
-	dir, err := config.ConfigDir()
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "prompt.md"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	s, _ := config.ReadExtensionConfig("prompt")
+	return s
 }
