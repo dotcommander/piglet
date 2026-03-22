@@ -70,7 +70,8 @@ func (s StatusBar) View() string {
 		}
 	}
 
-	gap := s.width - lipgloss.Width(left) - lipgloss.Width(right)
+	pad := 2 // Footer padding (left + right)
+	gap := s.width - lipgloss.Width(left) - lipgloss.Width(right) - pad
 	if gap < 1 {
 		gap = 1
 	}
@@ -95,7 +96,7 @@ func (s StatusBar) renderSide(side ext.StatusSide) string {
 
 	sep := " "
 	if side == ext.StatusLeft {
-		sep = s.styles.Muted.Render(" | ")
+		sep = s.styles.Muted.Render(" · ")
 	}
 	return strings.Join(parts, sep)
 }

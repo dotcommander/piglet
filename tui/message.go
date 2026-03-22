@@ -55,8 +55,8 @@ func (v *MessageView) RenderMessage(msg core.Message) string {
 func (v *MessageView) separator() string {
 	if v.cachedSep == "" {
 		w := v.width
-		if w > 60 {
-			w = 60
+		if w > 30 {
+			w = 30
 		}
 		v.cachedSep = v.styles.Muted.Render(strings.Repeat("─", w))
 	}
@@ -64,7 +64,7 @@ func (v *MessageView) separator() string {
 }
 
 func (v *MessageView) renderUser(m *core.UserMessage) string {
-	label := v.styles.UserMsg.Render("> You")
+	label := v.styles.UserMsg.Render("you")
 	content := m.Content
 	if content == "" && len(m.Blocks) > 0 {
 		for _, b := range m.Blocks {
@@ -79,7 +79,7 @@ func (v *MessageView) renderUser(m *core.UserMessage) string {
 
 func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 	var b strings.Builder
-	b.WriteString(v.styles.AssistantMsg.Render("Assistant") + "\n")
+	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
 	b.WriteString(v.separator() + "\n")
 
 	for _, c := range m.Content {
@@ -152,7 +152,7 @@ type StreamCache struct {
 // Uses glamour with caching — only re-renders when text grows by 100+ chars or gains a newline.
 func (v *MessageView) RenderStreaming(text string, thinking string, cache *StreamCache) string {
 	var b strings.Builder
-	b.WriteString(v.styles.AssistantMsg.Render("Assistant") + "\n")
+	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
 	b.WriteString(v.separator() + "\n")
 
 	if text == "" && thinking == "" {

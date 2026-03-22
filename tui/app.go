@@ -406,7 +406,7 @@ func (m *Model) layout() {
 	}
 
 	m.input.SetWidth(m.width)
-	m.status.SetWidth(m.width)
+	m.status.SetWidth(m.width - 2) // subtract App padding
 	m.msgView.SetWidth(m.width - 2)
 	m.modal.SetSize(m.width, m.height)
 }
