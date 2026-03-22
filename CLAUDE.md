@@ -128,27 +128,9 @@ provider/      OpenAI, Anthropic, Google streaming providers
 session/       JSONL conversation persistence, compaction
 tui/           Bubble Tea v2 UI
 
-# External extensions (standalone binaries, source in-repo):
-safeguard/     Command blocking with profiles (strict/balanced/off) — 1 interceptor
-  cmd/         Binary entry point + manifest.yaml
-rtk/           Token-optimized bash rewriting — 1 interceptor, 1 prompt section
-  cmd/         Binary entry point + manifest.yaml
-autotitle/     Session title generation — 1 event handler
-  cmd/         Binary entry point + manifest.yaml
-clipboard/     Clipboard image reading — 1 tool, 1 shortcut (ctrl+v)
-  cmd/         Binary entry point + manifest.yaml
-skill/         On-demand methodology loading — 2 tools, 1 command, 1 prompt section, 1 message hook
-  cmd/         Binary entry point + manifest.yaml
-memory/        Per-project persistent memory — 3 tools, 1 command, 1 prompt section
-  cmd/         Binary entry point + manifest.yaml
-subagent/      Sub-agent delegation — 1 tool (dispatch)
-  cmd/         Binary entry point + manifest.yaml
-lsp/           Code intelligence via LSP — 5 tools, 1 prompt section
-  cmd/         Binary entry point + manifest.yaml
-repomap/       Repository structure map — 2 tools, 1 prompt section, 1 event handler
-  cmd/         Binary entry point + manifest.yaml
-plan/          Persistent structured task tracking — 3 tools, 1 command, 1 prompt section, 1 interceptor
-  cmd/         Binary entry point + manifest.yaml
+# External extensions live in separate repo: dotcommander/piglet-extensions
+# Source: ~/go/src/piglet-extensions/
+# Build: make extensions (delegates to piglet-extensions Makefile)
 ```
 
 ## Key Types
@@ -182,12 +164,15 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 
 ## Extensions
 
+Extensions live in a separate repo: `dotcommander/piglet-extensions` (`~/go/src/piglet-extensions/`).
+
 ```bash
-make extensions              # Build + install all 10 to ~/.config/piglet/extensions/
-make extensions-safeguard    # Build a single extension
+make extensions              # Delegates to piglet-extensions Makefile
+cd ~/go/src/piglet-extensions && make extensions   # Direct build
+cd ~/go/src/piglet-extensions && make extensions-safeguard  # Build a single extension
 ```
 
-Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (22 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
+Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (22 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
 
 ## Config
 
