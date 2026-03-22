@@ -38,9 +38,7 @@ func LoadManifest(dir string) (*Manifest, error) {
 	if m.Runtime == "" {
 		return nil, fmt.Errorf("manifest %s: runtime is required", path)
 	}
-	if m.Entry == "" {
-		return nil, fmt.Errorf("manifest %s: entry is required", path)
-	}
+	// Entry is optional for compiled Go binaries (runtime is the binary itself)
 
 	m.Dir = dir
 	return &m, nil
@@ -84,19 +82,25 @@ func ExtensionsDir() (string, error) {
 
 // RuntimeCommand returns the command and args to execute an extension.
 func (m *Manifest) RuntimeCommand() (string, []string) {
-	entry := filepath.Join(m.Dir, m.Entry)
-
 	switch m.Runtime {
 	case "bun":
-		return "bun", []string{"run", entry}
+		return "bun", []string{"run", filepath.Join(m.Dir, m.Entry)}
 	case "node":
-		return "node", []string{entry}
+		return "node", []string{filepath.Join(m.Dir, m.Entry)}
 	case "deno":
-		return "deno", []string{"run", "--allow-all", entry}
+		return "deno", []string{"run", "--allow-all", filepath.Join(m.Dir, m.Entry)}
 	case "python":
-		return "python3", []string{entry}
+		return "python3", []string{filepath.Join(m.Dir, m.Entry)}
 	default:
-		// Treat runtime as an absolute path to an executable
-		return m.Runtime, []string{entry}
+		// For compiled binaries: runtime is the binary path (relative to dir or absolute).
+		// If entry is empty, run the binary directly with no args.
+		bin := m.Runtime
+		if !filepath.IsAbs(bin) {
+			bin = filepath.Join(m.Dir, bin)
+		}
+		if m.Entry == "" {
+			return bin, nil
+		}
+		return bin, []string{filepath.Join(m.Dir, m.Entry)}
 	}
 }

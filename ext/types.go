@@ -186,12 +186,16 @@ type PromptSection struct {
 
 // ExtInfo describes a loaded extension for /extensions listing.
 type ExtInfo struct {
-	Name     string   // human-readable name
-	Version  string   // semver or empty
-	Kind     string   // "builtin" or "external"
-	Runtime  string   // "go", "bun", "node", "python", etc.
-	Tools    []string // tool names registered by this extension
-	Commands []string // command names registered by this extension
+	Name          string   // human-readable name
+	Version       string   // semver or empty
+	Kind          string   // "builtin" or "external"
+	Runtime       string   // "go", "bun", "node", "python", etc.
+	Tools         []string // tool names registered by this extension
+	Commands      []string // command names registered by this extension
+	Interceptors  []string // interceptor names
+	EventHandlers []string // event handler names
+	Shortcuts     []string // shortcut keys
+	MessageHooks  []string // message hook names
 }
 
 // ProviderConfig registers a custom LLM provider from an extension.

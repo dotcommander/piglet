@@ -60,17 +60,19 @@ entry: index.ts
 	assert.ErrorContains(t, err, "runtime is required")
 }
 
-func TestLoadManifestMissingEntry(t *testing.T) {
+func TestLoadManifestEmptyEntry(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	content := `name: test
-runtime: bun
+runtime: ./test-binary
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte(content), 0644))
 
-	_, err := LoadManifest(dir)
-	assert.ErrorContains(t, err, "entry is required")
+	m, err := LoadManifest(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "", m.Entry)
+	assert.Equal(t, "./test-binary", m.Runtime)
 }
 
 func TestLoadManifestNotFound(t *testing.T) {

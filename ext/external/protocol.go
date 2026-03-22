@@ -68,6 +68,31 @@ type RegisterPromptSectionParams struct {
 	Order   int    `json:"order,omitempty"`
 }
 
+// RegisterInterceptorParams registers a before/after tool interceptor.
+type RegisterInterceptorParams struct {
+	Name     string `json:"name"`
+	Priority int    `json:"priority,omitempty"`
+}
+
+// RegisterEventHandlerParams registers an agent lifecycle event handler.
+type RegisterEventHandlerParams struct {
+	Name     string   `json:"name"`
+	Priority int      `json:"priority,omitempty"`
+	Events   []string `json:"events,omitempty"` // nil = all events
+}
+
+// RegisterShortcutParams registers a keyboard shortcut.
+type RegisterShortcutParams struct {
+	Key         string `json:"key"`         // e.g. "ctrl+g"
+	Description string `json:"description"`
+}
+
+// RegisterMessageHookParams registers a pre-message hook.
+type RegisterMessageHookParams struct {
+	Name     string `json:"name"`
+	Priority int    `json:"priority,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Tool execution: host → extension (request/response)
 // ---------------------------------------------------------------------------
@@ -130,6 +155,87 @@ type CommandExecuteResult struct {
 }
 
 // ---------------------------------------------------------------------------
+// Interceptor callbacks: host → extension (request/response)
+// ---------------------------------------------------------------------------
+
+// InterceptorBeforeParams is sent when a tool is about to execute.
+type InterceptorBeforeParams struct {
+	ToolName string         `json:"toolName"`
+	Args     map[string]any `json:"args"`
+}
+
+// InterceptorBeforeResult is the extension's response.
+type InterceptorBeforeResult struct {
+	Allow bool           `json:"allow"`
+	Args  map[string]any `json:"args,omitempty"`
+}
+
+// InterceptorAfterParams is sent after tool execution.
+type InterceptorAfterParams struct {
+	ToolName string `json:"toolName"`
+	Details  any    `json:"details,omitempty"`
+}
+
+// InterceptorAfterResult is the extension's response.
+type InterceptorAfterResult struct {
+	Details any `json:"details,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Event dispatch: host → extension (request/response)
+// ---------------------------------------------------------------------------
+
+// EventDispatchParams is sent when an agent lifecycle event occurs.
+type EventDispatchParams struct {
+	Type string          `json:"type"` // e.g. "EventAgentEnd", "EventTurnEnd"
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+// EventDispatchResult is the extension's response.
+type EventDispatchResult struct {
+	Action *ActionResult `json:"action,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Shortcut callback: host → extension (request/response)
+// ---------------------------------------------------------------------------
+
+// ShortcutHandleParams is sent when the user presses a registered shortcut.
+type ShortcutHandleParams struct {
+	Key string `json:"key"` // which shortcut key was pressed
+}
+
+// ShortcutHandleResult is the extension's response.
+type ShortcutHandleResult struct {
+	Action *ActionResult `json:"action,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Message hook callback: host → extension (request/response)
+// ---------------------------------------------------------------------------
+
+// MessageHookParams is sent before a user message reaches the LLM.
+type MessageHookParams struct {
+	Message string `json:"message"`
+}
+
+// MessageHookResult is the extension's response.
+type MessageHookResult struct {
+	Injection string `json:"injection,omitempty"` // ephemeral context to inject
+}
+
+// ---------------------------------------------------------------------------
+// Serializable action (replaces Go Action interface over the wire)
+// ---------------------------------------------------------------------------
+
+// ActionResult is a JSON-serializable action returned by extensions.
+// The host converts it to the appropriate ext.Action type.
+type ActionResult struct {
+	Type    string          `json:"type"`              // "notify", "showMessage", "setSessionTitle", "quit"
+	Payload json.RawMessage `json:"payload,omitempty"` // type-specific data
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle: host → extension
 // ---------------------------------------------------------------------------
 
@@ -137,7 +243,7 @@ type CommandExecuteResult struct {
 type ShutdownParams struct{}
 
 // Protocol version
-const ProtocolVersion = "1"
+const ProtocolVersion = "2"
 
 // CancelParams tells the extension to abort the request with the given ID.
 type CancelParams struct {
@@ -152,8 +258,17 @@ const (
 	MethodRegisterTool          = "register/tool"
 	MethodRegisterCommand       = "register/command"
 	MethodRegisterPromptSection = "register/promptSection"
+	MethodRegisterInterceptor   = "register/interceptor"
+	MethodRegisterEventHandler  = "register/eventHandler"
+	MethodRegisterShortcut      = "register/shortcut"
+	MethodRegisterMessageHook   = "register/messageHook"
 	MethodToolExecute           = "tool/execute"
 	MethodCommandExecute        = "command/execute"
+	MethodInterceptorBefore     = "interceptor/before"
+	MethodInterceptorAfter      = "interceptor/after"
+	MethodEventDispatch         = "event/dispatch"
+	MethodShortcutHandle        = "shortcut/handle"
+	MethodMessageHookOnMessage  = "messageHook/onMessage"
 	MethodNotify                = "notify"
 	MethodLog                   = "log"
 	MethodShowMessage           = "showMessage"

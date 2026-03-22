@@ -31,11 +31,16 @@ type Host struct {
 	nextID    atomic.Int64
 	pending   map[int]chan *Message // pending request ID → response channel
 	closed    chan struct{}
+	closeOnce sync.Once
 
 	// Registrations collected during handshake
 	tools          []RegisterToolParams
 	commands       []RegisterCommandParams
 	promptSections []RegisterPromptSectionParams
+	interceptors   []RegisterInterceptorParams
+	eventHandlers  []RegisterEventHandlerParams
+	shortcuts      []RegisterShortcutParams
+	messageHooks   []RegisterMessageHookParams
 }
 
 // NewHost creates a host for the given manifest.
@@ -105,25 +110,21 @@ func (h *Host) Start(ctx context.Context) error {
 
 // Stop sends shutdown and kills the process.
 func (h *Host) Stop() {
-	select {
-	case <-h.closed:
-		return
-	default:
-	}
+	h.closeOnce.Do(func() {
+		// Best-effort shutdown notification
+		_ = h.send(&Message{
+			JSONRPC: "2.0",
+			Method:  MethodShutdown,
+		})
 
-	// Best-effort shutdown notification
-	_ = h.send(&Message{
-		JSONRPC: "2.0",
-		Method:  MethodShutdown,
+		h.stdin.Close()
+		close(h.closed)
+
+		if h.cmd.Process != nil {
+			_ = h.cmd.Process.Kill()
+		}
+		_ = h.cmd.Wait()
 	})
-
-	h.stdin.Close()
-	close(h.closed)
-
-	if h.cmd.Process != nil {
-		_ = h.cmd.Process.Kill()
-	}
-	_ = h.cmd.Wait()
 }
 
 // Name returns the extension name from the manifest.
@@ -137,6 +138,18 @@ func (h *Host) Commands() []RegisterCommandParams { return h.commands }
 
 // PromptSections returns the prompt sections registered during handshake.
 func (h *Host) PromptSections() []RegisterPromptSectionParams { return h.promptSections }
+
+// Interceptors returns the interceptors registered during handshake.
+func (h *Host) Interceptors() []RegisterInterceptorParams { return h.interceptors }
+
+// EventHandlers returns the event handlers registered during handshake.
+func (h *Host) EventHandlers() []RegisterEventHandlerParams { return h.eventHandlers }
+
+// Shortcuts returns the shortcuts registered during handshake.
+func (h *Host) Shortcuts() []RegisterShortcutParams { return h.shortcuts }
+
+// MessageHooks returns the message hooks registered during handshake.
+func (h *Host) MessageHooks() []RegisterMessageHookParams { return h.messageHooks }
 
 // ExecuteTool sends a tool/execute request and waits for the response.
 func (h *Host) ExecuteTool(ctx context.Context, callID, name string, args map[string]any) (*ToolExecuteResult, error) {
@@ -175,6 +188,104 @@ func (h *Host) ExecuteCommand(ctx context.Context, name, args string) error {
 }
 
 // ---------------------------------------------------------------------------
+// Callbacks: host → extension
+// ---------------------------------------------------------------------------
+
+// InterceptBefore sends an interceptor/before request to the extension.
+func (h *Host) InterceptBefore(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+	resp, err := h.request(ctx, MethodInterceptorBefore, InterceptorBeforeParams{
+		ToolName: toolName,
+		Args:     args,
+	})
+	if err != nil {
+		return true, args, err // allow on error to avoid blocking
+	}
+	if resp.Error != nil {
+		return true, args, fmt.Errorf("interceptor before: %s", resp.Error.Message)
+	}
+	var result InterceptorBeforeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return true, args, fmt.Errorf("unmarshal interceptor before: %w", err)
+	}
+	if result.Args != nil {
+		return result.Allow, result.Args, nil
+	}
+	return result.Allow, args, nil
+}
+
+// InterceptAfter sends an interceptor/after request to the extension.
+func (h *Host) InterceptAfter(ctx context.Context, toolName string, details any) (any, error) {
+	resp, err := h.request(ctx, MethodInterceptorAfter, InterceptorAfterParams{
+		ToolName: toolName,
+		Details:  details,
+	})
+	if err != nil {
+		return details, err
+	}
+	if resp.Error != nil {
+		return details, fmt.Errorf("interceptor after: %s", resp.Error.Message)
+	}
+	var result InterceptorAfterResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return details, fmt.Errorf("unmarshal interceptor after: %w", err)
+	}
+	return result.Details, nil
+}
+
+// DispatchEvent sends an event/dispatch request to the extension.
+func (h *Host) DispatchEvent(ctx context.Context, eventType string, data json.RawMessage) (*ActionResult, error) {
+	resp, err := h.request(ctx, MethodEventDispatch, EventDispatchParams{
+		Type: eventType,
+		Data: data,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("event dispatch: %s", resp.Error.Message)
+	}
+	var result EventDispatchResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal event dispatch: %w", err)
+	}
+	return result.Action, nil
+}
+
+// HandleShortcut sends a shortcut/handle request to the extension.
+func (h *Host) HandleShortcut(ctx context.Context, key string) (*ActionResult, error) {
+	resp, err := h.request(ctx, MethodShortcutHandle, ShortcutHandleParams{Key: key})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("shortcut handle: %s", resp.Error.Message)
+	}
+	var result ShortcutHandleResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal shortcut handle: %w", err)
+	}
+	return result.Action, nil
+}
+
+// OnMessage sends a messageHook/onMessage request to the extension.
+func (h *Host) OnMessage(ctx context.Context, msg string) (string, error) {
+	resp, err := h.request(ctx, MethodMessageHookOnMessage, MessageHookParams{
+		Message: msg,
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp.Error != nil {
+		return "", fmt.Errorf("message hook: %s", resp.Error.Message)
+	}
+	var result MessageHookResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("unmarshal message hook: %w", err)
+	}
+	return result.Injection, nil
+}
+
+// ---------------------------------------------------------------------------
 // Internal
 // ---------------------------------------------------------------------------
 
@@ -191,12 +302,6 @@ func (h *Host) request(ctx context.Context, method string, params any) (*Message
 	h.pending[id] = ch
 	h.pendingMu.Unlock()
 
-	defer func() {
-		h.pendingMu.Lock()
-		delete(h.pending, id)
-		h.pendingMu.Unlock()
-	}()
-
 	msg := &Message{
 		JSONRPC: "2.0",
 		ID:      &id,
@@ -204,6 +309,9 @@ func (h *Host) request(ctx context.Context, method string, params any) (*Message
 		Params:  paramsJSON,
 	}
 	if err := h.send(msg); err != nil {
+		h.pendingMu.Lock()
+		delete(h.pending, id)
+		h.pendingMu.Unlock()
 		return nil, err
 	}
 
@@ -211,9 +319,15 @@ func (h *Host) request(ctx context.Context, method string, params any) (*Message
 	case resp := <-ch:
 		return resp, nil
 	case <-ctx.Done():
+		h.pendingMu.Lock()
+		delete(h.pending, id)
+		h.pendingMu.Unlock()
 		h.sendCancel(id)
 		return nil, ctx.Err()
 	case <-h.closed:
+		h.pendingMu.Lock()
+		delete(h.pending, id)
+		h.pendingMu.Unlock()
 		return nil, fmt.Errorf("extension %s closed", h.manifest.Name)
 	}
 }
@@ -245,11 +359,9 @@ func (h *Host) send(msg *Message) error {
 func (h *Host) readLoop() {
 	defer func() {
 		// Unblock any pending requests when the process exits
-		select {
-		case <-h.closed:
-		default:
+		h.closeOnce.Do(func() {
 			close(h.closed)
-		}
+		})
 	}()
 
 	for h.stdout.Scan() {
@@ -273,6 +385,9 @@ func (h *Host) handleMessage(msg *Message) {
 	if msg.ID != nil && msg.Method == "" {
 		h.pendingMu.Lock()
 		ch, ok := h.pending[*msg.ID]
+		if ok {
+			delete(h.pending, *msg.ID)
+		}
 		h.pendingMu.Unlock()
 		if ok {
 			ch <- msg
@@ -296,6 +411,26 @@ func (h *Host) handleMessage(msg *Message) {
 		var p RegisterPromptSectionParams
 		if json.Unmarshal(msg.Params, &p) == nil {
 			h.promptSections = append(h.promptSections, p)
+		}
+	case MethodRegisterInterceptor:
+		var p RegisterInterceptorParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.interceptors = append(h.interceptors, p)
+		}
+	case MethodRegisterEventHandler:
+		var p RegisterEventHandlerParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.eventHandlers = append(h.eventHandlers, p)
+		}
+	case MethodRegisterShortcut:
+		var p RegisterShortcutParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.shortcuts = append(h.shortcuts, p)
+		}
+	case MethodRegisterMessageHook:
+		var p RegisterMessageHookParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.messageHooks = append(h.messageHooks, p)
 		}
 	case MethodNotify:
 		var p NotifyParams

@@ -2,8 +2,11 @@ package external
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/dotcommander/piglet/core"
@@ -117,6 +120,47 @@ func bridge(app *ext.App, h *Host) {
 		})
 	}
 
+	// Register interceptors
+	for _, ic := range h.Interceptors() {
+		app.RegisterInterceptor(ext.Interceptor{
+			Name:     ic.Name,
+			Priority: ic.Priority,
+			Before:   proxyInterceptorBefore(h),
+			After:    proxyInterceptorAfter(h),
+		})
+		info.Interceptors = append(info.Interceptors, ic.Name)
+	}
+
+	// Register event handlers
+	for _, eh := range h.EventHandlers() {
+		app.RegisterEventHandler(ext.EventHandler{
+			Name:     eh.Name,
+			Priority: eh.Priority,
+			Filter:   proxyEventFilter(eh.Events),
+			Handle:   proxyEventHandle(h),
+		})
+		info.EventHandlers = append(info.EventHandlers, eh.Name)
+	}
+
+	// Register shortcuts
+	for _, sc := range h.Shortcuts() {
+		app.RegisterShortcut(&ext.Shortcut{
+			Key:         sc.Key,
+			Description: sc.Description,
+			Handler:     proxyShortcutHandle(h, sc.Key),
+		})
+		info.Shortcuts = append(info.Shortcuts, sc.Key)
+	}
+
+	// Register message hooks
+	for _, mh := range h.MessageHooks() {
+		app.RegisterMessageHook(ext.MessageHook{
+			Name:     mh.Name,
+			Priority: mh.Priority,
+			OnMessage: proxyMessageHook(h),
+		})
+		info.MessageHooks = append(info.MessageHooks, mh.Name)
+	}
 }
 
 // proxyToolExecute returns a ToolExecuteFn that proxies to the extension process.
@@ -144,7 +188,120 @@ func proxyToolExecute(h *Host, toolName string) core.ToolExecuteFn {
 // proxyCommandExecute returns a command handler that proxies to the extension.
 func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App) error {
 	return func(args string, app *ext.App) error {
-		ctx := context.Background()
-		return h.ExecuteCommand(ctx, cmdName, args)
+		return h.ExecuteCommand(context.TODO(), cmdName, args)
+	}
+}
+
+// proxyInterceptorBefore returns a Before function that proxies to the extension.
+func proxyInterceptorBefore(h *Host) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+		return h.InterceptBefore(ctx, toolName, args)
+	}
+}
+
+// proxyInterceptorAfter returns an After function that proxies to the extension.
+func proxyInterceptorAfter(h *Host) func(ctx context.Context, toolName string, details any) (any, error) {
+	return func(ctx context.Context, toolName string, details any) (any, error) {
+		return h.InterceptAfter(ctx, toolName, details)
+	}
+}
+
+// proxyEventFilter returns a Filter function that checks event type names.
+// nil events slice means accept all events.
+func proxyEventFilter(events []string) func(core.Event) bool {
+	if len(events) == 0 {
+		return nil // nil = accept all
+	}
+	return func(evt core.Event) bool {
+		typeName := eventTypeName(evt)
+		return slices.Contains(events, typeName)
+	}
+}
+
+// proxyEventHandle returns a Handle function that dispatches events to the extension.
+// Wraps in ActionRunAsync since extension calls may be slow (e.g. LLM calls for autotitle).
+func proxyEventHandle(h *Host) func(ctx context.Context, evt core.Event) ext.Action {
+	return func(ctx context.Context, evt core.Event) ext.Action {
+		typeName := eventTypeName(evt)
+		data, _ := json.Marshal(evt)
+
+		return ext.ActionRunAsync{Fn: func() ext.Action {
+			ar, err := h.DispatchEvent(ctx, typeName, data)
+			if err != nil {
+				slog.Debug("event dispatch error", "ext", h.Name(), "err", err)
+				return nil
+			}
+			return actionResultToAction(ar)
+		}}
+	}
+}
+
+// proxyShortcutHandle returns a Handler function that proxies to the extension.
+func proxyShortcutHandle(h *Host, key string) func(app *ext.App) (ext.Action, error) {
+	return func(app *ext.App) (ext.Action, error) {
+		ar, err := h.HandleShortcut(context.TODO(), key)
+		if err != nil {
+			return nil, fmt.Errorf("ext %s shortcut %s: %w", h.Name(), key, err)
+		}
+		return actionResultToAction(ar), nil
+	}
+}
+
+// proxyMessageHook returns an OnMessage function that proxies to the extension.
+func proxyMessageHook(h *Host) func(ctx context.Context, msg string) (string, error) {
+	return func(ctx context.Context, msg string) (string, error) {
+		return h.OnMessage(ctx, msg)
+	}
+}
+
+// eventTypeName returns the Go type name of a core.Event (e.g. "EventAgentEnd").
+func eventTypeName(evt core.Event) string {
+	t := reflect.TypeOf(evt)
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.Name()
+}
+
+// actionResultToAction converts a wire ActionResult to an ext.Action.
+// Returns nil if the ActionResult is nil or has an unknown type.
+func actionResultToAction(ar *ActionResult) ext.Action {
+	if ar == nil {
+		return nil
+	}
+	switch ar.Type {
+	case "notify":
+		var p struct{ Message string }
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionNotify{Message: p.Message}
+	case "showMessage":
+		var p struct{ Text string }
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionShowMessage{Text: p.Text}
+	case "setSessionTitle":
+		var p struct{ Title string }
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionSetSessionTitle{Title: p.Title}
+	case "quit":
+		return ext.ActionQuit{}
+	case "setStatus":
+		var p struct {
+			Key  string
+			Text string
+		}
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionSetStatus{Key: p.Key, Text: p.Text}
+	case "attachImage":
+		var p struct {
+			Data     string `json:"data"`
+			MimeType string `json:"mimeType"`
+		}
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionAttachImage{Image: &core.ImageContent{Data: p.Data, MimeType: p.MimeType}}
+	case "detachImage":
+		return ext.ActionDetachImage{}
+	default:
+		slog.Debug("unknown action type from extension", "type", ar.Type)
+		return nil
 	}
 }
