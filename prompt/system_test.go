@@ -61,10 +61,11 @@ func TestBuild_WithToolDefs(t *testing.T) {
 
 	result := prompt.Build(app, "base")
 
-	assert.Contains(t, result, "# Tools")
+	// Only hints and guides appear — description is sent via API tool schemas
+	assert.Contains(t, result, "# Tool Usage Notes")
 	assert.Contains(t, result, "## read_file")
 	assert.Contains(t, result, "Read file contents with line numbers")
-	assert.Contains(t, result, "Reads a file from disk.")
+	assert.NotContains(t, result, "Reads a file from disk.", "description should not be in prompt (sent via API)")
 	assert.Contains(t, result, "Use offset/limit for large files")
 	assert.Contains(t, result, "Prefer grep to locate content")
 }
@@ -129,15 +130,15 @@ func TestBuild_ToolWithoutHint(t *testing.T) {
 			Name:        "list_dir",
 			Description: "Lists directory contents.",
 		},
-		// No PromptHint, no PromptGuides
+		// No PromptHint, no PromptGuides — tool is omitted from prompt entirely
 	})
 
 	result := prompt.Build(app, "base")
 
-	assert.Contains(t, result, "## list_dir")
-	assert.Contains(t, result, "Lists directory contents.")
-	// No hint separator when hint is empty
-	assert.NotContains(t, result, "## list_dir —")
+	// Tools without hints/guides don't appear in the prompt (description sent via API)
+	assert.NotContains(t, result, "## list_dir")
+	assert.NotContains(t, result, "Lists directory contents.")
+	assert.NotContains(t, result, "# Tool Usage Notes")
 }
 
 func TestBuild_NoToolsSection(t *testing.T) {
@@ -146,6 +147,6 @@ func TestBuild_NoToolsSection(t *testing.T) {
 	app := ext.NewApp("")
 	result := prompt.Build(app, "base")
 
-	// No tools registered → no "# Tools" header
-	assert.NotContains(t, result, "# Tools")
+	// No tools registered → no tool usage section
+	assert.NotContains(t, result, "# Tool Usage Notes")
 }

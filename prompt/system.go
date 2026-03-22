@@ -53,31 +53,29 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 		b.WriteString("\n\n")
 	}
 
-	// Tool hints and guidelines
-	defs := app.ToolDefs()
-	if len(defs) > 0 {
-		b.WriteString("# Tools\n\n")
-		for _, td := range defs {
-			b.WriteString("## ")
-			b.WriteString(td.Name)
-			if td.PromptHint != "" {
-				b.WriteString(" — ")
-				b.WriteString(td.PromptHint)
-			}
-			b.WriteString("\n")
-
-			if td.Description != "" {
-				b.WriteString(td.Description)
-				b.WriteString("\n")
-			}
-
-			for _, guide := range td.PromptGuides {
-				b.WriteString("- ")
-				b.WriteString(guide)
-				b.WriteString("\n")
-			}
-			b.WriteString("\n")
+	// Tool hints and guidelines (descriptions already sent via API tool schemas)
+	var toolNotes strings.Builder
+	for _, td := range app.ToolDefs() {
+		if td.PromptHint == "" && len(td.PromptGuides) == 0 {
+			continue
 		}
+		toolNotes.WriteString("## ")
+		toolNotes.WriteString(td.Name)
+		if td.PromptHint != "" {
+			toolNotes.WriteString(" — ")
+			toolNotes.WriteString(td.PromptHint)
+		}
+		toolNotes.WriteString("\n")
+		for _, guide := range td.PromptGuides {
+			toolNotes.WriteString("- ")
+			toolNotes.WriteString(guide)
+			toolNotes.WriteString("\n")
+		}
+		toolNotes.WriteString("\n")
+	}
+	if toolNotes.Len() > 0 {
+		b.WriteString("# Tool Usage Notes\n\n")
+		b.WriteString(toolNotes.String())
 	}
 
 	return b.String()
