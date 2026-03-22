@@ -170,6 +170,7 @@ func run() error {
 		GrepLimit: settings.Tools.GrepLimit,
 	})
 	command.RegisterBuiltins(app, settings.Shortcuts)
+	command.RegisterPrompts(app)
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
