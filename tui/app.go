@@ -22,11 +22,11 @@ import (
 
 // Config configures the TUI app.
 type Config struct {
-	Agent   *core.Agent
-	Session *session.Session
-	Model   core.Model
-	Models  []core.Model // available models from registry
-	SessDir string       // session directory path
+	Agent    *core.Agent
+	Session  *session.Session
+	Model    core.Model
+	Models   []core.Model // available models from registry
+	SessDir  string       // session directory path
 	Theme    Theme
 	App      *ext.App         // extension API surface
 	Settings *config.Settings // user settings (nil-safe)
@@ -76,19 +76,19 @@ type Model struct {
 	spinner  spinner.Model
 
 	// State
-	messages       []core.Message
-	streaming      bool
-	streamText     string
-	streamThink    string
-	activeTool     string
-	spinnerVerb    string
+	messages        []core.Message
+	streaming       bool
+	streamText      string
+	streamThink     string
+	activeTool      string
+	spinnerVerb     string
 	totalIn         int
 	totalOut        int
 	totalCost       float64
 	totalCacheRead  int
 	totalCacheWrite int
-	quitting       bool
-	pickerCallback func(ext.PickerItem)
+	quitting        bool
+	pickerCallback  func(ext.PickerItem)
 
 	// Background start channel (set by bind callback, read after command)
 	pendingBgStart *bgStartResult
@@ -486,6 +486,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	if text == "" {
 		return m, nil
 	}
+	m.input.PushHistory(text)
 	m.input.Reset()
 
 	// Slash command?

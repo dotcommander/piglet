@@ -20,6 +20,11 @@ type InputModel struct {
 	commands    []string // all registered command names
 
 	attachment string // shown above the input border when non-empty
+
+	// Input history (up/down arrow cycles like bash)
+	history []string
+	histIdx int    // current position; len(history) = "new input"
+	draft   string // saves in-progress text when entering history
 }
 
 // NewInputModel creates a new composer input.
@@ -34,6 +39,10 @@ func NewInputModel(styles Styles, commands []string) InputModel {
 	ta.SetStyles(s)
 
 	ta.Focus()
+
+	km := ta.KeyMap
+	km.InsertNewline.SetKeys("alt+enter")
+	ta.KeyMap = km
 
 	return InputModel{
 		textarea: ta,
@@ -67,6 +76,25 @@ func (m *InputModel) SetValue(s string) { m.textarea.SetValue(s) }
 // Reset clears the textarea.
 func (m *InputModel) Reset() { m.textarea.Reset() }
 
+// PushHistory adds an entry to the input history and resets the cursor.
+func (m *InputModel) PushHistory(s string) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return
+	}
+	// Deduplicate consecutive entries
+	if len(m.history) > 0 && m.history[len(m.history)-1] == s {
+		m.histIdx = len(m.history)
+		return
+	}
+	const maxHistory = 500
+	if len(m.history) >= maxHistory {
+		m.history = m.history[1:]
+	}
+	m.history = append(m.history, s)
+	m.histIdx = len(m.history)
+}
+
 // SetAttachment sets the attachment indicator shown above the input.
 func (m *InputModel) SetAttachment(s string) { m.attachment = s }
 
@@ -86,9 +114,28 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 				m.selected--
 				return m, nil
 			}
+			if !m.showing && len(m.history) > 0 && m.textarea.LineCount() <= 1 {
+				if m.histIdx == len(m.history) {
+					m.draft = m.textarea.Value()
+				}
+				if m.histIdx > 0 {
+					m.histIdx--
+					m.textarea.SetValue(m.history[m.histIdx])
+				}
+				return m, nil
+			}
 		case msg.Code == tea.KeyDown:
 			if m.showing && m.selected < len(m.suggestions)-1 {
 				m.selected++
+				return m, nil
+			}
+			if !m.showing && m.histIdx < len(m.history) && m.textarea.LineCount() <= 1 {
+				m.histIdx++
+				if m.histIdx == len(m.history) {
+					m.textarea.SetValue(m.draft)
+				} else {
+					m.textarea.SetValue(m.history[m.histIdx])
+				}
 				return m, nil
 			}
 		case msg.Code == tea.KeyEscape:
