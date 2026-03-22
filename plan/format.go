@@ -13,6 +13,10 @@ func FormatPrompt(p *Plan) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Active Plan: %s\n\n", p.Title)
 
+	if p.Mode == ModePropose {
+		b.WriteString("**MODE: PROPOSE** — Describe changes as plan steps. Mutating tools (write, edit, bash) are blocked.\n\n")
+	}
+
 	for _, s := range p.Steps {
 		switch s.Status {
 		case StatusDone:

@@ -15,11 +15,15 @@ const (
 	StatusDone       = "done"
 	StatusSkipped    = "skipped"
 	StatusFailed     = "failed"
+
+	ModeExecute = "execute"
+	ModePropose = "propose"
 )
 
 type Plan struct {
 	Title   string    `yaml:"title"`
 	Slug    string    `yaml:"slug"`
+	Mode    string    `yaml:"mode,omitempty"`
 	Created time.Time `yaml:"created"`
 	Updated time.Time `yaml:"updated"`
 	Active  bool      `yaml:"active"`
@@ -136,6 +140,21 @@ func (p *Plan) IsComplete() bool {
 		}
 	}
 	return true
+}
+
+// InProposeMode returns true when the plan is in propose mode.
+func (p *Plan) InProposeMode() bool {
+	return p.Mode == ModePropose
+}
+
+// AppendStep adds a new step at the end of the plan.
+func (p *Plan) AppendStep(text string) {
+	p.Steps = append(p.Steps, Step{
+		ID:     p.nextID(),
+		Text:   text,
+		Status: StatusPending,
+	})
+	p.Updated = time.Now().UTC()
 }
 
 func (p *Plan) stepIndex(id int) int {

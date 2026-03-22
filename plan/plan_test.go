@@ -613,3 +613,93 @@ func TestFormatPromptFailed(t *testing.T) {
 	assert.Contains(t, out, "- [x] 1. good step")
 	assert.Contains(t, out, "- [!] 2. bad step")
 }
+
+// --- Mode -------------------------------------------------------------------
+
+func TestInProposeMode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("propose mode returns true", func(t *testing.T) {
+		t.Parallel()
+		p := &plan.Plan{Mode: plan.ModePropose}
+		assert.True(t, p.InProposeMode())
+	})
+
+	t.Run("execute mode returns false", func(t *testing.T) {
+		t.Parallel()
+		p := &plan.Plan{Mode: plan.ModeExecute}
+		assert.False(t, p.InProposeMode())
+	})
+
+	t.Run("empty mode returns false", func(t *testing.T) {
+		t.Parallel()
+		p := &plan.Plan{}
+		assert.False(t, p.InProposeMode())
+	})
+}
+
+func TestAppendStep(t *testing.T) {
+	t.Parallel()
+
+	t.Run("appends to end", func(t *testing.T) {
+		t.Parallel()
+		p, err := plan.NewPlan("Test", []string{"first", "second"})
+		require.NoError(t, err)
+
+		p.AppendStep("third")
+		require.Len(t, p.Steps, 3)
+		assert.Equal(t, "third", p.Steps[2].Text)
+		assert.Equal(t, 3, p.Steps[2].ID)
+		assert.Equal(t, plan.StatusPending, p.Steps[2].Status)
+	})
+
+	t.Run("ID is max+1 after removal", func(t *testing.T) {
+		t.Parallel()
+		p, err := plan.NewPlan("Test", []string{"a", "b", "c"})
+		require.NoError(t, err)
+
+		require.NoError(t, p.RemoveStep(2))
+		p.AppendStep("d")
+		assert.Equal(t, 4, p.Steps[2].ID)
+	})
+}
+
+func TestModeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	s := newStore(t)
+
+	p, err := plan.NewPlan("Mode Test", []string{"step"})
+	require.NoError(t, err)
+	p.Mode = plan.ModePropose
+
+	require.NoError(t, s.Save(p))
+
+	loaded, err := s.Load(p.Slug)
+	require.NoError(t, err)
+	assert.Equal(t, plan.ModePropose, loaded.Mode)
+	assert.True(t, loaded.InProposeMode())
+}
+
+func TestFormatPromptProposeMode(t *testing.T) {
+	t.Parallel()
+
+	p, err := plan.NewPlan("Propose Plan", []string{"step one"})
+	require.NoError(t, err)
+	p.Mode = plan.ModePropose
+
+	out := plan.FormatPrompt(p)
+	assert.Contains(t, out, "MODE: PROPOSE")
+	assert.Contains(t, out, "Mutating tools")
+}
+
+func TestFormatPromptExecuteMode(t *testing.T) {
+	t.Parallel()
+
+	p, err := plan.NewPlan("Execute Plan", []string{"step one"})
+	require.NoError(t, err)
+	p.Mode = plan.ModeExecute
+
+	out := plan.FormatPrompt(p)
+	assert.NotContains(t, out, "MODE: PROPOSE")
+}

@@ -69,6 +69,26 @@ func main() {
 		Execute:    handleUpdate,
 	})
 
+	e.RegisterTool(sdk.ToolDef{
+		Name:        "plan_mode",
+		Description: "Switch plan mode between propose (changes blocked, recorded as steps) and execute (changes allowed).",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []string{"propose", "execute"}, "description": "Mode to switch to"},
+			},
+			"required": []string{"mode"},
+		},
+		PromptHint: "Switch plan mode: propose (block changes, record as steps) or execute (allow changes)",
+		Execute:    handleMode,
+	})
+
+	e.RegisterInterceptor(sdk.InterceptorDef{
+		Name:     "plan-mode",
+		Priority: 1500,
+		Before:   interceptPropose,
+	})
+
 	e.RegisterCommand(sdk.CommandDef{
 		Name:        "plan",
 		Description: "View, list, switch, archive, clear, or delete plans",
@@ -178,8 +198,12 @@ func makeCommandHandler(e *sdk.Extension) func(context.Context, string) error {
 		case strings.HasPrefix(args, "delete "):
 			slug := strings.TrimSpace(strings.TrimPrefix(args, "delete "))
 			deletePlan(e, slug)
+		case args == "approve":
+			approvePlan(e)
+		case args == "mode":
+			showPlanMode(e)
 		default:
-			e.ShowMessage("Usage: /plan [list|switch <slug>|archive|clear|delete <slug>]")
+			e.ShowMessage("Usage: /plan [list|switch <slug>|archive|clear|delete <slug>|approve|mode]")
 		}
 		return nil
 	}
@@ -262,6 +286,41 @@ func deletePlan(e *sdk.Extension, slug string) {
 	e.ShowMessage(fmt.Sprintf("Deleted plan: %s", slug))
 }
 
+func approvePlan(e *sdk.Extension) {
+	p, err := store.Active()
+	if err != nil {
+		e.ShowMessage(fmt.Sprintf("error: %v", err))
+		return
+	}
+	if p == nil {
+		e.ShowMessage("No active plan.")
+		return
+	}
+	p.Mode = plan.ModeExecute
+	if err := store.Save(p); err != nil {
+		e.ShowMessage(fmt.Sprintf("error: %v", err))
+		return
+	}
+	e.ShowMessage("Plan mode: execute — changes are now allowed.")
+}
+
+func showPlanMode(e *sdk.Extension) {
+	p, err := store.Active()
+	if err != nil {
+		e.ShowMessage(fmt.Sprintf("error: %v", err))
+		return
+	}
+	if p == nil {
+		e.ShowMessage("No active plan.")
+		return
+	}
+	mode := p.Mode
+	if mode == "" {
+		mode = plan.ModeExecute
+	}
+	e.ShowMessage(fmt.Sprintf("Plan mode: %s", mode))
+}
+
 func intArg(args map[string]any, key string) int {
 	switch v := args[key].(type) {
 	case float64:
@@ -270,4 +329,76 @@ func intArg(args map[string]any, key string) int {
 		return v
 	}
 	return 0
+}
+
+func handleMode(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
+	if store == nil {
+		return sdk.ErrorResult("plan store not available"), nil
+	}
+
+	mode, _ := args["mode"].(string)
+	if mode != plan.ModeExecute && mode != plan.ModePropose {
+		return sdk.ErrorResult("mode must be \"propose\" or \"execute\""), nil
+	}
+
+	p, err := store.Active()
+	if err != nil {
+		return sdk.ErrorResult(fmt.Sprintf("load plan: %v", err)), nil
+	}
+	if p == nil {
+		return sdk.ErrorResult("no active plan"), nil
+	}
+
+	p.Mode = mode
+	if err := store.Save(p); err != nil {
+		return sdk.ErrorResult(fmt.Sprintf("save: %v", err)), nil
+	}
+
+	return sdk.TextResult(plan.FormatPrompt(p)), nil
+}
+
+func interceptPropose(_ context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+	switch toolName {
+	case "write", "edit", "bash", "multi_edit":
+		// check propose mode
+	default:
+		return true, args, nil
+	}
+
+	if store == nil {
+		return true, args, nil
+	}
+
+	p, err := store.Active()
+	if err != nil || p == nil || !p.InProposeMode() {
+		return true, args, nil
+	}
+
+	description := formatProposal(toolName, args)
+	p.AppendStep(description)
+	_ = store.Save(p)
+
+	return false, nil, fmt.Errorf("plan propose mode: blocked %s — recorded as plan step. Use plan_mode(execute) to allow changes", toolName)
+}
+
+func formatProposal(toolName string, args map[string]any) string {
+	switch toolName {
+	case "write":
+		path, _ := args["file_path"].(string)
+		return fmt.Sprintf("Write file: %s", path)
+	case "edit":
+		path, _ := args["file_path"].(string)
+		return fmt.Sprintf("Edit file: %s", path)
+	case "bash":
+		cmd, _ := args["command"].(string)
+		if runes := []rune(cmd); len(runes) > 100 {
+			cmd = string(runes[:100]) + "..."
+		}
+		return fmt.Sprintf("Run command: %s", cmd)
+	case "multi_edit":
+		edits, _ := args["edits"].([]any)
+		return fmt.Sprintf("Multi-edit: %d files", len(edits))
+	default:
+		return fmt.Sprintf("Tool call: %s", toolName)
+	}
 }
