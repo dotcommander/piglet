@@ -196,7 +196,7 @@ Go SDK API:
 
 ### Writing an SDK for Another Language
 
-The protocol is newline-delimited JSON-RPC 2.0 over stdin/stdout. See [`ext/external/protocol.go`](../ext/external/protocol.go) for the full message spec. The flow:
+The protocol is newline-delimited JSON-RPC 2.0 over stdin/stdout. See [docs/protocol.md](protocol.md) for the full message specification. The flow:
 
 1. Host sends `initialize` request with `{ protocolVersion, cwd }`
 2. Extension sends `register/*` notifications (tool, command, promptSection, interceptor, eventHandler, shortcut, messageHook)

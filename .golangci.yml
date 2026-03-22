@@ -3,8 +3,6 @@ version: "2"
 linters:
   disable-all: true
   enable:
-    - gofmt
-    - goimports
     - errcheck
     - govet
     - staticcheck
@@ -35,6 +33,11 @@ linters-settings:
     min-count: 3
   dupl:
     threshold: 100
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   exclude-dirs:

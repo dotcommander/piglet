@@ -35,10 +35,17 @@ make extensions   # Build + install extension binaries
 
 ## Quick Start
 
-**Interactive mode** — opens a TUI session:
+On first launch, piglet auto-detects missing config and runs interactive setup — creates `~/.config/piglet/`, writes a default model catalog, and picks the best model based on which API keys it finds in your environment.
 
 ```bash
-piglet
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GOOGLE_API_KEY, etc.
+piglet                                # first run triggers setup automatically
+```
+
+You can also run setup explicitly:
+
+```bash
+piglet init
 ```
 
 **Print mode** — answers and exits:
@@ -85,22 +92,17 @@ You are piglet, a Go specialist. Follow these rules:
 
 The prompt file overrides `systemPrompt` in config.yaml. Extensions can add additional prompt sections.
 
-**Auth setup** — add an API key:
-
-```bash
-piglet auth set openai sk-...
-piglet auth set anthropic sk-ant-...
-piglet auth set google AIza...
-```
-
-Keys can also reference env vars or shell commands:
+**Auth setup** — piglet reads API keys from environment variables automatically. You can also store them in `~/.config/piglet/auth.json`:
 
 ```json
 {
   "openai": "$OPENAI_API_KEY",
-  "anthropic": "!op read op://vault/anthropic/key"
+  "anthropic": "sk-ant-...",
+  "google": "!op read op://vault/google/key"
 }
 ```
+
+Values can be literal keys, `$ENV_VAR` references, or `!shell commands`.
 
 **Environment variables:**
 
@@ -158,7 +160,7 @@ All built-in commands register through the extension API and can be overridden.
 | `Ctrl+S` | Open session picker |
 | `Ctrl+V` | Paste clipboard image |
 | `Enter` | Send message |
-| `Shift+Enter` | Insert newline |
+| `Alt+Enter` | Insert newline |
 
 Shortcuts also register through the extension API and can be customized.
 

@@ -86,10 +86,10 @@ func extractFirstExchange(messages []core.Message) (userText, assistantText stri
 	return
 }
 
-func truncateRunes(s string, max int) string {
+func truncateRunes(s string, limit int) string {
 	runes := []rune(s)
-	if len(runes) > max {
-		return string(runes[:max])
+	if len(runes) > limit {
+		return string(runes[:limit])
 	}
 	return s
 }

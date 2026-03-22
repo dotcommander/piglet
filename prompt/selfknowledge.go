@@ -21,9 +21,9 @@ const selfKnowledgeOrder = 20 // before project docs (30), git context (40), mem
 func RegisterSelfKnowledge(app *ext.App) {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("Working directory: %s\n", app.CWD()))
-	b.WriteString(fmt.Sprintf("Platform: %s\n", runtime.GOOS))
-	b.WriteString(fmt.Sprintf("Current time: %s\n\n", time.Now().Format("2006-01-02 15:04:05 MST")))
+	fmt.Fprintf(&b, "Working directory: %s\n", app.CWD())
+	fmt.Fprintf(&b, "Platform: %s\n", runtime.GOOS)
+	fmt.Fprintf(&b, "Current time: %s\n\n", time.Now().Format("2006-01-02 15:04:05 MST"))
 
 	// Tools
 	defs := app.ToolDefs()
@@ -50,14 +50,14 @@ func RegisterSelfKnowledge(app *ext.App) {
 	if len(shortcuts) > 0 {
 		b.WriteString("Keyboard shortcuts:\n")
 		for key, sc := range shortcuts {
-			b.WriteString(fmt.Sprintf("- %s — %s\n", key, sc.Description))
+			fmt.Fprintf(&b, "- %s — %s\n", key, sc.Description)
 		}
 		b.WriteString("\n")
 	}
 
 	// Config paths
 	if dir, err := config.ConfigDir(); err == nil {
-		b.WriteString(fmt.Sprintf("Config directory: %s\n", dir))
+		fmt.Fprintf(&b, "Config directory: %s\n", dir)
 	}
 
 	content := strings.TrimSpace(b.String())

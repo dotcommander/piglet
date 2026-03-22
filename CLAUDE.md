@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Seven extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Eight extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -39,8 +39,9 @@ tui/, cmd/  → anything (wiring layer)
 | `autotitle` | `autotitle/cmd/` | 1 event handler |
 | `clipboard` | `clipboard/cmd/` | 1 tool, 1 shortcut |
 | `skill` | `skill/cmd/` | 2 tools, 1 command, 1 prompt section, 1 message hook |
-| `memory` | `memory/cmd/` | 3 tools, 1 command, 1 prompt section |
+| `memory` | `memory/cmd/` | 3 tools, 1 command, 1 prompt section, 1 compactor, 2 event handlers |
 | `subagent` | `subagent/cmd/` | 1 tool |
+| `lsp` | `lsp/cmd/` | 5 tools, 1 prompt section |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
@@ -70,6 +71,7 @@ All extensions map to these primitives — no special access:
 | `subagent/` | React | Dispatch tool delegates to sub-agents | external |
 | `clipboard/` | React | Tool + shortcut for images | external |
 | `autotitle/` | Observe | Event handler for session titles | external |
+| `lsp/` | Inject + React | Prompt section + tools (code intelligence) | external |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -137,6 +139,8 @@ memory/        Per-project persistent memory — 3 tools, 1 command, 1 prompt se
   cmd/         Binary entry point + manifest.yaml
 subagent/      Sub-agent delegation — 1 tool (dispatch)
   cmd/         Binary entry point + manifest.yaml
+lsp/           Code intelligence via LSP — 5 tools, 1 prompt section
+  cmd/         Binary entry point + manifest.yaml
 ```
 
 ## Key Types
@@ -171,11 +175,11 @@ ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 ## Extensions
 
 ```bash
-make extensions              # Build + install all 7 to ~/.config/piglet/extensions/
+make extensions              # Build + install all 8 to ~/.config/piglet/extensions/
 make extensions-safeguard    # Build a single extension
 ```
 
-Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (14 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
+Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (19 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
 
 ## Config
 

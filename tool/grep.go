@@ -61,7 +61,7 @@ func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 			if !info.IsDir() {
 				matches = grepFile(re, searchPath, "", limit, &matchCount)
 			} else {
-				filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+				_ = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
 					if err != nil || d.IsDir() {
 						if d != nil && d.IsDir() && shouldSkipDir(d.Name()) {
 							return filepath.SkipDir

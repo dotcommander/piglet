@@ -78,7 +78,7 @@ func atomicWrite(path string, data []byte) error {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
@@ -149,8 +149,8 @@ func (w *boundedWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *boundedWriter) String() string { return w.buf.String() }
-func (w *boundedWriter) Len() int       { return w.buf.Len() }
+func (w *boundedWriter) String() string  { return w.buf.String() }
+func (w *boundedWriter) Len() int        { return w.buf.Len() }
 func (w *boundedWriter) Truncated() bool { return w.buf.Len() >= w.limit }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ func ClearUndoSnapshots() {
 	}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
-		os.Remove(filepath.Join(dir, e.Name()))
+		_ = os.Remove(filepath.Join(dir, e.Name()))
 	}
 }
 

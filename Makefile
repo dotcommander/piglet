@@ -1,11 +1,13 @@
 EXTENSIONS_DIR := $(HOME)/.config/piglet/extensions
 
-EXTENSION_NAMES := safeguard rtk autotitle clipboard skill memory subagent
+EXTENSION_NAMES := safeguard rtk autotitle clipboard skill memory subagent lsp
 
 .PHONY: build extensions install-extensions clean $(addprefix extensions-,$(EXTENSION_NAMES))
 
+VERSION := $(shell git describe --tags 2>/dev/null || echo dev)
+
 build:
-	go build -o piglet ./cmd/piglet/
+	go build -ldflags "-X main.version=$(VERSION)" -o piglet ./cmd/piglet/
 
 extensions: $(addprefix extensions-,$(EXTENSION_NAMES))
 
