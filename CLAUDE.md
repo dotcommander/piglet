@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Ten extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Ten extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -13,7 +13,7 @@ Piglet's core is deliberately minimal — an agent loop, streaming, and types. *
 ```
 core/       → imports NOTHING from piglet (agent loop, streaming, types)
 ext/        → core/ only (registration surface)
-tool/, command/, memory/, prompt/ → ext/, core/ (extensions — same API as external)
+tool/, command/, prompt/ → ext/, core/ (extensions — same API as external)
 tui/, cmd/  → anything (wiring layer)
 ```
 
@@ -30,20 +30,20 @@ tui/, cmd/  → anything (wiring layer)
 | Prompt sections | 4 | `prompt/` (behavior, selfknowledge, gitcontext, projectdocs) | `RegisterPromptSection` |
 | Compactor | 1 | `command/` | `RegisterCompactor` |
 
-**External** (standalone Go binaries via JSON-RPC, built with `make extensions`):
+**External** (standalone Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
 
-| Extension | Binary | Registers |
-|-----------|--------|-----------|
-| `safeguard` | `safeguard/cmd/` | 1 interceptor |
-| `rtk` | `rtk/cmd/` | 1 interceptor, 1 prompt section |
-| `autotitle` | `autotitle/cmd/` | 1 event handler |
-| `clipboard` | `clipboard/cmd/` | 1 tool, 1 shortcut |
-| `skill` | `skill/cmd/` | 2 tools, 1 command, 1 prompt section, 1 message hook |
-| `memory` | `memory/cmd/` | 3 tools, 1 command, 1 prompt section, 1 compactor, 2 event handlers |
-| `subagent` | `subagent/cmd/` | 1 tool |
-| `lsp` | `lsp/cmd/` | 5 tools, 1 prompt section |
-| `repomap` | `repomap/cmd/` | 2 tools, 1 prompt section, 1 event handler |
-| `plan` | `plan/cmd/` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
+| Extension | Registers |
+|-----------|-----------|
+| `safeguard` | 1 interceptor |
+| `rtk` | 1 interceptor, 1 prompt section |
+| `autotitle` | 1 event handler |
+| `clipboard` | 1 tool, 1 shortcut |
+| `skill` | 2 tools, 1 command, 1 prompt section, 1 message hook |
+| `memory` | 3 tools, 1 command, 1 prompt section, 1 compactor, 2 event handlers |
+| `subagent` | 1 tool |
+| `lsp` | 5 tools, 1 prompt section |
+| `repomap` | 2 tools, 1 prompt section, 1 event handler |
+| `plan` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
@@ -92,10 +92,10 @@ func Register(app *ext.App) {
 }
 ```
 
-External extensions use the Go SDK (`sdk/go/`):
+External extensions (in `piglet-extensions` repo) use the Go SDK (`sdk/go/`):
 
 ```go
-// safeguard/cmd/main.go, memory/cmd/main.go, etc.
+// Example: piglet-extensions/safeguard/cmd/main.go
 func main() {
     e := sdk.New("name", "0.1.0")
     e.RegisterTool(sdk.ToolDef{...})

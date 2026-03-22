@@ -18,7 +18,14 @@ Or build from source:
 git clone https://github.com/dotcommander/piglet
 cd piglet
 go build -o piglet ./cmd/piglet/
-make extensions   # build + install extension binaries
+```
+
+For full functionality, install [extensions](https://github.com/dotcommander/piglet-extensions):
+
+```bash
+git clone https://github.com/dotcommander/piglet-extensions
+cd piglet-extensions
+make extensions   # build + install to ~/.config/piglet/extensions/
 ```
 
 ## Use it
@@ -118,10 +125,9 @@ Auth supports env references and shell commands:
 
 ## Extensions
 
-Ten extensions run as standalone binaries (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan):
+Ten extensions run as standalone binaries from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan):
 
 ```bash
-make extensions        # build all
 /extensions            # list what's loaded
 /ext-init my-tool      # scaffold a new one
 ```
