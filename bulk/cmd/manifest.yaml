@@ -1,0 +1,5 @@
+name: bulk
+version: 0.1.0
+runtime: ./bulk
+capabilities:
+  - tools
