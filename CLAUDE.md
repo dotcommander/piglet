@@ -198,6 +198,28 @@ Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 command
 
 **All prompt content, behavioral text, and default strings live in config files above. Go code reads these files. It never contains the content. See Go workspace CLAUDE.md "Configuration Data" for the pre-flight gate.**
 
+## Memory Architecture (DO NOT CHANGE)
+
+The memory extension injects a **compact index** (not full content) as a static prompt section at session start. This is the correct design — do not replace with per-turn retrieval, BM25 scoring, or similar complexity.
+
+**How it works:**
+1. `MEMORY.md` is an index file: short key-value pairs and references to per-topic files
+2. Injected once at session start via `RegisterPromptSection` (order 50)
+3. The LLM reads the index, then uses `memory_get` tool to load specific topic files on demand
+4. This is **progressive disclosure**: the index stays small, detail is fetched when relevant
+
+**Why "inject all at session start" is correct:**
+- The index IS small — it's designed to fit in the prompt budget (~8000 chars cap)
+- Per-turn retrieval (BM25, embeddings) adds latency, complexity, and an LLM dependency for something that doesn't need it
+- The LLM already knows how to decide what's relevant from an index — that's what indexes are for
+- Topic files are loaded via tool calls only when the LLM determines they're needed
+
+**What NOT to do:**
+- Do not add BM25 or embedding-based retrieval — the index + tool pattern already achieves relevance filtering
+- Do not add effectiveness tracking (surfaced/followed/ignored counters) — piglet users control their own memory files
+- Do not add auto-extraction from transcripts — memory creation is intentionally manual via `memory_set`
+- Do not look at engram (toejough/engram) as a model — it solves instruction decay for a system where users have no direct control (Claude Code plugins). Piglet's users own their memory files.
+
 ## Dependencies
 
 | Package | Version |
