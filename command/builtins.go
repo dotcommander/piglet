@@ -61,23 +61,23 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 	app.RegisterShortcut(&ext.Shortcut{
 		Key:         keys[shortcutModel],
 		Description: "Open model selector",
-		Handler: func(a *ext.App) error {
+		Handler: func(a *ext.App) (ext.Action, error) {
 			cmds := a.Commands()
 			if cmd, ok := cmds[shortcutModel]; ok {
-				return cmd.Handler("", a)
+				return nil, cmd.Handler("", a)
 			}
-			return nil
+			return nil, nil
 		},
 	})
 	app.RegisterShortcut(&ext.Shortcut{
 		Key:         keys[shortcutSession],
 		Description: "Open session picker",
-		Handler: func(a *ext.App) error {
+		Handler: func(a *ext.App) (ext.Action, error) {
 			cmds := a.Commands()
 			if cmd, ok := cmds[shortcutSession]; ok {
-				return cmd.Handler("", a)
+				return nil, cmd.Handler("", a)
 			}
-			return nil
+			return nil, nil
 		},
 	})
 }
