@@ -105,6 +105,9 @@ func RunSetup(writeModels func(path string) error) error {
 	}
 
 	fmt.Println()
+	fmt.Println("Extensions add memory, skills, code intelligence, and more.")
+	fmt.Println("Install: https://github.com/dotcommander/piglet-extensions")
+	fmt.Println()
 	fmt.Println("Setup complete! Run 'piglet' to start.")
 	return nil
 }

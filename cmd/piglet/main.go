@@ -196,8 +196,12 @@ func run() error {
 	// External extensions (TypeScript, Python, etc.)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	extCleanup, _ := external.LoadAll(ctx, app)
+	loaded, extCleanup, _ := external.LoadAll(ctx, app)
 	defer extCleanup()
+
+	if interactive && loaded == 0 {
+		fmt.Fprintln(os.Stderr, "hint: no extensions installed — see https://github.com/dotcommander/piglet-extensions")
+	}
 
 	// Self-knowledge (dynamic tools/commands/shortcuts listing)
 	prompt.RegisterSelfKnowledge(app)

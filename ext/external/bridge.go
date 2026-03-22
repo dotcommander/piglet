@@ -15,20 +15,21 @@ import (
 
 // LoadAll discovers and starts all external extensions, registering their
 // tools, commands, and prompt sections with the given ext.App.
-// Returns a cleanup function that stops all extension processes.
-func LoadAll(ctx context.Context, app *ext.App) (cleanup func(), err error) {
+// Returns the number of loaded extensions and a cleanup function that stops
+// all extension processes.
+func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err error) {
 	extDir, err := ExtensionsDir()
 	if err != nil {
-		return func() {}, nil // non-fatal
+		return 0, func() {}, nil // non-fatal
 	}
 
 	manifests, err := DiscoverExtensions(extDir)
 	if err != nil {
-		return func() {}, nil // non-fatal
+		return 0, func() {}, nil // non-fatal
 	}
 
 	if len(manifests) == 0 {
-		return func() {}, nil
+		return 0, func() {}, nil
 	}
 
 	// Start all extensions concurrently (each blocks on handshake)
@@ -63,7 +64,7 @@ func LoadAll(ctx context.Context, app *ext.App) (cleanup func(), err error) {
 		bridge(app, r.host)
 	}
 
-	return func() {
+	return len(hosts), func() {
 		for _, h := range hosts {
 			h.Stop()
 		}
