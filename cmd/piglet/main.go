@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dotcommander/piglet/autotitle"
+	"github.com/dotcommander/piglet/clipboard"
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
@@ -156,6 +158,14 @@ func run() error {
 	// Skills: on-demand methodology loading from ~/.config/piglet/skills/
 	skill.Register(app)
 
+	// Clipboard: read images from system clipboard (tool + TUI shortcut)
+	clipboard.Register(app)
+
+	// Auto-title: generate session titles after first exchange (event handler)
+	autotitle.Register(app, autotitle.Config{
+		Enabled: settings.Agent.AutoTitleEnabled(),
+	})
+
 	// Sub-agent delegation (dispatch tool)
 	subagent.Register(app, subagent.Config{
 		MaxTurns: config.IntOr(settings.SubAgent.MaxTurns, 10),
@@ -266,6 +276,9 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 	var agentErr error
 
 	for evt := range ch {
+		// Dispatch event to registered handlers (event bus)
+		app.DispatchEvent(ctx, evt)
+
 		switch e := evt.(type) {
 		case core.EventStreamDelta:
 			fmt.Print(e.Delta)
@@ -281,6 +294,23 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 			fmt.Fprintf(os.Stderr, "[compacted: %d → %d messages at %d tokens]\n", e.Before, e.After, e.TokensAtCompact)
 		case core.EventAgentEnd:
 			fmt.Println()
+		}
+
+		// Drain pending actions from event handlers until empty
+		for actions := app.PendingActions(); len(actions) > 0; actions = app.PendingActions() {
+			for _, action := range actions {
+				switch act := action.(type) {
+				case ext.ActionSetSessionTitle:
+					if sess != nil && act.Title != "" {
+						_ = sess.SetTitle(act.Title)
+					}
+				case ext.ActionRunAsync:
+					// In single-shot mode, run async actions synchronously
+					if result := act.Fn(); result != nil {
+						app.EnqueueAction(result)
+					}
+				}
+			}
 		}
 
 		if e, ok := evt.(core.EventTurnEnd); ok {

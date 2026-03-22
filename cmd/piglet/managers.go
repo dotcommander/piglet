@@ -73,6 +73,13 @@ func (m *sessionMgr) SetTitle(title string) error {
 	return (*m.current).SetTitle(title)
 }
 
+func (m *sessionMgr) Title() string {
+	if *m.current == nil {
+		return ""
+	}
+	return (*m.current).Meta().Title
+}
+
 // modelMgr implements ext.ModelManager using the provider registry.
 type modelMgr struct {
 	registry *provider.Registry

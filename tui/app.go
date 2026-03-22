@@ -2,9 +2,7 @@ package tui
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -41,17 +39,11 @@ type tickMsg struct{}
 // bgEventMsg wraps background agent events for the Bubble Tea message loop.
 type bgEventMsg struct{ event core.Event }
 
-// titleGeneratedMsg carries an auto-generated session title.
-type titleGeneratedMsg struct{ title string }
+// asyncActionMsg carries the result of an ActionRunAsync completion.
+type asyncActionMsg struct{ action ext.Action }
 
 // notifyTickMsg decrements the notification timer.
 type notifyTickMsg struct{}
-
-// clipboardImageMsg carries the result of a clipboard image read.
-type clipboardImageMsg struct {
-	image *core.ImageContent
-	err   error
-}
 
 // notifyDuration is how many ticks a toast notification stays visible.
 const notifyDuration = 15 // ~3 seconds at 200ms tick
@@ -102,9 +94,6 @@ type Model struct {
 	bgEventCh <-chan core.Event
 	bgTask    string
 	bgResult  *strings.Builder
-
-	// Auto-title: generate after first exchange
-	titleGenerated bool
 
 	// Streaming glamour cache
 	streamCache StreamCache
@@ -180,9 +169,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 
-		case msg.Code == 'i' && msg.Mod.Contains(tea.ModCtrl):
-			return m.handleImageAttach()
-
 		case msg.Code == tea.KeyPgUp, msg.Code == tea.KeyPgDown:
 			m.viewport, _ = m.viewport.Update(msg)
 			m.followOutput = m.viewport.AtBottom()
@@ -193,8 +179,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		default:
 			// Dispatch registered keyboard shortcuts
-			if result, handled := m.runShortcut(msg); handled {
-				return result, nil
+			if result, cmd, handled := m.runShortcut(msg); handled {
+				return result, cmd
 			}
 		}
 
@@ -240,12 +226,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bgEventMsg:
 		return m.handleBgEvent(msg.event)
 
-	case titleGeneratedMsg:
-		if m.cfg.Session != nil && msg.title != "" {
-			_ = m.cfg.Session.SetTitle(msg.title)
-		}
-		return m, nil
-
 	case notifyTickMsg:
 		if m.notificationTimer > 0 {
 			m.notificationTimer--
@@ -257,16 +237,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case clipboardImageMsg:
-		if msg.err != nil {
-			m.showNotification("No image: " + msg.err.Error())
-			return m, notifyTick()
+	case asyncActionMsg:
+		// Re-enqueue the result action from an ActionRunAsync and apply it
+		if m.cfg.App != nil && msg.action != nil {
+			m.cfg.App.EnqueueAction(msg.action)
+			bgCmd := m.applyActions()
+			if bgCmd != nil {
+				return m, bgCmd
+			}
 		}
-		m.pendingImage = msg.image
-		m.input.SetAttachment("image")
-		size := len(msg.image.Data) * 3 / 4 // approximate decoded size
-		m.showNotification(fmt.Sprintf("Image attached (%s) — send with your next message", formatImageSize(size)))
-		return m, notifyTick()
+		return m, nil
+
 	}
 
 	// Update input
@@ -408,61 +389,6 @@ func (m Model) renderMessages() string {
 	}
 
 	return b.String()
-}
-
-// handleImageAttach reads an image from the macOS clipboard and attaches it to the next message.
-func (m Model) handleImageAttach() (tea.Model, tea.Cmd) {
-	if m.pendingImage != nil {
-		// Toggle off
-		m.pendingImage = nil
-		m.input.SetAttachment("")
-		m.showNotification("Image attachment removed")
-		return m, notifyTick()
-	}
-
-	return m, func() tea.Msg {
-		return readClipboardImage()
-	}
-}
-
-// readClipboardImage reads a PNG image from the macOS clipboard.
-func readClipboardImage() clipboardImageMsg {
-	cmd := exec.Command("osascript", "-e", "the clipboard info")
-	info, err := cmd.Output()
-	if err != nil {
-		return clipboardImageMsg{err: fmt.Errorf("clipboard not available")}
-	}
-
-	// Check if clipboard has image data
-	infoStr := string(info)
-	var mime string
-	switch {
-	case strings.Contains(infoStr, "PNGf"):
-		mime = "image/png"
-	case strings.Contains(infoStr, "JPEG"):
-		mime = "image/jpeg"
-	default:
-		return clipboardImageMsg{err: fmt.Errorf("no image in clipboard")}
-	}
-
-	// Read the image data
-	pbCmd := exec.Command("osascript", "-e",
-		`set imageData to the clipboard as «class PNGf»
-set theFile to (open for access POSIX file "/dev/stdout" with write permission)
-write imageData to theFile
-close access theFile`)
-	data, err := pbCmd.Output()
-	if err != nil || len(data) == 0 {
-		return clipboardImageMsg{err: fmt.Errorf("failed to read image from clipboard")}
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return clipboardImageMsg{
-		image: &core.ImageContent{
-			Data:     encoded,
-			MimeType: mime,
-		},
-	}
 }
 
 func formatTokens(in, out, cacheRead int) string {
@@ -641,6 +567,38 @@ func (m *Model) applyActions() tea.Cmd {
 				m.messages = msgs
 				m.cfg.Agent.SetMessages(msgs)
 			}
+		case ext.ActionAttachImage:
+			if m.pendingImage != nil {
+				// Toggle off — second press removes attachment
+				m.pendingImage = nil
+				m.input.SetAttachment("")
+				m.showNotification("Image attachment removed")
+				cmds = append(cmds, notifyTick())
+			} else if img, ok := act.Image.(*core.ImageContent); ok {
+				m.pendingImage = img
+				m.input.SetAttachment("image")
+				size := len(img.Data) * 3 / 4
+				m.showNotification(fmt.Sprintf("Image attached (%s) — send with your next message", formatImageSize(size)))
+				cmds = append(cmds, notifyTick())
+			}
+		case ext.ActionDetachImage:
+			m.pendingImage = nil
+			m.input.SetAttachment("")
+			m.showNotification("Image attachment removed")
+			cmds = append(cmds, notifyTick())
+		case ext.ActionSetSessionTitle:
+			if m.cfg.Session != nil && act.Title != "" {
+				_ = m.cfg.Session.SetTitle(act.Title)
+			}
+		case ext.ActionRunAsync:
+			fn := act.Fn
+			cmds = append(cmds, func() tea.Msg {
+				result := fn()
+				if result != nil {
+					return asyncActionMsg{action: result}
+				}
+				return nil
+			})
 		case ext.ActionQuit:
 			m.quitting = true
 		}
@@ -701,6 +659,11 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
+	// Dispatch event to registered handlers (event bus)
+	if m.cfg.App != nil {
+		m.cfg.App.DispatchEvent(context.Background(), evt)
+	}
+
 	switch e := evt.(type) {
 	case core.EventStreamDelta:
 		if e.Kind == "text" {
@@ -750,15 +713,6 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 
-		// Auto-generate session title after first exchange
-		autoTitle := m.cfg.Settings == nil || m.cfg.Settings.Agent.AutoTitleEnabled()
-		if autoTitle && !m.titleGenerated && m.cfg.Session != nil && m.cfg.Session.Meta().Title == "" {
-			m.titleGenerated = true
-			if cmd := m.generateTitle(); cmd != nil {
-				return m, cmd
-			}
-		}
-
 	case core.EventMaxTurns:
 		m.messages = append(m.messages, &core.AssistantMessage{
 			Content: []core.AssistantContent{
@@ -781,11 +735,21 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		})
 	}
 
+	// Apply actions only after events that can produce them (not stream deltas)
+	var actionCmd tea.Cmd
+	switch evt.(type) {
+	case core.EventAgentEnd, core.EventTurnEnd, core.EventToolEnd, core.EventCompact:
+		actionCmd = m.applyActions()
+	}
+
 	// Continue polling
 	if m.eventCh != nil && m.streaming {
+		if actionCmd != nil {
+			return m, tea.Batch(pollEvents(m.eventCh), actionCmd)
+		}
 		return m, pollEvents(m.eventCh)
 	}
-	return m, nil
+	return m, actionCmd
 }
 
 // pollEvents reads the next event from the agent channel.
@@ -803,81 +767,6 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
 	})
-}
-
-// generateTitle fires a lightweight LLM call to produce a short session title.
-// Returns a tea.Cmd that runs in a goroutine and sends titleGeneratedMsg.
-func (m *Model) generateTitle() tea.Cmd {
-	prov := m.cfg.Agent.Provider()
-	if prov == nil {
-		return nil
-	}
-
-	// Collect the first user message and first assistant text
-	var userText, assistantText string
-	for _, msg := range m.messages {
-		switch v := msg.(type) {
-		case *core.UserMessage:
-			if userText == "" {
-				userText = v.Content
-			}
-		case *core.AssistantMessage:
-			if assistantText == "" {
-				for _, c := range v.Content {
-					if tc, ok := c.(core.TextContent); ok {
-						assistantText = tc.Text
-						break
-					}
-				}
-			}
-		}
-		if userText != "" && assistantText != "" {
-			break
-		}
-	}
-
-	if userText == "" {
-		return nil
-	}
-
-	// Truncate to keep the title prompt small
-	if len([]rune(userText)) > 200 {
-		userText = string([]rune(userText)[:200])
-	}
-	if len([]rune(assistantText)) > 200 {
-		assistantText = string([]rune(assistantText)[:200])
-	}
-
-	maxTok := 30
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		ch := prov.Stream(ctx, core.StreamRequest{
-			System: "Generate a concise 3-5 word title for this conversation. Reply with ONLY the title, no quotes or punctuation.",
-			Messages: []core.Message{
-				&core.UserMessage{Content: fmt.Sprintf("User: %s\n\nAssistant: %s", userText, assistantText)},
-			},
-			Options: core.StreamOptions{MaxTokens: &maxTok},
-		})
-
-		var title strings.Builder
-		for evt := range ch {
-			if evt.Type == core.StreamTextDelta {
-				title.WriteString(evt.Delta)
-			}
-		}
-
-		result := strings.TrimSpace(title.String())
-		if result == "" {
-			return titleGeneratedMsg{}
-		}
-		// Cap at 50 runes
-		if runes := []rune(result); len(runes) > 50 {
-			result = string(runes[:50])
-		}
-		return titleGeneratedMsg{title: result}
-	}
 }
 
 func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
@@ -938,27 +827,30 @@ func commandNames(app *ext.App) []string {
 }
 
 // runShortcut checks if the key matches a registered shortcut and runs it.
-func (m *Model) runShortcut(msg tea.KeyPressMsg) (tea.Model, bool) {
+func (m *Model) runShortcut(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	if m.cfg.App == nil {
-		return m, false
+		return m, nil, false
 	}
 
 	key := keyString(msg)
 	if key == "" {
-		return m, false
+		return m, nil, false
 	}
 
 	shortcuts := m.cfg.App.Shortcuts()
 	sc, ok := shortcuts[key]
 	if !ok {
-		return m, false
+		return m, nil, false
 	}
 
 	m.bindApp()
-	_ = sc.Handler(m.cfg.App)
-	_ = m.applyActions()
+	action, _ := sc.Handler(m.cfg.App)
+	if action != nil {
+		m.cfg.App.EnqueueAction(action)
+	}
+	cmd := m.applyActions()
 
-	return m, true
+	return m, cmd, true
 }
 
 // keyString converts a KeyPressMsg to the shortcut key format (e.g. "ctrl+p").
