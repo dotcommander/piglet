@@ -80,26 +80,7 @@ func (m *UserMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = UserMessage(raw.Alias)
-	m.Blocks = nil
-
-	for _, r := range raw.Blocks {
-		var probe struct {
-			MimeType string `json:"mimeType"`
-		}
-		_ = json.Unmarshal(r, &probe)
-
-		if probe.MimeType != "" {
-			var ic ImageContent
-			if err := json.Unmarshal(r, &ic); err == nil {
-				m.Blocks = append(m.Blocks, ic)
-			}
-		} else {
-			var tc TextContent
-			if err := json.Unmarshal(r, &tc); err == nil {
-				m.Blocks = append(m.Blocks, tc)
-			}
-		}
-	}
+	m.Blocks = unmarshalContentBlocks(raw.Blocks)
 	return nil
 }
 
@@ -126,6 +107,29 @@ type ToolResultMessage struct {
 }
 
 func (*ToolResultMessage) isMessage() {}
+
+func unmarshalContentBlocks(rawBlocks []json.RawMessage) []ContentBlock {
+	var blocks []ContentBlock
+	for _, r := range rawBlocks {
+		var probe struct {
+			MimeType string `json:"mimeType"`
+		}
+		_ = json.Unmarshal(r, &probe)
+
+		if probe.MimeType != "" {
+			var ic ImageContent
+			if err := json.Unmarshal(r, &ic); err == nil {
+				blocks = append(blocks, ic)
+			}
+		} else {
+			var tc TextContent
+			if err := json.Unmarshal(r, &tc); err == nil {
+				blocks = append(blocks, tc)
+			}
+		}
+	}
+	return blocks
+}
 
 // UnmarshalJSON implements custom unmarshaling for AssistantMessage
 // because Content is an interface slice ([]AssistantContent).
@@ -183,27 +187,7 @@ func (m *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = ToolResultMessage(raw.Alias)
-	m.Content = nil
-
-	for _, r := range raw.Content {
-		var probe struct {
-			Data     string `json:"data"`
-			MimeType string `json:"mimeType"`
-		}
-		_ = json.Unmarshal(r, &probe)
-
-		if probe.MimeType != "" {
-			var ic ImageContent
-			if err := json.Unmarshal(r, &ic); err == nil {
-				m.Content = append(m.Content, ic)
-			}
-		} else {
-			var tc TextContent
-			if err := json.Unmarshal(r, &tc); err == nil {
-				m.Content = append(m.Content, tc)
-			}
-		}
-	}
+	m.Content = unmarshalContentBlocks(raw.Content)
 	return nil
 }
 

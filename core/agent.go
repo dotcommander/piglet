@@ -464,40 +464,42 @@ func (a *Agent) maybeCompact() {
 	a.compactMu.Unlock()
 
 	a.compactWg.Add(1)
-	go func() {
-		defer a.compactWg.Done()
-		defer func() {
-			a.compactMu.Lock()
-			a.compacting = false
-			a.compactMu.Unlock()
-		}()
+	go a.runCompaction(msgs, snapshotLen, total)
+}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		compacted, err := a.cfg.OnCompact(ctx, msgs)
-		if err != nil || len(compacted) == 0 {
-			return
-		}
-
-		// Preserve any messages appended while compaction was running.
-		a.mu.Lock()
-		if snapshotLen > len(a.messages) {
-			snapshotLen = len(a.messages)
-		}
-		tail := a.messages[snapshotLen:]
-		if len(tail) == 0 {
-			a.messages = compacted
-		} else {
-			merged := make([]Message, len(compacted)+len(tail))
-			copy(merged, compacted)
-			copy(merged[len(compacted):], tail)
-			a.messages = merged
-		}
-		a.mu.Unlock()
-
-		a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: total})
+func (a *Agent) runCompaction(msgs []Message, snapshotLen, tokenCount int) {
+	defer a.compactWg.Done()
+	defer func() {
+		a.compactMu.Lock()
+		a.compacting = false
+		a.compactMu.Unlock()
 	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	compacted, err := a.cfg.OnCompact(ctx, msgs)
+	if err != nil || len(compacted) == 0 {
+		return
+	}
+
+	// Preserve any messages appended while compaction was running.
+	a.mu.Lock()
+	if snapshotLen > len(a.messages) {
+		snapshotLen = len(a.messages)
+	}
+	tail := a.messages[snapshotLen:]
+	if len(tail) == 0 {
+		a.messages = compacted
+	} else {
+		merged := make([]Message, len(compacted)+len(tail))
+		copy(merged, compacted)
+		copy(merged[len(compacted):], tail)
+		a.messages = merged
+	}
+	a.mu.Unlock()
+
+	a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: tokenCount})
 }
 
 // enforceMessageCap drops oldest messages (keeping the first) when over MaxMessages.
