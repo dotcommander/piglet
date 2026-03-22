@@ -8,7 +8,7 @@ Piglet stores configuration in `~/.config/piglet/`.
 
 ```yaml
 defaultProvider: openai
-defaultModel: gpt-4o
+defaultModel: gpt-5
 systemPrompt: "You are piglet, a helpful coding assistant."
 theme: dark
 shellPath: /bin/zsh
