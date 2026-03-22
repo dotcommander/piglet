@@ -29,9 +29,27 @@ type ActionShowPicker struct {
 // Session is typed as any to avoid importing session/ from ext/.
 type ActionSwapSession struct{ Session any }
 
-func (ActionShowMessage) isAction() {}
-func (ActionNotify) isAction()      {}
-func (ActionQuit) isAction()        {}
-func (ActionSetStatus) isAction()   {}
-func (ActionShowPicker) isAction()  {}
-func (ActionSwapSession) isAction() {}
+// ActionSetSessionTitle sets the current session's title.
+type ActionSetSessionTitle struct{ Title string }
+
+// ActionRunAsync runs Fn in a goroutine. The returned Action (if non-nil)
+// is enqueued when Fn completes. Use for expensive event handler work.
+type ActionRunAsync struct{ Fn func() Action }
+
+// ActionAttachImage attaches an image to the next message.
+// Image is typed as any to avoid importing core.ImageContent.
+type ActionAttachImage struct{ Image any }
+
+// ActionDetachImage removes a pending image attachment.
+type ActionDetachImage struct{}
+
+func (ActionShowMessage) isAction()     {}
+func (ActionNotify) isAction()          {}
+func (ActionQuit) isAction()            {}
+func (ActionSetStatus) isAction()       {}
+func (ActionShowPicker) isAction()      {}
+func (ActionSwapSession) isAction()     {}
+func (ActionSetSessionTitle) isAction() {}
+func (ActionRunAsync) isAction()        {}
+func (ActionAttachImage) isAction()     {}
+func (ActionDetachImage) isAction()     {}

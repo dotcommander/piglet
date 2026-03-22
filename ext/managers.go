@@ -35,6 +35,9 @@ type SessionManager interface {
 
 	// SetTitle updates the current session's title.
 	SetTitle(title string) error
+
+	// Title returns the current session's title (empty if not set).
+	Title() string
 }
 
 // ModelManager provides model operations to commands and extensions.

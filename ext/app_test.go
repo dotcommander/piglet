@@ -38,6 +38,10 @@ func (m *mockSessionMgr) SetTitle(title string) error {
 	return m.titleErr
 }
 
+func (m *mockSessionMgr) Title() string {
+	return ""
+}
+
 // mockModelMgr implements ext.ModelManager for testing.
 type mockModelMgr struct {
 	models     []core.Model
@@ -126,7 +130,7 @@ func TestRegisterShortcut(t *testing.T) {
 	app.RegisterShortcut(&ext.Shortcut{
 		Key:         "ctrl+g",
 		Description: "Git status",
-		Handler:     func(a *ext.App) error { return nil },
+		Handler:     func(a *ext.App) (ext.Action, error) { return nil, nil },
 	})
 
 	shortcuts := app.Shortcuts()
@@ -581,4 +585,62 @@ func TestSyncModelsWithoutManager(t *testing.T) {
 
 	_, err := app.SyncModels()
 	assert.ErrorContains(t, err, "model manager not configured")
+}
+
+// ---------------------------------------------------------------------------
+// Interceptor call-time evaluation
+// ---------------------------------------------------------------------------
+
+func TestInterceptorRegisteredAfterToolStillFires(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("/tmp")
+
+	// Register tool FIRST
+	app.RegisterTool(echoToolDef())
+
+	// Register interceptor AFTER the tool
+	fired := false
+	app.RegisterInterceptor(ext.Interceptor{
+		Name:     "late-registerer",
+		Priority: 1000,
+		Before: func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+			fired = true
+			return true, args, nil
+		},
+	})
+
+	// Get CoreTools after both are registered — interceptor must still fire
+	coreTools := app.CoreTools()
+	require.Len(t, coreTools, 1)
+
+	_, err := coreTools[0].Execute(context.Background(), "tc1", map[string]any{"text": "test"})
+	require.NoError(t, err)
+	assert.True(t, fired, "interceptor registered after tool should still fire at call time")
+}
+
+func TestInterceptorRegisteredAfterCoreToolsStillFires(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("/tmp")
+	app.RegisterTool(echoToolDef())
+
+	// Get CoreTools BEFORE registering the interceptor
+	coreTools := app.CoreTools()
+
+	// Register interceptor AFTER CoreTools() was called
+	fired := false
+	app.RegisterInterceptor(ext.Interceptor{
+		Name:     "very-late",
+		Priority: 1000,
+		Before: func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+			fired = true
+			return true, args, nil
+		},
+	})
+
+	// The interceptor should still fire because evaluation happens at call time
+	_, err := coreTools[0].Execute(context.Background(), "tc1", map[string]any{"text": "test"})
+	require.NoError(t, err)
+	assert.True(t, fired, "interceptor registered after CoreTools() should fire at call time")
 }

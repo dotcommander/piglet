@@ -50,7 +50,7 @@ type Command struct {
 type Shortcut struct {
 	Key         string // e.g. "ctrl+g"
 	Description string
-	Handler     func(app *App) error
+	Handler     func(app *App) (Action, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +147,25 @@ type MessageHook struct {
 	// Returns additional context to inject for this turn only (ephemeral).
 	// Empty string = no injection. Error = abort the message.
 	OnMessage func(ctx context.Context, msg string) (string, error)
+}
+
+// ---------------------------------------------------------------------------
+// Event handlers
+// ---------------------------------------------------------------------------
+
+// EventHandler reacts to agent lifecycle events (Observe primitive).
+// Lower priority runs first. Handle must be fast (<50ms) — return
+// ActionRunAsync for expensive work.
+type EventHandler struct {
+	Name     string
+	Priority int
+
+	// Filter limits which events this handler sees. nil = all events.
+	Filter func(core.Event) bool
+
+	// Handle processes the event. Returns an optional Action to enqueue.
+	// Return nil for no action.
+	Handle func(ctx context.Context, evt core.Event) Action
 }
 
 // ---------------------------------------------------------------------------
