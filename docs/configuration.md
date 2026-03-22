@@ -23,23 +23,115 @@ providers:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `defaultProvider` | string | `""` | Preferred provider |
-| `defaultModel` | string | `gpt-4o` | Model ID or `provider/model-id` |
-| `systemPrompt` | string | `"You are piglet, a helpful coding assistant."` | Base identity for the LLM |
-| `theme` | string | `dark` | Color theme |
+| `defaultModel` | string | `""` | Model ID or `provider/model-id` |
+| `systemPrompt` | string | `""` | Base identity (overridden by `prompt.md`) |
+| `theme` | string | `""` | Color theme |
 | `shellPath` | string | system default | Shell for bash tool |
 | `extensions` | list | `[]` | Extension paths to load |
 | `providers` | map | `{}` | Base URL overrides per provider |
+| `shortcuts` | map | `{}` | Action → keybind (e.g. `model: ctrl+p`) |
+| `promptOrder` | map | `{}` | Prompt section title → order override |
+| `projectDocs` | list | `[]` | Files to auto-read for context (see below) |
+| `rtk` | bool | auto-detect | Enable/disable RTK token optimization |
+| `debug` | bool | `false` | Log all request/response payloads |
+| `safeguard` | bool | `true` | Enable/disable dangerous command blocking |
+
+#### Agent Settings (`agent:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `maxTurns` | int | `10` | Max agent turns per interaction |
+| `bgMaxTurns` | int | `5` | Max turns for background agents |
+| `autoTitle` | bool | `true` | Auto-generate session titles |
+| `compactKeepRecent` | int | `6` | Messages to keep after compaction |
+| `compactAt` | int | `0` | Token threshold for auto-compact (0 = disabled) |
+| `maxMessages` | int | `200` | Hard cap on conversation messages |
+| `maxTokens` | int | model default | Output token limit |
+| `maxRetries` | int | `3` | Retry attempts on error |
+| `toolConcurrency` | int | `10` | Max parallel tool calls |
+
+#### Git Context Settings (`git:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `maxDiffStatFiles` | int | `30` | Max files in diff stat |
+| `maxLogLines` | int | `5` | Recent commit lines in prompt |
+| `maxDiffHunkLines` | int | `50` | Max diff hunk lines |
+| `commandTimeout` | int | `5` | Git command timeout (seconds) |
+
+#### Tool Settings (`tools:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `readLimit` | int | `2000` | Max lines per read |
+| `grepLimit` | int | `100` | Max grep matches |
+
+#### Bash Settings (`bash:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `defaultTimeout` | int | `30` | Default command timeout (seconds) |
+| `maxTimeout` | int | `300` | Maximum allowed timeout (seconds) |
+| `maxStdout` | int | `100000` | Max stdout bytes |
+| `maxStderr` | int | `50000` | Max stderr bytes |
+
+#### Sub-Agent Settings (`subagent:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `maxTurns` | int | `10` | Max turns for sub-agents |
+
+#### Project Docs (`projectDocs:`)
+
+Auto-read files into the system prompt as context:
+
+```yaml
+projectDocs:
+  - name: CLAUDE.md
+    title: Project Instructions
+  - name: docs/architecture.md
+    title: Architecture
+```
 
 ### Environment Variables
-
-Environment variables take precedence over config file settings.
 
 | Variable | Effect |
 |----------|--------|
 | `PIGLET_DEFAULT_MODEL` | Override default model |
-| `PIGLET_DEFAULT_PROVIDER` | Override default provider |
-| `PIGLET_THEME` | Override theme |
-| `PIGLET_SHELL_PATH` | Override shell path |
+
+## Prompt Templates
+
+**Directories:** `~/.config/piglet/prompts/` (global), `.piglet/prompts/` (project-local)
+
+Prompt templates are markdown files that register as slash commands. The filename (minus `.md`) becomes the command name.
+
+**Example** — create `~/.config/piglet/prompts/review.md`:
+
+```markdown
+---
+description: Review code for issues
+---
+Review the following code for bugs, security issues, and style problems:
+
+$@
+```
+
+Now `/review fix the auth bug` expands the template with your args and sends it.
+
+### Arg Substitution
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `$1`, `$2`, ... `$9` | Positional args |
+| `$@` | All args joined by space |
+| `${@:N}` | Args from position N onward (1-indexed) |
+| `${@:N:L}` | L args starting from position N |
+
+Project-local templates (`.piglet/prompts/`) override global templates when names collide. Missing args resolve to empty strings.
+
+### YAML Frontmatter
+
+Optional. Only `description` is recognized — it appears in `/help` output.
 
 ## System Prompt
 

@@ -4,19 +4,21 @@
 
 <h1 align="center">piglet</h1>
 
-<p align="center">A minimalist TUI coding assistant with multi-provider LLM support and a built-in tool suite.</p>
+<p align="center">A coding assistant that lives in your terminal, reads your actual files, and picks up where you left off.</p>
 
-## Features
+## What You Get
 
-- Interactive TUI built with Bubble Tea v2
-- Print mode for one-shot queries: `piglet "explain this error"`
-- Multi-provider: OpenAI, Anthropic, Google, xAI, Groq, OpenRouter
-- 7 core tools (read, write, edit, bash, grep, find, ls) + 7 extension tools (memory, skills, clipboard, subagent, and more)
-- Session persistence via JSONL — resume where you left off
-- Conversation compaction to manage context window
-- Customizable system prompt via config or `~/.config/piglet/prompt.md`
-- Extension API: register custom tools, commands, shortcuts, prompt sections, interceptors, and event handlers
-- Model switcher without restarting (Ctrl+P)
+Stay in your terminal. Ask piglet to read a file, fix a bug, run the tests, or explain an error — it touches your actual codebase, runs real commands, and edits files directly. No copy-pasting.
+
+Switch models without losing your conversation. Come back to a session days later and pick up exactly where you stopped. When the defaults don't fit, shape how it thinks about your project — or extend it with your own tools and slash commands.
+
+Everything runs from a single binary.
+
+- **Works in your codebase** — reads, writes, edits, greps, and runs bash in your actual project
+- **Stays in your terminal** — full TUI or one-shot: `piglet "explain this error"`
+- **Remembers your work** — sessions persist; resume any conversation, any time
+- **Switches models on the fly** — Ctrl+P to change models without restarting
+- **Fits your workflow** — custom system prompt, slash commands, tools, interceptors, and 8 built-in extensions
 
 ## Install
 
@@ -67,6 +69,7 @@ Config lives in `~/.config/piglet/`:
 | `behavior.md` | Behavioral guidelines for the LLM |
 | `sessions/` | Persisted conversation history |
 | `skills/` | Markdown methodology files |
+| `prompts/` | Prompt templates (become slash commands) |
 | `extensions/` | External extension directories |
 
 **config.yaml example:**
@@ -137,7 +140,7 @@ Specify a model with `PIGLET_DEFAULT_MODEL` or set `defaultModel` in config. You
 | `/clear` | Clear conversation history |
 | `/step` | Toggle step-by-step mode |
 | `/model` | Switch model |
-| `/modelsync` | Refresh available models |
+| `/models-sync` | Refresh available models |
 | `/session` | List and load sessions |
 | `/branch` | Fork current session |
 | `/title` | Set session title |
@@ -148,6 +151,7 @@ Specify a model with `PIGLET_DEFAULT_MODEL` or set `defaultModel` in config. You
 | `/config` | Show or set up configuration |
 | `/extensions` | List loaded extensions |
 | `/bg` | Run a background agent |
+| `/bg-cancel` | Cancel running background task |
 | `/quit` | Exit |
 
 All built-in commands register through the extension API and can be overridden.
@@ -167,7 +171,7 @@ Shortcuts also register through the extension API and can be customized.
 
 ## Extensions
 
-Piglet's architecture is extension-first. Seven built-in extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent) run as standalone Go binaries via JSON-RPC over stdin/stdout. Custom extensions can be written in Go, TypeScript, or Python.
+Piglet's architecture is extension-first. Eight built-in extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp) run as standalone Go binaries via JSON-RPC over stdin/stdout. Custom extensions can be written in Go, TypeScript, or Python.
 
 ```bash
 make extensions              # Build all extension binaries
