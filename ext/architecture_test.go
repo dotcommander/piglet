@@ -18,7 +18,7 @@ import (
 //
 //	core/      → stdlib only (foundation)
 //	ext/       → core/ + stdlib (registration surface)
-//	tool/, command/, memory/, prompt/ → ext/, core/, config/, session/ (extensions)
+//	tool/, command/, prompt/ → ext/, core/, config/, session/ (extensions)
 //	tui/, cmd/ → anything (wiring layer)
 //
 // Violations indicate functionality leaking into the wrong layer.
@@ -31,34 +31,20 @@ var forbiddenImports = map[string][]string{
 		"github.com/dotcommander/piglet/ext",
 		"github.com/dotcommander/piglet/tool",
 		"github.com/dotcommander/piglet/command",
-		"github.com/dotcommander/piglet/memory",
 		"github.com/dotcommander/piglet/prompt",
 		"github.com/dotcommander/piglet/tui",
 		"github.com/dotcommander/piglet/session",
 		"github.com/dotcommander/piglet/provider",
 		"github.com/dotcommander/piglet/config",
-		"github.com/dotcommander/piglet/skill",
-		"github.com/dotcommander/piglet/safeguard",
-		"github.com/dotcommander/piglet/rtk",
-		"github.com/dotcommander/piglet/subagent",
-		"github.com/dotcommander/piglet/autotitle",
-		"github.com/dotcommander/piglet/clipboard",
 	},
 	// ext/ must never import extension implementations or UI
 	"github.com/dotcommander/piglet/ext": {
 		"github.com/dotcommander/piglet/tool",
 		"github.com/dotcommander/piglet/command",
-		"github.com/dotcommander/piglet/memory",
 		"github.com/dotcommander/piglet/prompt",
 		"github.com/dotcommander/piglet/tui",
 		"github.com/dotcommander/piglet/session",
 		"github.com/dotcommander/piglet/provider",
-		"github.com/dotcommander/piglet/skill",
-		"github.com/dotcommander/piglet/safeguard",
-		"github.com/dotcommander/piglet/rtk",
-		"github.com/dotcommander/piglet/subagent",
-		"github.com/dotcommander/piglet/autotitle",
-		"github.com/dotcommander/piglet/clipboard",
 	},
 }
 
