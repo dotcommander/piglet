@@ -13,20 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dotcommander/piglet/autotitle"
-	"github.com/dotcommander/piglet/clipboard"
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/memory"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
-	"github.com/dotcommander/piglet/rtk"
-	"github.com/dotcommander/piglet/safeguard"
-	"github.com/dotcommander/piglet/skill"
-	"github.com/dotcommander/piglet/subagent"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 	"github.com/dotcommander/piglet/tui"
@@ -140,36 +133,11 @@ func run() error {
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
 
-	// Project memory (tools, /memory command, prompt section)
-	memory.Register(app)
-
 	// Core behavioral guidelines (tool usage, output style, safety)
 	prompt.RegisterBehavior(app)
 
 	// Project docs (configurable context files → system prompt)
 	prompt.RegisterProjectDocs(app, settings.ProjectDocs)
-
-	// Safeguard: block dangerous bash commands (enabled by default)
-	safeguard.Register(app, settings.Safeguard)
-
-	// RTK token optimization (auto-detects rtk in PATH)
-	rtk.Register(app, settings.RTK)
-
-	// Skills: on-demand methodology loading from ~/.config/piglet/skills/
-	skill.Register(app)
-
-	// Clipboard: read images from system clipboard (tool + TUI shortcut)
-	clipboard.Register(app)
-
-	// Auto-title: generate session titles after first exchange (event handler)
-	autotitle.Register(app, autotitle.Config{
-		Enabled: settings.Agent.AutoTitleEnabled(),
-	})
-
-	// Sub-agent delegation (dispatch tool)
-	subagent.Register(app, subagent.Config{
-		MaxTurns: config.IntOr(settings.SubAgent.MaxTurns, 10),
-	})
 
 	// Git context (diff + recent commits in system prompt)
 	prompt.RegisterGitContext(app, prompt.GitContextConfig{
