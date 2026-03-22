@@ -1,8 +1,8 @@
 # Extensions
 
-Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, and interceptors.
+Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
 
-All of piglet's built-in functionality (7 tools, 10 commands, 2 shortcuts) registers through the same extension API, so anything built-in can be overridden or extended.
+Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Seven additional extensions run as standalone binaries via JSON-RPC, providing the full experience (14 tools, 20 commands, 3 shortcuts, interceptors, event handlers, message hooks). Build them with `make extensions`.
 
 ## Quick Start
 
@@ -16,9 +16,9 @@ This creates `~/.config/piglet/extensions/my-extension/` with a ready-to-run sca
 
 To see what's loaded: `/extensions`
 
-## External Extensions (TypeScript, Python, etc.)
+## External Extensions (Go, TypeScript, Python, etc.)
 
-External extensions run as child processes and communicate via JSON-RPC over stdin/stdout. They can be written in any language — TypeScript, Python, Ruby, etc.
+External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent) are all external Go binaries.
 
 ### Directory Structure
 
@@ -37,11 +37,13 @@ Every external extension needs a `manifest.yaml`:
 ```yaml
 name: my-extension
 version: 0.1.0
-runtime: bun          # bun, node, deno, python, or absolute path
-entry: index.ts       # entry point relative to extension dir
+runtime: bun          # bun, node, deno, python, or path to binary
+entry: index.ts       # entry point (omit for compiled Go binaries)
 capabilities:
   - tools
   - commands
+  - interceptors
+  - shortcuts
 ```
 
 Supported runtimes:
@@ -52,7 +54,18 @@ Supported runtimes:
 | `node` | `node <entry>` |
 | `deno` | `deno run --allow-all <entry>` |
 | `python` | `python3 <entry>` |
+| `./binary` | `./binary` (compiled Go, no entry needed) |
 | `/path/to/bin` | `/path/to/bin <entry>` |
+
+For compiled Go binaries, set `runtime` to the binary path and omit `entry`:
+
+```yaml
+name: safeguard
+version: 0.1.0
+runtime: ./safeguard
+capabilities:
+  - interceptors
+```
 
 ### TypeScript SDK
 
@@ -103,7 +116,7 @@ piglet.registerPromptSection({
 });
 ```
 
-### SDK API
+### TypeScript SDK API
 
 | Method | Description |
 |--------|-------------|
@@ -116,26 +129,94 @@ piglet.registerPromptSection({
 | `piglet.log(level, message)` | Log to the host |
 | `piglet.getCwd()` | Get the working directory |
 
+### Go SDK
+
+The Go SDK (`sdk/go/`) provides the same capabilities for compiled Go extensions. All 7 of piglet's own extensions use this SDK.
+
+```go
+package main
+
+import (
+    "context"
+    sdk "github.com/dotcommander/piglet/sdk/go"
+)
+
+func main() {
+    e := sdk.New("my-extension", "0.1.0")
+
+    e.RegisterTool(sdk.ToolDef{
+        Name:        "my_tool",
+        Description: "Does something useful",
+        Parameters:  map[string]any{"type": "object", "properties": map[string]any{
+            "input": map[string]any{"type": "string"},
+        }},
+        Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
+            return sdk.TextResult("done"), nil
+        },
+    })
+
+    e.RegisterInterceptor(sdk.InterceptorDef{
+        Name:     "my-guard",
+        Priority: 1000,
+        Before: func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+            return true, args, nil // allow
+        },
+    })
+
+    e.RegisterEventHandler(sdk.EventHandlerDef{
+        Name:   "my-observer",
+        Events: []string{"EventAgentEnd"},
+        Handle: func(ctx context.Context, eventType string, data json.RawMessage) *sdk.Action {
+            return sdk.ActionNotify("Agent finished")
+        },
+    })
+
+    e.Run() // JSON-RPC loop over stdin/stdout
+}
+```
+
+Go SDK API:
+
+| Method | Description |
+|--------|-------------|
+| `sdk.New(name, version)` | Create extension |
+| `e.RegisterTool(def)` | Register an LLM-callable tool |
+| `e.RegisterCommand(def)` | Register a slash command |
+| `e.RegisterPromptSection(def)` | Add a system prompt section |
+| `e.RegisterInterceptor(def)` | Register before/after tool hooks |
+| `e.RegisterEventHandler(def)` | Observe agent lifecycle events |
+| `e.RegisterShortcut(def)` | Register keyboard shortcut |
+| `e.RegisterMessageHook(def)` | Hook user messages before LLM sees them |
+| `e.OnInit(fn)` | Callback after initialize (receives CWD) |
+| `e.Notify(msg)` | Show a TUI notification |
+| `e.ShowMessage(text)` | Display a message in conversation |
+| `e.Log(level, msg)` | Log to the host |
+| `e.CWD()` | Get the working directory |
+| `e.Run()` | Start the JSON-RPC loop |
+
 ### Writing an SDK for Another Language
 
 The protocol is newline-delimited JSON-RPC 2.0 over stdin/stdout. See [`ext/external/protocol.go`](../ext/external/protocol.go) for the full message spec. The flow:
 
 1. Host sends `initialize` request with `{ protocolVersion, cwd }`
-2. Extension sends `register/tool`, `register/command`, `register/promptSection` notifications
+2. Extension sends `register/*` notifications (tool, command, promptSection, interceptor, eventHandler, shortcut, messageHook)
 3. Extension responds to `initialize` with `{ name, version }`
-4. Host sends `tool/execute` or `command/execute` requests as needed
+4. Host sends requests as needed: `tool/execute`, `command/execute`, `interceptor/before`, `interceptor/after`, `event/dispatch`, `shortcut/handle`, `messageHook/onMessage`
 5. Host sends `shutdown` when done
 
-## Go Extensions (Compiled In)
+## Compiled-In Extensions
 
-Go extensions are functions compiled into the binary:
+A small set of extensions are compiled directly into the binary for startup performance:
 
 ```go
-func Register(app *ext.App) error {
-    // Register tools, commands, shortcuts, prompt sections, interceptors
-    return nil
+// tool/register.go, command/builtins.go, prompt/*.go
+func Register(app *ext.App) {
+    app.RegisterTool(...)
+    app.RegisterCommand(...)
 }
 ```
+
+These use the same `ext.App` API as external extensions. Currently compiled-in: 7 core tools (`tool/`), 18 commands (`command/`), 4 prompt sections (`prompt/`).
 
 ## Tools
 
@@ -172,7 +253,7 @@ app.RegisterTool(&ext.ToolDef{
 
 ## Slash Commands
 
-Commands are invoked by the user with `/name`. All 8 built-in commands (help, clear, step, model, session, compact, export, quit) use this same API.
+Commands are invoked by the user with `/name`. All 20 built-in commands use this same API.
 
 ```go
 app.RegisterCommand(&ext.Command{
@@ -310,11 +391,23 @@ The same applies to commands — register a command named `help` and your handle
 
 ## Extension Loading Order
 
-1. Built-in Go tools (read, write, edit, bash, grep, find, ls)
-2. Built-in Go commands (help, clear, step, model, session, compact, export, extensions, ext-init, quit)
-3. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
+1. Compiled-in tools (`tool/` — 7 total)
+2. Compiled-in commands (`command/` — 18 total)
+3. Compiled-in shortcuts, prompt sections
+4. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
+   - Built-in externals: safeguard, rtk, autotitle, clipboard, skill, memory, subagent
+   - User extensions: anything else in the extensions directory
 
 Later registrations overwrite earlier ones for the same name.
+
+## Building Extensions
+
+```bash
+make extensions              # Build + install all 7 to ~/.config/piglet/extensions/
+make extensions-safeguard    # Build a single extension
+```
+
+Without extensions installed, piglet runs as a minimal agent with 7 tools and 18 commands.
 
 ## Examples
 

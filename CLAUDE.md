@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** Built-in packages (`tool/`, `command/`, `prompt/`, `memory/`) register through the exact same `ext.App` API that external extensions use. They ship with the binary, but they have no special access. If Go supported true plugin isolation cleanly, this would be extension-only.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Seven extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in this repo and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -19,21 +19,30 @@ tui/, cmd/  → anything (wiring layer)
 
 ### What Registers Through ext.App
 
+**Compiled-in** (ship with the binary):
+
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
-| Tools | 13 | `tool/` (7), `memory/` (2), `skill/` (2), `subagent/` (1), `clipboard/` (1) | `RegisterTool` |
-| Commands | 20 | `command/` (18), `memory/` (1), `skill/` (1) | `RegisterCommand` |
-| Shortcuts | 3 | `command/` (2), `clipboard/` (1) | `RegisterShortcut` |
+| Tools | 7 | `tool/` | `RegisterTool` |
+| Commands | 18 | `command/` | `RegisterCommand` |
+| Shortcuts | 2 | `command/` | `RegisterShortcut` |
 | Status sections | 5 | `command/` | `RegisterStatusSection` |
-| Prompt sections | 5+ | `prompt/` (3), `memory/` (1), `skill/` (1) | `RegisterPromptSection` |
-| Message hooks | 1+ | `skill/` (1) | `RegisterMessageHook` |
+| Prompt sections | 4 | `prompt/` (behavior, selfknowledge, gitcontext, projectdocs) | `RegisterPromptSection` |
 | Compactor | 1 | `command/` | `RegisterCompactor` |
-| Interceptors | varies | any extension | `RegisterInterceptor` |
-| Event handlers | 1 | `autotitle/` (1) | `RegisterEventHandler` |
-| Renderers | 0 built-in | any extension | `RegisterRenderer` |
-| Providers | 0 built-in | any extension | `RegisterProvider` |
 
-External extensions (TypeScript, Python, Go) use identical API via JSON-RPC over stdin/stdout.
+**External** (standalone Go binaries via JSON-RPC, built with `make extensions`):
+
+| Extension | Binary | Registers |
+|-----------|--------|-----------|
+| `safeguard` | `safeguard/cmd/` | 1 interceptor |
+| `rtk` | `rtk/cmd/` | 1 interceptor, 1 prompt section |
+| `autotitle` | `autotitle/cmd/` | 1 event handler |
+| `clipboard` | `clipboard/cmd/` | 1 tool, 1 shortcut |
+| `skill` | `skill/cmd/` | 2 tools, 1 command, 1 prompt section, 1 message hook |
+| `memory` | `memory/cmd/` | 3 tools, 1 command, 1 prompt section |
+| `subagent` | `subagent/cmd/` | 1 tool |
+
+All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
 ### Five Primitives
 
@@ -47,29 +56,29 @@ Every extension capability reduces to five orchestrator primitives:
 | **Hook** | React to user messages before the LLM sees them | `RegisterMessageHook` (ephemeral turn-scoped context injection) |
 | **Observe** | React to agent lifecycle events | `RegisterEventHandler` (EventAgentEnd, EventTurnEnd, etc.) |
 
-All built-in extensions map to these primitives — no special access:
+All extensions map to these primitives — no special access:
 
-| Extension | Primitive | How |
-|-----------|-----------|-----|
-| `prompt/behavior.go` | Inject | Prompt section loads `behavior.md` at start |
-| `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts |
-| `memory/` | Inject + React | Prompt section + tools that return/store content |
-| `safeguard/` | Intercept | Before hook blocks dangerous bash commands |
-| `rtk/` | Intercept | Before hook rewrites bash commands |
-| `command/` | React | Commands respond to user slash input |
-| `skill/` | Inject + React + Hook | Tools for on-demand loading, message hook for auto-triggering |
-| `subagent/` | React | Dispatch tool delegates tasks to independent sub-agents |
-| `clipboard/` | React | Tool reads images from system clipboard; shortcut attaches to next message |
-| `autotitle/` | Observe | Event handler generates session title after first exchange |
+| Extension | Primitive | How | Where |
+|-----------|-----------|-----|-------|
+| `prompt/behavior.go` | Inject | Prompt section loads `behavior.md` | compiled-in |
+| `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts | compiled-in |
+| `command/` | React | Commands respond to user slash input | compiled-in |
+| `memory/` | Inject + React | Prompt section + tools | external |
+| `safeguard/` | Intercept | Before hook blocks dangerous bash | external |
+| `rtk/` | Inject + Intercept | Prompt section + bash rewriter | external |
+| `skill/` | Inject + React + Hook | Tools + message hook | external |
+| `subagent/` | React | Dispatch tool delegates to sub-agents | external |
+| `clipboard/` | React | Tool + shortcut for images | external |
+| `autotitle/` | Observe | Event handler for session titles | external |
 
 **New features should use existing primitives, not add new ones.**
 
 ### Extension Registration Pattern
 
-Every built-in package follows the same pattern:
+Compiled-in packages follow the same `Register(app)` pattern:
 
 ```go
-// tool/register.go, command/builtins.go, memory/register.go, prompt/*.go
+// tool/register.go, command/builtins.go, prompt/*.go
 func Register(app *ext.App) {
     app.RegisterTool(...)
     app.RegisterCommand(...)
@@ -77,12 +86,24 @@ func Register(app *ext.App) {
 }
 ```
 
-`cmd/piglet/main.go` creates `ext.NewApp()`, calls each `Register()`, then passes `app` to the agent and TUI. The wiring layer has zero hardcoded tools, commands, or behaviors.
+External extensions use the Go SDK (`sdk/go/`):
+
+```go
+// safeguard/cmd/main.go, memory/cmd/main.go, etc.
+func main() {
+    e := sdk.New("name", "0.1.0")
+    e.RegisterTool(sdk.ToolDef{...})
+    e.RegisterInterceptor(sdk.InterceptorDef{...})
+    e.Run() // JSON-RPC loop over stdin/stdout
+}
+```
+
+`cmd/piglet/main.go` creates `ext.NewApp()`, calls compiled-in `Register()` functions, loads external extensions via `external.LoadAll()`, then passes `app` to the agent and TUI.
 
 ## Layout
 
 ```
-cmd/piglet/    Wiring layer — creates ext.App, calls Register(), runs TUI
+cmd/piglet/    Wiring layer — creates ext.App, calls Register(), loads externals, runs TUI
 core/          Agent loop, streaming, types. Imports nothing from piglet.
 ext/           Registration surface (ext.App) — the central API
   app.go       Struct, NewApp, Bind, action queue
@@ -91,19 +112,31 @@ ext/           Registration surface (ext.App) — the central API
   runtime.go   Agent facade (SendMessage, Provider, etc.)
   domain.go    Session/model domain methods
   events.go    Event handler dispatch (Observe primitive)
-  external/    JSON-RPC bridge for TypeScript/Python/Go extensions
-tool/          7 built-in tools — extension, not core
-command/       18 built-in commands, 5 status sections, 2 shortcuts — extension, not core
-clipboard/     Clipboard image reading — 1 tool, 1 shortcut (ctrl+v)
-prompt/        System prompt builder + prompt section extensions
-memory/        Per-project persistent memory — 2 tools, 1 command, 1 prompt section
-skill/         On-demand methodology loading — 2 tools, 1 command, 1 prompt section, 1 message hook
-subagent/      Sub-agent delegation — 1 tool (dispatch)
-autotitle/     Session title generation — 1 event handler (Observe)
+  external/    JSON-RPC v2 bridge for external extensions (Go/TypeScript/Python)
+sdk/go/        Go Extension SDK — JSON-RPC client for building external extensions
+tool/          7 compiled-in tools
+command/       18 compiled-in commands, 5 status sections, 2 shortcuts
+prompt/        System prompt builder + 4 compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      OpenAI, Anthropic, Google streaming providers
 session/       JSONL conversation persistence, compaction
 tui/           Bubble Tea v2 UI
+
+# External extensions (standalone binaries, source in-repo):
+safeguard/     Dangerous command blocking — 1 interceptor
+  cmd/         Binary entry point + manifest.yaml
+rtk/           Token-optimized bash rewriting — 1 interceptor, 1 prompt section
+  cmd/         Binary entry point + manifest.yaml
+autotitle/     Session title generation — 1 event handler
+  cmd/         Binary entry point + manifest.yaml
+clipboard/     Clipboard image reading — 1 tool, 1 shortcut (ctrl+v)
+  cmd/         Binary entry point + manifest.yaml
+skill/         On-demand methodology loading — 2 tools, 1 command, 1 prompt section, 1 message hook
+  cmd/         Binary entry point + manifest.yaml
+memory/        Per-project persistent memory — 3 tools, 1 command, 1 prompt section
+  cmd/         Binary entry point + manifest.yaml
+subagent/      Sub-agent delegation — 1 tool (dispatch)
+  cmd/         Binary entry point + manifest.yaml
 ```
 
 ## Key Types
@@ -134,6 +167,15 @@ go vet ./...
 go build -o piglet ./cmd/piglet/
 ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 ```
+
+## Extensions
+
+```bash
+make extensions              # Build + install all 7 to ~/.config/piglet/extensions/
+make extensions-safeguard    # Build a single extension
+```
+
+Without `make extensions`, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (14 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
 
 ## Config
 

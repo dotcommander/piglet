@@ -18,7 +18,7 @@ func registerCommand(app *ext.App, store *Store) {
 			if arg == "" || arg == "list" {
 				skills := store.List()
 				if len(skills) == 0 {
-					a.ShowMessage("No skills found in " + store.dir)
+					a.ShowMessage("No skills found in " + store.Dir())
 					return nil
 				}
 				var b strings.Builder

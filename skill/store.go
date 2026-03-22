@@ -33,6 +33,9 @@ func NewStore(dir string) *Store {
 	return s
 }
 
+// Dir returns the skills directory path.
+func (s *Store) Dir() string { return s.dir }
+
 // List returns all loaded skills.
 func (s *Store) List() []Skill {
 	return s.skills

@@ -12,12 +12,11 @@ import (
 // Sections are registered through ext.RegisterStatusSection.
 // Values are set via Set(key, value).
 type StatusBar struct {
-	sections map[string]string   // key → rendered value
-	registry []ext.StatusSection // registered section metadata
-	thinking bool
-	spinning bool
-	width    int
-	styles   Styles
+	sections    map[string]string   // key → rendered value
+	registry    []ext.StatusSection // registered section metadata
+	spinnerView string              // pre-rendered spinner frame + verb (empty = idle)
+	width       int
+	styles      Styles
 }
 
 // NewStatusBar creates a status bar.
@@ -51,11 +50,8 @@ func (s *StatusBar) Set(key, value string) {
 	}
 }
 
-// SetThinking updates the thinking indicator.
-func (s *StatusBar) SetThinking(on bool) { s.thinking = on }
-
-// SetSpinning updates the spinner state.
-func (s *StatusBar) SetSpinning(on bool) { s.spinning = on }
+// SetSpinnerView updates the spinner display (empty string = hidden).
+func (s *StatusBar) SetSpinnerView(v string) { s.spinnerView = v }
 
 // SetWidth updates the available width.
 func (s *StatusBar) SetWidth(w int) { s.width = w }
@@ -65,18 +61,12 @@ func (s StatusBar) View() string {
 	left := s.renderSide(ext.StatusLeft)
 	right := s.renderSide(ext.StatusRight)
 
-	// Prepend thinking/spinning indicator to right side
-	var indicator string
-	if s.thinking {
-		indicator = s.styles.Spinner.Render("thinking...")
-	} else if s.spinning {
-		indicator = s.styles.Spinner.Render("...")
-	}
-	if indicator != "" {
+	// Prepend spinner to right side
+	if s.spinnerView != "" {
 		if right != "" {
-			right = indicator + " " + right
+			right = s.spinnerView + " " + right
 		} else {
-			right = indicator
+			right = s.spinnerView
 		}
 	}
 

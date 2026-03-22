@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -42,6 +44,9 @@ type bgEventMsg struct{ event core.Event }
 // asyncActionMsg carries the result of an ActionRunAsync completion.
 type asyncActionMsg struct{ action ext.Action }
 
+// execDoneMsg signals that an external process (e.g., $EDITOR) has finished.
+type execDoneMsg struct{ err error }
+
 // notifyTickMsg decrements the notification timer.
 type notifyTickMsg struct{}
 
@@ -68,6 +73,7 @@ type Model struct {
 	status   StatusBar
 	msgView  MessageView
 	modal    ModalModel
+	spinner  spinner.Model
 
 	// State
 	messages       []core.Message
@@ -75,6 +81,7 @@ type Model struct {
 	streamText     string
 	streamThink    string
 	activeTool     string
+	spinnerVerb    string
 	totalIn         int
 	totalOut        int
 	totalCost       float64
@@ -105,6 +112,9 @@ type Model struct {
 	// Pending image attachment for next message
 	pendingImage *core.ImageContent
 
+	// Terminal focus state
+	focused bool
+
 	// Auto-scroll: follow new output unless user scrolled up
 	followOutput bool
 }
@@ -121,13 +131,18 @@ func New(cfg Config) Model {
 	status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet"))
 	status.Set(ext.StatusKeyModel, styles.Muted.Render(cfg.Model.DisplayName()))
 
+	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	sp.Style = styles.Spinner
+
 	return Model{
 		cfg:          cfg,
 		styles:       styles,
 		input:        NewInputModel(styles, commands),
 		status:       status,
 		msgView:      NewMessageView(styles, 80),
+		spinner:      sp,
 		bgResult:     &strings.Builder{},
+		focused:      true,
 		followOutput: true,
 	}
 }
@@ -163,6 +178,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.streaming {
 				m.cfg.Agent.Stop()
 				m.streaming = false
+				m.spinnerVerb = ""
+				m.status.SetSpinnerView("")
 				m.streamCache = StreamCache{}
 				return m, nil
 			}
@@ -177,12 +194,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
 			return m.handleSubmit()
 
+		case msg.Code == 'z' && msg.Mod.Contains(tea.ModCtrl):
+			return m, tea.Suspend
+
 		default:
 			// Dispatch registered keyboard shortcuts
 			if result, cmd, handled := m.runShortcut(msg); handled {
 				return result, cmd
 			}
 		}
+
+	case tea.ResumeMsg:
+		return m, m.input.textarea.Focus()
+
+	case tea.FocusMsg:
+		m.focused = true
+		return m, nil
+
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
+
+	case spinner.TickMsg:
+		if m.streaming {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			m.status.SetSpinnerView(m.spinner.View() + " " + m.spinnerVerb)
+			return m, cmd
+		}
+		return m, nil
 
 	case tea.MouseWheelMsg:
 		m.viewport, _ = m.viewport.Update(msg)
@@ -248,6 +288,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case execDoneMsg:
+		if msg.err != nil {
+			m.showNotification("editor: " + msg.err.Error())
+			cmds = append(cmds, notifyTick())
+		}
+		return m, tea.Batch(cmds...)
+
 	}
 
 	// Update input
@@ -289,7 +336,19 @@ func (m Model) View() tea.View {
 
 	v := tea.NewView(m.styles.App.Render(strings.Join(sections, "\n")))
 	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = m.windowTitle()
 	return v
+}
+
+// windowTitle returns the terminal window title.
+func (m Model) windowTitle() string {
+	title := "piglet"
+	if m.cfg.Session != nil {
+		if name := m.cfg.Session.Meta().Title; name != "" {
+			title += " — " + name
+		}
+	}
+	return title
 }
 
 // Run starts the TUI.
@@ -297,16 +356,20 @@ func Run(cfg Config) error {
 	m := New(cfg)
 	p := tea.NewProgram(m,
 		tea.WithColorProfile(colorprofile.TrueColor),
-		tea.WithFilter(filterTerminalResponses),
+		tea.WithFilter(messageFilter),
 	)
 	_, err := p.Run()
 	return err
 }
 
-// filterTerminalResponses drops unknown terminal response sequences
-// (OSC, CSI, DCS, etc.) that bubbletea's ultraviolet parser doesn't
-// recognize. Without this, they leak through as raw events.
-func filterTerminalResponses(_ tea.Model, msg tea.Msg) tea.Msg {
+// messageFilter drops unwanted messages before they reach Update.
+// It blocks unknown terminal response sequences and prevents quit during streaming.
+func messageFilter(m tea.Model, msg tea.Msg) tea.Msg {
+	if _, ok := msg.(tea.QuitMsg); ok {
+		if mdl, ok := m.(Model); ok && mdl.streaming {
+			return nil
+		}
+	}
 	switch msg.(type) {
 	case uv.UnknownEvent,
 		uv.UnknownCsiEvent,
@@ -335,6 +398,7 @@ func (m *Model) layout() {
 
 	wasAtBottom := m.followOutput
 	m.viewport = viewport.New(viewport.WithWidth(m.width-2), viewport.WithHeight(vpH))
+	m.viewport.MouseWheelDelta = 1
 	m.viewport.Style = lipgloss.NewStyle()
 	m.refreshViewport()
 	if wasAtBottom {
@@ -469,8 +533,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	ch := m.cfg.Agent.Start(context.Background(), text)
 	m.eventCh = ch
 	m.streaming = true
+	m.spinnerVerb = "thinking..."
 
-	return m, tea.Batch(pollEvents(ch), tickCmd())
+	return m, tea.Batch(pollEvents(ch), tickCmd(), m.spinner.Tick)
 }
 
 // bindApp wires sync callbacks that need return values or direct TUI mutation.
@@ -599,6 +664,12 @@ func (m *Model) applyActions() tea.Cmd {
 				}
 				return nil
 			})
+		case ext.ActionExec:
+			if c, ok := act.Cmd.(*exec.Cmd); ok {
+				cmds = append(cmds, tea.ExecProcess(c, func(err error) tea.Msg {
+					return execDoneMsg{err: err}
+				}))
+			}
 		case ext.ActionQuit:
 			m.quitting = true
 		}
@@ -668,8 +739,14 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	case core.EventStreamDelta:
 		if e.Kind == "text" {
 			m.streamText += e.Delta
+			if m.spinnerVerb == "thinking..." {
+				m.spinnerVerb = "writing..."
+			}
 		} else if e.Kind == "thinking" {
 			m.streamThink += e.Delta
+			if m.spinnerVerb == "thinking..." {
+				m.spinnerVerb = "reasoning..."
+			}
 		}
 
 	case core.EventStreamDone:
@@ -678,9 +755,11 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 
 	case core.EventToolStart:
 		m.activeTool = e.ToolName
+		m.spinnerVerb = "running " + e.ToolName + "..."
 
 	case core.EventToolEnd:
 		m.activeTool = ""
+		m.spinnerVerb = "thinking..."
 
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
@@ -707,6 +786,8 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	case core.EventAgentEnd:
 		m.streaming = false
 		m.activeTool = ""
+		m.spinnerVerb = ""
+		m.status.SetSpinnerView("")
 		m.streamCache = StreamCache{}
 		m.refreshViewport()
 		if m.followOutput {

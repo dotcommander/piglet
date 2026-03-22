@@ -23,11 +23,21 @@ func Register(app *ext.App, enabled *bool) {
 		return
 	}
 
-	patterns := loadPatterns()
-	if len(patterns) == 0 {
+	compiled := CompilePatterns(LoadPatterns())
+	if len(compiled) == 0 {
 		return
 	}
 
+	app.RegisterInterceptor(ext.Interceptor{
+		Name:     "safeguard",
+		Priority: 2000, // security — runs before everything else
+		Before:   Blocker(compiled),
+	})
+}
+
+// CompilePatterns compiles string patterns into case-insensitive regexps.
+// Invalid patterns are silently skipped.
+func CompilePatterns(patterns []string) []*regexp.Regexp {
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
 	for _, p := range patterns {
 		re, err := regexp.Compile("(?i)" + p)
@@ -36,18 +46,11 @@ func Register(app *ext.App, enabled *bool) {
 		}
 		compiled = append(compiled, re)
 	}
-	if len(compiled) == 0 {
-		return
-	}
-
-	app.RegisterInterceptor(ext.Interceptor{
-		Name:     "safeguard",
-		Priority: 2000, // security — runs before everything else
-		Before:   blocker(compiled),
-	})
+	return compiled
 }
 
-func blocker(patterns []*regexp.Regexp) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+// Blocker returns a Before interceptor function that checks commands against patterns.
+func Blocker(patterns []*regexp.Regexp) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 		if toolName != "bash" {
 			return true, args, nil
@@ -72,7 +75,9 @@ type safeguardFile struct {
 	Patterns []string `yaml:"patterns"`
 }
 
-func loadPatterns() []string {
+// LoadPatterns reads patterns from ~/.config/piglet/safeguard.yaml.
+// Creates a default file if it doesn't exist.
+func LoadPatterns() []string {
 	dir, err := config.ConfigDir()
 	if err != nil {
 		return nil

@@ -11,11 +11,11 @@
 - Interactive TUI built with Bubble Tea v2
 - Print mode for one-shot queries: `piglet "explain this error"`
 - Multi-provider: OpenAI, Anthropic, Google, xAI, Groq, OpenRouter
-- Built-in tools: read, write, edit, bash, grep, find, ls
+- 7 core tools (read, write, edit, bash, grep, find, ls) + 7 extension tools (memory, skills, clipboard, subagent, and more)
 - Session persistence via JSONL — resume where you left off
 - Conversation compaction to manage context window
 - Customizable system prompt via config or `~/.config/piglet/prompt.md`
-- Extension API: register custom tools, commands, shortcuts, prompt sections, and interceptors
+- Extension API: register custom tools, commands, shortcuts, prompt sections, interceptors, and event handlers
 - Model switcher without restarting (Ctrl+P)
 
 ## Install
@@ -30,6 +30,7 @@ Or build from source:
 git clone https://github.com/dotcommander/piglet
 cd piglet
 go build -o piglet ./cmd/piglet/
+make extensions   # Build + install extension binaries
 ```
 
 ## Quick Start
@@ -56,7 +57,10 @@ Config lives in `~/.config/piglet/`:
 | `config.yaml` | Settings (model, theme, shell, system prompt, extensions) |
 | `auth.json` | API keys (stored or referenced) |
 | `prompt.md` | Custom system prompt (overrides default identity) |
+| `behavior.md` | Behavioral guidelines for the LLM |
 | `sessions/` | Persisted conversation history |
+| `skills/` | Markdown methodology files |
+| `extensions/` | External extension directories |
 
 **config.yaml example:**
 
@@ -130,9 +134,17 @@ Specify a model with `PIGLET_DEFAULT_MODEL` or set `defaultModel` in config. You
 | `/clear` | Clear conversation history |
 | `/step` | Toggle step-by-step mode |
 | `/model` | Switch model |
+| `/modelsync` | Refresh available models |
 | `/session` | List and load sessions |
+| `/branch` | Fork current session |
+| `/title` | Set session title |
 | `/compact` | Summarize conversation to free context |
+| `/search` | Search conversation history |
 | `/export` | Export current session |
+| `/undo` | Undo last file change |
+| `/config` | Show or set up configuration |
+| `/extensions` | List loaded extensions |
+| `/bg` | Run a background agent |
 | `/quit` | Exit |
 
 All built-in commands register through the extension API and can be overridden.
@@ -144,6 +156,7 @@ All built-in commands register through the extension API and can be overridden.
 | `Ctrl+C` | Stop streaming / quit |
 | `Ctrl+P` | Open model selector |
 | `Ctrl+S` | Open session picker |
+| `Ctrl+V` | Paste clipboard image |
 | `Enter` | Send message |
 | `Shift+Enter` | Insert newline |
 
@@ -151,27 +164,15 @@ Shortcuts also register through the extension API and can be customized.
 
 ## Extensions
 
-Piglet supports extensions for custom tools, slash commands, keyboard shortcuts, prompt sections, and message interceptors. Extensions register against the `ext.App` interface:
+Piglet's architecture is extension-first. Seven built-in extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent) run as standalone Go binaries via JSON-RPC over stdin/stdout. Custom extensions can be written in Go, TypeScript, or Python.
 
-```go
-app.RegisterTool(ext.ToolDef{
-    Name:        "my-tool",
-    Description: "Does something useful",
-    Parameters:  schema,
-    Handler:     myHandler,
-})
-
-app.RegisterPromptSection(ext.PromptSection{
-    Title:   "Project Rules",
-    Content: "Always use structured logging.",
-    Order:   10,
-})
+```bash
+make extensions              # Build all extension binaries
+/ext-init my-extension       # Scaffold a new extension from within piglet
+/extensions                  # List loaded extensions
 ```
 
-See [`examples/extensions/`](examples/extensions/) for working examples:
-
-- `git-tool/` — git operations as a tool
-- `quicknotes/` — session note-taking
+Extensions can register tools, commands, shortcuts, prompt sections, interceptors, event handlers, and message hooks — all through the same API. See [`docs/extensions.md`](docs/extensions.md) for the full guide and [`examples/extensions/`](examples/extensions/) for working examples.
 
 ## License
 
