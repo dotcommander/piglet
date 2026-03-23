@@ -200,7 +200,15 @@ func run() error {
 	defer extCleanup()
 
 	if interactive && loaded == 0 {
-		fmt.Fprintln(os.Stderr, "hint: no extensions installed — see https://github.com/dotcommander/piglet-extensions")
+		if err := command.InstallOfficialExtensions(os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
+		}
+		// Reload after install attempt (picks up freshly built extensions)
+		loaded, cleanup, _ := external.LoadAll(ctx, app)
+		defer cleanup()
+		if loaded > 0 {
+			fmt.Fprintf(os.Stderr, "Loaded %d extensions.\n\n", loaded)
+		}
 	}
 
 	// Self-knowledge (dynamic tools/commands/shortcuts listing)

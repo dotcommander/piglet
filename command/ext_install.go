@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,13 +19,13 @@ var officialExtensions = []string{
 	"memory", "subagent", "lsp", "repomap", "plan", "bulk",
 }
 
-func installExtensions(a *ext.App) error {
+func InstallOfficialExtensions(w io.Writer) error {
 	if _, err := exec.LookPath("git"); err != nil {
-		a.ShowMessage("git not found in PATH. Install git to use /extensions install.")
+		fmt.Fprintln(w, "git not found in PATH — skipping extension install")
 		return nil
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		a.ShowMessage("go not found in PATH. Install Go to use /extensions install.")
+		fmt.Fprintln(w, "go not found in PATH — skipping extension install")
 		return nil
 	}
 
@@ -32,6 +33,8 @@ func installExtensions(a *ext.App) error {
 	if err != nil {
 		return fmt.Errorf("extensions dir: %w", err)
 	}
+
+	fmt.Fprintln(w, "Installing extensions from piglet-extensions...")
 
 	tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
 	if err != nil {
@@ -41,17 +44,16 @@ func installExtensions(a *ext.App) error {
 
 	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", extensionsRepoURL, tmpDir)
 	if out, err := cloneCmd.CombinedOutput(); err != nil {
-		a.ShowMessage("Failed to clone extensions repo:\n" + string(out))
+		fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
 		return nil
 	}
 
-	var results []string
 	var built, failed int
 
 	for _, name := range officialExtensions {
 		destDir := filepath.Join(extDir, name)
 		if err := os.MkdirAll(destDir, 0755); err != nil {
-			results = append(results, fmt.Sprintf("  %s: FAILED (mkdir: %v)", name, err))
+			fmt.Fprintf(w, "  %s: FAILED (mkdir: %v)\n", name, err)
 			failed++
 			continue
 		}
@@ -59,7 +61,7 @@ func installExtensions(a *ext.App) error {
 		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), "./"+name+"/cmd/")
 		buildCmd.Dir = tmpDir
 		if out, err := buildCmd.CombinedOutput(); err != nil {
-			results = append(results, fmt.Sprintf("  %s: FAILED (%s)", name, strings.TrimSpace(string(out))))
+			fmt.Fprintf(w, "  %s: FAILED (%s)\n", name, strings.TrimSpace(string(out)))
 			failed++
 			continue
 		}
@@ -68,27 +70,31 @@ func installExtensions(a *ext.App) error {
 		dst := filepath.Join(destDir, "manifest.yaml")
 		data, err := os.ReadFile(src)
 		if err != nil {
-			results = append(results, fmt.Sprintf("  %s: FAILED (manifest: %v)", name, err))
+			fmt.Fprintf(w, "  %s: FAILED (manifest: %v)\n", name, err)
 			failed++
 			continue
 		}
 		if err := os.WriteFile(dst, data, 0644); err != nil {
-			results = append(results, fmt.Sprintf("  %s: FAILED (write manifest: %v)", name, err))
+			fmt.Fprintf(w, "  %s: FAILED (write manifest: %v)\n", name, err)
 			failed++
 			continue
 		}
 
-		results = append(results, fmt.Sprintf("  %s: OK", name))
+		fmt.Fprintf(w, "  %s: OK\n", name)
 		built++
 	}
 
+	fmt.Fprintf(w, "\n%d built, %d failed\n", built, failed)
+	return nil
+}
+
+func installExtensions(a *ext.App) error {
 	var b strings.Builder
-	b.WriteString("Extension install complete:\n\n")
-	b.WriteString(strings.Join(results, "\n"))
-	fmt.Fprintf(&b, "\n\n%d built, %d failed", built, failed)
-	if built > 0 {
-		b.WriteString("\nRestart piglet to load new extensions.")
+	if err := InstallOfficialExtensions(&b); err != nil {
+		return err
 	}
-	a.ShowMessage(b.String())
+	if msg := b.String(); msg != "" {
+		a.ShowMessage(msg)
+	}
 	return nil
 }

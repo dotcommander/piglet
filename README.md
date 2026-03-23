@@ -60,15 +60,9 @@ piglet
 
 ### Extensions
 
-The base install ships 7 tools and 18 commands. For the full experience (memory, skills, code intelligence, safeguard, and more), install the [official extensions](https://github.com/dotcommander/piglet-extensions) from inside piglet:
+First launch automatically builds and installs 11 [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
 
-```
-/extensions install
-```
-
-This clones, builds, and installs 11 extension binaries to `~/.config/piglet/extensions/`. Restart piglet to load them. Run `/extensions update` anytime to rebuild from latest source.
-
-> Without extensions, piglet works but has no project memory, no skill loading, no LSP intelligence, and no command safeguards. You can add extensions later — piglet discovers them automatically.
+To rebuild extensions later (e.g. after an update), run `/extensions update` inside piglet.
 
 ### Build from Source
 
