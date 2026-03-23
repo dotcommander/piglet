@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dotcommander/piglet/core"
@@ -65,10 +66,33 @@ func (b *baseProvider) doHTTPRequest(ctx context.Context, url string, body []byt
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("%s API error %d: %s", b.model.Provider, resp.StatusCode, string(errBody))
+		err := fmt.Errorf("%s API error %d: %s", b.model.Provider, resp.StatusCode, string(errBody))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.model.Provider))
+		}
+		return nil, err
 	}
 
 	return resp.Body, nil
+}
+
+func envKeyForProvider(provider string) string {
+	switch provider {
+	case "anthropic":
+		return "ANTHROPIC_API_KEY"
+	case "openai":
+		return "OPENAI_API_KEY"
+	case "google":
+		return "GOOGLE_API_KEY"
+	case "xai":
+		return "XAI_API_KEY"
+	case "groq":
+		return "GROQ_API_KEY"
+	case "openrouter":
+		return "OPENROUTER_API_KEY"
+	default:
+		return strings.ToUpper(provider) + "_API_KEY"
+	}
 }
 
 // streamPipeline is implemented by each concrete provider to plug into runStream.

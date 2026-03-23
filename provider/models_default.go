@@ -7,22 +7,79 @@ import (
 )
 
 const defaultModelsYAML = `models:
+  # Anthropic
+  - id: claude-opus-4-6
+    name: Claude Opus 4.6
+    provider: anthropic
+    api: anthropic
+    baseUrl: https://api.anthropic.com
+    contextWindow: 1000000
+    maxTokens: 128000
+
+  - id: claude-sonnet-4-6
+    name: Claude Sonnet 4.6
+    provider: anthropic
+    api: anthropic
+    baseUrl: https://api.anthropic.com
+    contextWindow: 1000000
+    maxTokens: 64000
+
+  - id: claude-sonnet-4-20250514
+    name: Claude Sonnet 4
+    provider: anthropic
+    api: anthropic
+    baseUrl: https://api.anthropic.com
+    contextWindow: 200000
+    maxTokens: 64000
+
+  - id: claude-haiku-4-5-20251001
+    name: Claude Haiku 4.5
+    provider: anthropic
+    api: anthropic
+    baseUrl: https://api.anthropic.com
+    contextWindow: 200000
+    maxTokens: 64000
+
   # OpenAI
+  - id: gpt-5.4
+    name: GPT-5.4
+    provider: openai
+    api: openai
+    baseUrl: https://api.openai.com
+    contextWindow: 1050000
+    maxTokens: 128000
+
+  - id: gpt-5
+    name: GPT-5
+    provider: openai
+    api: openai
+    baseUrl: https://api.openai.com
+    contextWindow: 400000
+    maxTokens: 128000
+
+  - id: o4-mini
+    name: o4-mini
+    provider: openai
+    api: openai
+    baseUrl: https://api.openai.com
+    contextWindow: 200000
+    maxTokens: 100000
+
   - id: gpt-4.1
     name: GPT-4.1
     provider: openai
     api: openai
     baseUrl: https://api.openai.com
-    contextWindow: 128000
-    maxTokens: 64000
+    contextWindow: 1047576
+    maxTokens: 32768
 
   - id: gpt-4.1-mini
     name: GPT-4.1 mini
     provider: openai
     api: openai
     baseUrl: https://api.openai.com
-    contextWindow: 128000
-    maxTokens: 64000
+    contextWindow: 1047576
+    maxTokens: 32768
 
   - id: gpt-4o
     name: GPT-4o
@@ -40,24 +97,15 @@ const defaultModelsYAML = `models:
     contextWindow: 200000
     maxTokens: 100000
 
-  # Anthropic
-  - id: claude-sonnet-4-20250514
-    name: Claude Sonnet 4
-    provider: anthropic
-    api: anthropic
-    baseUrl: https://api.anthropic.com
-    contextWindow: 200000
-    maxTokens: 64000
-
-  - id: claude-haiku-4-5-20251001
-    name: Claude Haiku 4.5
-    provider: anthropic
-    api: anthropic
-    baseUrl: https://api.anthropic.com
-    contextWindow: 200000
-    maxTokens: 64000
-
   # Google
+  - id: gemini-3.1-pro-preview
+    name: Gemini 3.1 Pro Preview
+    provider: google
+    api: google
+    baseUrl: https://generativelanguage.googleapis.com
+    contextWindow: 1048576
+    maxTokens: 65536
+
   - id: gemini-2.5-pro
     name: Gemini 2.5 Pro
     provider: google
@@ -116,10 +164,16 @@ func DefaultModelsYAML() string {
 	return defaultModelsYAML
 }
 
-// WriteDefaultModels writes the default models catalog to path using an atomic
-// write (temp file + rename). It creates the parent directory if needed.
-// Returns nil without writing if the file already exists.
+// WriteDefaultModels writes the default models catalog to path.
+// Delegates to WriteModelsData with the hardcoded default.
 func WriteDefaultModels(path string) error {
+	return WriteModelsData(path, defaultModelsYAML)
+}
+
+// WriteModelsData writes the given YAML content to path using an atomic write
+// (temp file + rename). It creates the parent directory if needed.
+// Returns nil without writing if the file already exists.
+func WriteModelsData(path string, data string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
@@ -129,13 +183,13 @@ func WriteDefaultModels(path string) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(defaultModelsYAML), 0o644); err != nil {
-		return fmt.Errorf("write default models: %w", err)
+	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil {
+		return fmt.Errorf("write models data: %w", err)
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("install default models: %w", err)
+		return fmt.Errorf("install models data: %w", err)
 	}
 
 	return nil

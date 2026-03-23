@@ -40,7 +40,7 @@ func (r *Registry) Resolve(query string) (core.Model, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Exact match: "openai/gpt-5.1"
+	// Exact match: "openai/gpt-5"
 	if m, ok := r.models[strings.ToLower(query)]; ok {
 		return m, true
 	}
