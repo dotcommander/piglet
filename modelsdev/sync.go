@@ -6,17 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/provider"
 )
 
-const (
-	apiURL      = "https://models.dev/api.json"
-	httpTimeout = 15 * time.Second
-)
+const apiURL = "https://models.dev/api.json"
 
 // supportedProviders lists provider names shared between models.dev and piglet.
 var supportedProviders = []string{"anthropic", "google", "groq", "openai", "openrouter", "xai"}
@@ -77,14 +73,13 @@ func SyncFromURL(ctx context.Context, url string, registry *provider.Registry, a
 }
 
 // fetch retrieves and parses the models.dev API response from the given URL.
+// Callers are responsible for setting a timeout on ctx.
 func fetch(ctx context.Context, url string) (apiResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
-	defer cancel()
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+	req.Header.Set("User-Agent", "piglet")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
