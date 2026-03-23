@@ -1,12 +1,9 @@
 package config
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 // providerCandidate holds detected provider info from environment.
@@ -78,19 +75,19 @@ func RunSetup(writeModels func(path string) error) error {
 
 	var selectedModel string
 
-	switch len(candidates) {
-	case 0:
+	if len(candidates) == 0 {
 		selectedModel = noKeysFlow()
-
-	case 1:
-		selectedModel = singleKeyFlow(candidates[0])
-
-	default:
-		var err error
-		selectedModel, err = multiKeyFlow(candidates)
-		if err != nil {
-			return fmt.Errorf("provider selection: %w", err)
+	} else {
+		// Pick best available: detection order is anthropic, openai, google, ...
+		// so candidates[0] is already the highest priority.
+		best := candidates[0]
+		fmt.Printf("Detected API keys:")
+		for _, c := range candidates {
+			fmt.Printf(" %s", c.provider)
 		}
+		fmt.Println()
+		fmt.Printf("  Default provider: %s (%s)\n", best.provider, best.model)
+		selectedModel = best.model
 	}
 
 	// Write config.yaml
@@ -105,8 +102,7 @@ func RunSetup(writeModels func(path string) error) error {
 	}
 
 	fmt.Println()
-	fmt.Println("Extensions add memory, skills, code intelligence, and more.")
-	fmt.Println("Install: https://github.com/dotcommander/piglet-extensions")
+	fmt.Println("Extensions will be installed automatically on first launch.")
 	fmt.Println()
 	fmt.Println("Setup complete! Run 'piglet' to start.")
 	return nil
@@ -119,9 +115,9 @@ func detectAPIKeys() []providerCandidate {
 		provider string
 		model    string
 	}{
-		{[]string{"ANTHROPIC_API_KEY"}, "anthropic", "claude-sonnet-4-20250514"},
-		{[]string{"OPENAI_API_KEY"}, "openai", "gpt-4.1"},
-		{[]string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}, "google", "gemini-2.5-flash"},
+		{[]string{"ANTHROPIC_API_KEY"}, "anthropic", "claude-opus-4-6"},
+		{[]string{"OPENAI_API_KEY"}, "openai", "gpt-5.4"},
+		{[]string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}, "google", "gemini-3.1-pro-preview"},
 		{[]string{"XAI_API_KEY"}, "xai", "grok-3"},
 		{[]string{"GROQ_API_KEY"}, "groq", "llama-3.3-70b-versatile"},
 		{[]string{"OPENROUTER_API_KEY"}, "openrouter", "auto"},
@@ -143,50 +139,20 @@ func detectAPIKeys() []providerCandidate {
 	return found
 }
 
-func singleKeyFlow(c providerCandidate) string {
-	fmt.Printf("  Detected %s\n", c.envKey)
-	fmt.Printf("  Default model: %s\n", c.model)
-	return c.model
-}
-
 func noKeysFlow() string {
 	fmt.Println("No API keys detected in environment.")
-	fmt.Println("Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY")
 	fmt.Println()
-	model := "claude-sonnet-4-20250514"
-	fmt.Printf("Default model set to: %s\n", model)
-	fmt.Printf("You can change this in ~/.config/piglet/config.yaml\n")
+	fmt.Println("Set an API key to get started:")
+	fmt.Println("  export ANTHROPIC_API_KEY=sk-ant-...")
+	fmt.Println("  export OPENAI_API_KEY=sk-...")
+	fmt.Println("  export GOOGLE_API_KEY=AIza...")
+	fmt.Println()
+	fmt.Println("Or add it to ~/.config/piglet/auth.json:")
+	fmt.Println(`  {"anthropic": "sk-ant-..."}`)
+	fmt.Println()
+	model := "claude-opus-4-6"
+	fmt.Printf("Default model set to: %s (change in config.yaml)\n", model)
 	return model
-}
-
-func multiKeyFlow(candidates []providerCandidate) (string, error) {
-	fmt.Println("Detected API keys:")
-	for i, c := range candidates {
-		fmt.Printf("  [%d] %s (%s)\n", i+1, c.provider, c.envKey)
-	}
-	fmt.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Select default provider [1]: ")
-
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("read input: %w", err)
-	}
-
-	input := strings.TrimSpace(line)
-	if input == "" {
-		return candidates[0].model, nil
-	}
-
-	n, err := strconv.Atoi(input)
-	if err != nil || n < 1 || n > len(candidates) {
-		return "", fmt.Errorf("invalid selection %q: must be 1-%d", input, len(candidates))
-	}
-
-	chosen := candidates[n-1]
-	fmt.Printf("  Default model: %s\n", chosen.model)
-	return chosen.model, nil
 }
 
 func writeConfigYAML(path, model string) error {

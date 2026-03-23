@@ -34,7 +34,8 @@ func InstallOfficialExtensions(w io.Writer) error {
 		return fmt.Errorf("extensions dir: %w", err)
 	}
 
-	fmt.Fprintln(w, "Installing extensions from piglet-extensions...")
+	total := len(officialExtensions)
+	fmt.Fprintf(w, "Cloning piglet-extensions...\n")
 
 	tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
 	if err != nil {
@@ -49,11 +50,18 @@ func InstallOfficialExtensions(w io.Writer) error {
 	}
 
 	var built, failed int
+	var failures []string
 
-	for _, name := range officialExtensions {
+	// Use \r for TTY (os.Stderr), newline for non-TTY (strings.Builder in TUI path)
+	isTTY := w == os.Stderr
+	for i, name := range officialExtensions {
+		if isTTY {
+			fmt.Fprintf(w, "\rBuilding extensions (%d/%d) %s...          ", i+1, total, name)
+		}
+
 		destDir := filepath.Join(extDir, name)
 		if err := os.MkdirAll(destDir, 0755); err != nil {
-			fmt.Fprintf(w, "  %s: FAILED (mkdir: %v)\n", name, err)
+			failures = append(failures, fmt.Sprintf("  %s: mkdir: %v", name, err))
 			failed++
 			continue
 		}
@@ -61,7 +69,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), "./"+name+"/cmd/")
 		buildCmd.Dir = tmpDir
 		if out, err := buildCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(w, "  %s: FAILED (%s)\n", name, strings.TrimSpace(string(out)))
+			failures = append(failures, fmt.Sprintf("  %s: %s", name, strings.TrimSpace(string(out))))
 			failed++
 			continue
 		}
@@ -70,21 +78,26 @@ func InstallOfficialExtensions(w io.Writer) error {
 		dst := filepath.Join(destDir, "manifest.yaml")
 		data, err := os.ReadFile(src)
 		if err != nil {
-			fmt.Fprintf(w, "  %s: FAILED (manifest: %v)\n", name, err)
+			failures = append(failures, fmt.Sprintf("  %s: manifest: %v", name, err))
 			failed++
 			continue
 		}
 		if err := os.WriteFile(dst, data, 0644); err != nil {
-			fmt.Fprintf(w, "  %s: FAILED (write manifest: %v)\n", name, err)
+			failures = append(failures, fmt.Sprintf("  %s: write manifest: %v", name, err))
 			failed++
 			continue
 		}
 
-		fmt.Fprintf(w, "  %s: OK\n", name)
 		built++
 	}
 
-	fmt.Fprintf(w, "\n%d built, %d failed\n", built, failed)
+	if isTTY {
+		fmt.Fprintf(w, "\r")
+	}
+	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
+	for _, f := range failures {
+		fmt.Fprintln(w, f)
+	}
 	return nil
 }
 

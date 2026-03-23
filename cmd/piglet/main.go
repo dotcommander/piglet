@@ -19,6 +19,7 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
+	"github.com/dotcommander/piglet/modelsdev"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -84,9 +85,21 @@ func run() error {
 		}
 	}
 
+	// writeModels tries models.dev API first, falls back to hardcoded default.
+	writeModels := func(path string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		yaml, err := modelsdev.GenerateModelsYAML(ctx)
+		if err == nil {
+			return provider.WriteModelsData(path, yaml)
+		}
+		fmt.Fprintf(os.Stderr, "  models.dev unavailable, using defaults: %v\n", err)
+		return provider.WriteDefaultModels(path)
+	}
+
 	// Subcommands (after flag parsing so --debug init works)
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
-		return config.RunSetup(provider.WriteDefaultModels)
+		return config.RunSetup(writeModels)
 	}
 
 	// Determine prompt: args after flags or stdin
@@ -95,7 +108,7 @@ func run() error {
 
 	// First-run setup: auto-detect missing config and run interactive setup
 	if config.NeedsSetup() {
-		if err := config.RunSetup(provider.WriteDefaultModels); err != nil {
+		if err := config.RunSetup(writeModels); err != nil {
 			return fmt.Errorf("setup: %w", err)
 		}
 	}
@@ -114,6 +127,18 @@ func run() error {
 
 	// Registry and model resolution
 	registry := provider.NewRegistry()
+
+	// Background refresh of model catalog from models.dev (every 24h)
+	if modelsdev.CacheStale() {
+		go func() {
+			rCtx, rCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer rCancel()
+			if err := modelsdev.RefreshCache(rCtx, registry); err != nil {
+				fmt.Fprintf(os.Stderr, "models.dev refresh: %v\n", err)
+			}
+		}()
+	}
+
 	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
 	if modelQuery == "" {
 		modelQuery = settings.DefaultModel
