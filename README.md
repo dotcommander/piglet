@@ -118,9 +118,9 @@ Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 
 | Provider | Example models | Env Variable |
 |----------|----------------|--------------|
-| Anthropic | `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
-| OpenAI | `gpt-5`, `gpt-5-mini`, `gpt-5.1`, `o4-mini` | `OPENAI_API_KEY` |
-| Google | `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
+| Anthropic | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
+| OpenAI | `gpt-5.4`, `gpt-5`, `o4-mini`, `gpt-4.1`, `o3` | `OPENAI_API_KEY` |
+| Google | `gemini-3.1-pro-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
 | xAI | `grok-3` | `XAI_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
@@ -217,7 +217,7 @@ Everything lives in `~/.config/piglet/`:
 
 ```yaml
 # config.yaml
-defaultModel: claude-sonnet-4-20250514
+defaultModel: claude-opus-4-6
 smallModel: claude-haiku-4-5-20251001   # for background tasks
 shellPath: /bin/zsh
 agent:
