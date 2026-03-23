@@ -56,7 +56,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 	isTTY := w == os.Stderr
 	for i, name := range officialExtensions {
 		if isTTY {
-			fmt.Fprintf(w, "\rBuilding extensions (%d/%d) %s...          ", i+1, total, name)
+			fmt.Fprintf(w, "\rBuilding extensions (%d/%d) %s...\033[K", i+1, total, name)
 		}
 
 		destDir := filepath.Join(extDir, name)
@@ -92,7 +92,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 	}
 
 	if isTTY {
-		fmt.Fprintf(w, "\r")
+		fmt.Fprintf(w, "\r\033[K")
 	}
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
 	for _, f := range failures {
