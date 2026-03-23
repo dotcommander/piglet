@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Ten extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Twelve extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -44,6 +44,8 @@ tui/, cmd/  → anything (wiring layer)
 | `lsp` | 5 tools, 1 prompt section |
 | `repomap` | 2 tools, 1 prompt section, 1 event handler |
 | `plan` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
+| `bulk` | 1 tool, 1 prompt section |
+| `mcp` | dynamic tools, 1 command, 1 prompt section |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
 
@@ -76,6 +78,8 @@ All extensions map to these primitives — no special access:
 | `lsp/` | Inject + React | Prompt section + tools (code intelligence) | external |
 | `repomap/` | Inject + React + Observe | Prompt section + tools + stale-check event handler | external |
 | `plan/` | Inject + Intercept + React | Prompt section + interceptor + tools + command | external |
+| `bulk/` | Inject + React | Prompt section + tool (parallel map over files/repos) | external |
+| `mcp/` | Inject + React | Prompt section + dynamic tools bridged from MCP servers | external |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -124,7 +128,7 @@ tool/          7 compiled-in tools
 command/       18 compiled-in commands, 5 status sections, 2 shortcuts
 prompt/        System prompt builder + 4 compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
-provider/      OpenAI, Anthropic, Google streaming providers
+provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
 session/       JSONL conversation persistence, compaction
 tui/           Bubble Tea v2 UI
 
@@ -175,7 +179,7 @@ cd ~/go/src/piglet-extensions && make extensions           # Build all
 cd ~/go/src/piglet-extensions && make extensions-safeguard  # Build one
 ```
 
-Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (22 tools, 20 commands, interceptors, shortcuts, event handlers, message hooks).
+Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (24+ tools, 21 commands, interceptors, shortcuts, event handlers, message hooks — plus dynamic MCP tools).
 
 ## Config
 
@@ -206,10 +210,11 @@ The memory extension injects a **compact index** (not full content) as a static 
 - The LLM already knows how to decide what's relevant from an index — that's what indexes are for
 - Topic files are loaded via tool calls only when the LLM determines they're needed
 
+**Automatic context extraction:** The memory extension auto-extracts context facts (`ctx:file:*`, `ctx:edit:*`, `ctx:error:*`, `ctx:cmd:*`) from tool results on every `EventTurnEnd`, capped at 50 most recent. When message count exceeds a threshold, it compacts these into a `ctx:summary` via LLM. User facts are created manually via `memory_set`.
+
 **What NOT to do:**
 - Do not add BM25 or embedding-based retrieval — the index + tool pattern already achieves relevance filtering
 - Do not add effectiveness tracking (surfaced/followed/ignored counters) — piglet users control their own memory files
-- Do not add auto-extraction from transcripts — memory creation is intentionally manual via `memory_set`
 - Do not look at engram (toejough/engram) as a model — it solves instruction decay for a system where users have no direct control (Claude Code plugins). Piglet's users own their memory files.
 
 ## Dependencies

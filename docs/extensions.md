@@ -2,7 +2,7 @@
 
 Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
 
-Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Ten additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), providing the full experience (22 tools, 20 commands, 3 shortcuts, interceptors, event handlers, message hooks).
+Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Twelve additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), providing the full experience (24+ tools, 21 commands, 3 shortcuts, interceptors, event handlers, message hooks — plus dynamic MCP tools).
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ To see what's loaded: `/extensions`
 
 ## External Extensions (Go, TypeScript, Python, etc.)
 
-External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan) are external Go binaries in the [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) repo.
+External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan, bulk, mcp) are external Go binaries in the [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) repo.
 
 ### Directory Structure
 
@@ -395,7 +395,7 @@ The same applies to commands — register a command named `help` and your handle
 2. Compiled-in commands (`command/` — 18 total)
 3. Compiled-in shortcuts, prompt sections
 4. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
-   - Official extensions (from [piglet-extensions](https://github.com/dotcommander/piglet-extensions)): safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan
+   - Official extensions (from [piglet-extensions](https://github.com/dotcommander/piglet-extensions)): safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan, bulk, mcp
    - User extensions: anything else in the extensions directory
 
 Later registrations overwrite earlier ones for the same name.

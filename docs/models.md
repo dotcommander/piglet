@@ -50,6 +50,20 @@ When you specify a model, piglet resolves it in this order:
 2. Model ID match: `gpt-5` (searches all providers)
 3. Prefix match: `gpt-5` (matches first model starting with that prefix)
 
+## Providers
+
+Piglet implements three streaming API protocols:
+
+| Protocol | Native Providers | OpenAI-Compatible Providers |
+|----------|------------------|-----------------------------|
+| OpenAI | OpenAI | OpenRouter, xAI/Grok, Groq, LM Studio, Ollama, any `/v1/chat/completions` endpoint |
+| Anthropic | Anthropic | — |
+| Google | Google (Gemini) | — |
+
+Any provider that implements the OpenAI streaming interface works via base URL override. This covers the majority of providers available through [charmbracelet/fantasy](https://github.com/charmbracelet/fantasy)'s `openaicompat` layer.
+
+Fantasy's dedicated provider packages (for reference): `openai`, `anthropic`, `google`, `openrouter`, `azure`, `bedrock`, `vercel`, `openaicompat`.
+
 ## Custom Providers
 
 Override provider base URLs for proxies or self-hosted endpoints:
