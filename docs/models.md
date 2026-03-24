@@ -4,29 +4,20 @@ Piglet includes a built-in model catalog. Switch models at any time with `/model
 
 ## Built-in Models
 
-| Provider | Model ID | Display Name | Context | Max Output |
-|----------|----------|--------------|---------|------------|
-| Anthropic | `claude-opus-4-6` | Claude Opus 4.6 | 1M | 128K |
-| Anthropic | `claude-sonnet-4-6` | Claude Sonnet 4.6 | 1M | 64K |
-| Anthropic | `claude-sonnet-4-20250514` | Claude Sonnet 4 | 200K | 64K |
-| Anthropic | `claude-haiku-4-5-20251001` | Claude Haiku 4.5 | 200K | 64K |
-| OpenAI | `gpt-5.4` | GPT-5.4 | 1M | 128K |
-| OpenAI | `gpt-5` | GPT-5 | 400K | 128K |
-| OpenAI | `o4-mini` | o4-mini | 200K | 100K |
-| OpenAI | `gpt-4.1` | GPT-4.1 | 1M | 32K |
-| OpenAI | `gpt-4.1-mini` | GPT-4.1 mini | 1M | 32K |
-| OpenAI | `gpt-4o` | GPT-4o | 128K | 16K |
-| OpenAI | `o3` | o3 | 200K | 100K |
-| Google | `gemini-3.1-pro-preview` | Gemini 3.1 Pro Preview | 1M | 64K |
-| Google | `gemini-2.5-pro` | Gemini 2.5 Pro | 1M | 64K |
-| Google | `gemini-2.5-flash` | Gemini 2.5 Flash | 1M | 64K |
-| xAI | `grok-3` | Grok 3 | 128K | 8K |
-| Groq | `llama-3.3-70b-versatile` | Llama 3.3 70B | 128K | 32K |
-| OpenRouter | `auto` | Auto (best available) | 200K | 16K |
-| Z.AI | `glm-5` | GLM-5 | 128K | 8K |
-| Z.AI | `glm-4.7` | GLM-4.7 | 128K | 8K |
-| Z.AI | `glm-5-turbo` | GLM-5 Turbo | 128K | 8K |
-| LM Studio | `local-model` | Local Model | 32K | 32K |
+Piglet ships with a default model catalog covering major providers. The catalog is written to `~/.config/piglet/models.yaml` on first run and can be refreshed by deleting the file and restarting.
+
+To see all available models, run `/model` or press `Ctrl+P` inside a session.
+
+| Provider | Example Models | Env Variable |
+|----------|----------------|--------------|
+| Anthropic | Claude Opus, Sonnet, Haiku | `ANTHROPIC_API_KEY` |
+| OpenAI | GPT-5, o4-mini, o3 | `OPENAI_API_KEY` |
+| Google | Gemini 2.5 Pro/Flash | `GOOGLE_API_KEY` |
+| xAI | Grok 3 | `XAI_API_KEY` |
+| Groq | Llama 3.3 70B | `GROQ_API_KEY` |
+| OpenRouter | Auto (routes best available) | `OPENROUTER_API_KEY` |
+| Z.AI | GLM-5, GLM-4.7 | `ZAI_API_KEY` |
+| LM Studio | Any local model | — |
 
 ## Selecting a Model
 
@@ -63,9 +54,7 @@ Piglet implements three streaming API protocols:
 | Anthropic | Anthropic | — |
 | Google | Google (Gemini) | — |
 
-Any provider that implements the OpenAI streaming interface works via base URL override. This covers the majority of providers available through [charmbracelet/fantasy](https://github.com/charmbracelet/fantasy)'s `openaicompat` layer.
-
-Fantasy's dedicated provider packages (for reference): `openai`, `anthropic`, `google`, `openrouter`, `azure`, `bedrock`, `vercel`, `openaicompat`.
+Any provider that implements the OpenAI streaming interface works via base URL override in `config.yaml`.
 
 ## Custom Providers
 

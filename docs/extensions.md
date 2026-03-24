@@ -2,7 +2,7 @@
 
 Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
 
-Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Twelve additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), providing the full experience (24+ tools, 21 commands, 3 shortcuts, interceptors, event handlers, message hooks — plus dynamic MCP tools).
+Piglet ships with a minimal compiled-in set (7 tools, 18 commands, 2 shortcuts). Additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), providing the full experience (24+ tools, 21 commands, 3 shortcuts, interceptors, event handlers, message hooks — plus dynamic MCP tools).
 
 ## Quick Start
 

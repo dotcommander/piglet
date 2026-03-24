@@ -13,10 +13,8 @@ smallModel: anthropic/claude-haiku-4-5
 systemPrompt: "You are piglet, a helpful coding assistant."
 theme: dark
 shellPath: /bin/zsh
-extensions:
-  - ~/my-extensions/custom-tools.so
 providers:
-  openai: https://api.openai.com     # default, override for proxies
+  openai: https://my-proxy.example.com   # override base URL for proxies
 ```
 
 ### Settings Reference

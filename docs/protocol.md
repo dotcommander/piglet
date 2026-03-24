@@ -38,7 +38,7 @@ All messages are newline-delimited JSON. Piglet uses a standard JSON-RPC 2.0 str
 Sent immediately after the extension starts.
 
 **Params:**
-- `protocolVersion` (string): Currently "2".
+- `protocolVersion` (string): Currently "3".
 - `cwd` (string): The current working directory of the host.
 
 **Response (Result):**
