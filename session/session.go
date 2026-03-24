@@ -85,10 +85,15 @@ func New(dir, cwd string) (*Session, error) {
 		meta: meta,
 	}
 
+	data, err := marshalJSON(meta)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
 	if err := s.appendEntry(Entry{
 		Type:      "meta",
 		Timestamp: meta.CreatedAt,
-		Data:      mustJSON(meta),
+		Data:      data,
 	}); err != nil {
 		_ = f.Close()
 		return nil, err
@@ -169,10 +174,14 @@ func (s *Session) Append(msg core.Message) error {
 		entryType = "tool_result"
 	}
 
+	data, err := marshalJSON(msg)
+	if err != nil {
+		return err
+	}
 	return s.appendEntry(Entry{
 		Type:      entryType,
 		Timestamp: time.Now(),
-		Data:      mustJSON(msg),
+		Data:      data,
 	})
 }
 
@@ -182,10 +191,14 @@ func (s *Session) SetTitle(title string) error {
 	defer s.mu.Unlock()
 
 	s.meta.Title = title
+	data, err := marshalJSON(s.meta)
+	if err != nil {
+		return err
+	}
 	return s.appendEntry(Entry{
 		Type:      "meta",
 		Timestamp: time.Now(),
-		Data:      mustJSON(s.meta),
+		Data:      data,
 	})
 }
 
@@ -228,10 +241,15 @@ func (s *Session) Fork(keepMessages int) (*Session, error) {
 	newSess.meta.Model = meta.Model
 	newSess.meta.ParentID = meta.ID
 	newSess.meta.ForkPoint = limit
+	metaData, err := marshalJSON(newSess.meta)
+	if err != nil {
+		_ = newSess.Close()
+		return nil, err
+	}
 	if err := newSess.appendEntry(Entry{
 		Type:      "meta",
 		Timestamp: time.Now(),
-		Data:      mustJSON(newSess.meta),
+		Data:      metaData,
 	}); err != nil {
 		_ = newSess.Close()
 		return nil, fmt.Errorf("fork: write metadata: %w", err)
@@ -351,10 +369,10 @@ func (s *Session) replayEntry(entry Entry) {
 	}
 }
 
-func mustJSON(v any) json.RawMessage {
+func marshalJSON(v any) (json.RawMessage, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("mustJSON: %v", err))
+		return nil, fmt.Errorf("marshal entry: %w", err)
 	}
-	return data
+	return data, nil
 }
