@@ -121,6 +121,7 @@ func detectAPIKeys() []providerCandidate {
 		{[]string{"XAI_API_KEY"}, "xai", "grok-3"},
 		{[]string{"GROQ_API_KEY"}, "groq", "llama-3.3-70b-versatile"},
 		{[]string{"OPENROUTER_API_KEY"}, "openrouter", "auto"},
+		{[]string{"ZAI_API_KEY"}, "zai", "glm-5"},
 	}
 
 	var found []providerCandidate

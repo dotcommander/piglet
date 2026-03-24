@@ -149,6 +149,31 @@ const defaultModelsYAML = `models:
     contextWindow: 200000
     maxTokens: 16384
 
+  # Z.AI (GLM models)
+  - id: glm-5
+    name: GLM-5
+    provider: zai
+    api: openai
+    baseUrl: https://api.z.ai/api/paas/v4
+    contextWindow: 128000
+    maxTokens: 8192
+
+  - id: glm-4.7
+    name: GLM-4.7
+    provider: zai
+    api: openai
+    baseUrl: https://api.z.ai/api/paas/v4
+    contextWindow: 128000
+    maxTokens: 8192
+
+  - id: glm-5-turbo
+    name: GLM-5 Turbo
+    provider: zai
+    api: openai
+    baseUrl: https://api.z.ai/api/paas/v4
+    contextWindow: 128000
+    maxTokens: 8192
+
   # LM Studio (local)
   - id: local-model
     name: Local Model

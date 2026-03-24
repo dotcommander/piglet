@@ -191,6 +191,7 @@ API keys are stored as a JSON object mapping provider names to keys:
 | `xai` | `XAI_API_KEY` |
 | `groq` | `GROQ_API_KEY` |
 | `openrouter` | `OPENROUTER_API_KEY` |
+| `zai` | `ZAI_API_KEY` |
 
 ## Sessions
 

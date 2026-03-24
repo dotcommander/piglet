@@ -38,10 +38,15 @@ func TestRegistry_ResolveByID(t *testing.T) {
 func TestRegistry_ResolvePrefix(t *testing.T) {
 	t.Parallel()
 	r := provider.NewRegistry()
+	r.Register(core.Model{
+		ID:       "test-prefix-model",
+		Provider: "testprov",
+		API:      core.APIOpenAI,
+	})
 
-	m, ok := r.Resolve("gpt-4o-m")
+	m, ok := r.Resolve("test-prefix-m")
 	require.True(t, ok)
-	assert.Equal(t, "gpt-4o-mini", m.ID)
+	assert.Equal(t, "test-prefix-model", m.ID)
 }
 
 func TestRegistry_ResolveNotFound(t *testing.T) {

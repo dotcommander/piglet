@@ -23,6 +23,9 @@ Piglet includes a built-in model catalog. Switch models at any time with `/model
 | xAI | `grok-3` | Grok 3 | 128K | 8K |
 | Groq | `llama-3.3-70b-versatile` | Llama 3.3 70B | 128K | 32K |
 | OpenRouter | `auto` | Auto (best available) | 200K | 16K |
+| Z.AI | `glm-5` | GLM-5 | 128K | 8K |
+| Z.AI | `glm-4.7` | GLM-4.7 | 128K | 8K |
+| Z.AI | `glm-5-turbo` | GLM-5 Turbo | 128K | 8K |
 | LM Studio | `local-model` | Local Model | 32K | 32K |
 
 ## Selecting a Model
@@ -56,7 +59,7 @@ Piglet implements three streaming API protocols:
 
 | Protocol | Native Providers | OpenAI-Compatible Providers |
 |----------|------------------|-----------------------------|
-| OpenAI | OpenAI | OpenRouter, xAI/Grok, Groq, LM Studio, Ollama, any `/v1/chat/completions` endpoint |
+| OpenAI | OpenAI | OpenRouter, xAI/Grok, Groq, Z.AI, LM Studio, Ollama, any `/v1/chat/completions` endpoint |
 | Anthropic | Anthropic | — |
 | Google | Google (Gemini) | — |
 

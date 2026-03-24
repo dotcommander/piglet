@@ -41,6 +41,10 @@ var curatedModels = []curatedModel{
 	{id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", provider: "groq", api: "openai", baseURL: "https://api.groq.com/openai"},
 	// OpenRouter
 	{id: "auto", name: "Auto (best available)", provider: "openrouter", api: "openai", baseURL: "https://openrouter.ai/api"},
+	// Z.AI
+	{id: "glm-5", name: "GLM-5", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
+	{id: "glm-4.7", name: "GLM-4.7", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
+	{id: "glm-5-turbo", name: "GLM-5 Turbo", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
 	// LM Studio (local — not on models.dev)
 	{id: "local-model", name: "Local Model", provider: "lmstudio", api: "openai", baseURL: "http://localhost:1234"},
 }
@@ -136,6 +140,8 @@ func providerLabel(provider string) string {
 		return "Groq (free/fast inference)"
 	case "openrouter":
 		return "OpenRouter"
+	case "zai":
+		return "Z.AI (GLM models)"
 	case "lmstudio":
 		return "LM Studio (local)"
 	default:
