@@ -145,9 +145,11 @@ func (r *Registry) loadModels() error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("models.yaml not found at %s — run: piglet init", path)
+			// Fall back to embedded defaults
+			data = []byte(defaultModelsYAML)
+		} else {
+			return fmt.Errorf("read models: %w", err)
 		}
-		return fmt.Errorf("read models: %w", err)
 	}
 
 	var file modelsFile
