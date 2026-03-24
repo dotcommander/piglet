@@ -8,5 +8,9 @@ piglet-export-*.md
 # macOS
 .DS_Store
 
+# Secrets / config (safety net for forks)
+*.env
+auth.json
+
 # Repomix output
 repomix-output.md
