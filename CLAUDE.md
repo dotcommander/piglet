@@ -4,7 +4,7 @@ Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcomman
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Twelve extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Additional extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -132,8 +132,7 @@ session/       JSONL conversation persistence, compaction
 tui/           Bubble Tea v2 UI
 
 # External extensions live in separate repo: dotcommander/piglet-extensions
-# Source: ~/go/src/piglet-extensions/
-# Build: make extensions (delegates to piglet-extensions Makefile)
+# Build: /extensions install (from inside piglet)
 ```
 
 ## Key Types
@@ -162,20 +161,15 @@ go vet ./...
 
 ```bash
 go build -o piglet ./cmd/piglet/
-ln -sf ~/go/src/piglet/piglet ~/go/bin/piglet
 ```
 
 ## Extensions
 
-Extensions live in a separate repo: `dotcommander/piglet-extensions` (`~/go/src/piglet-extensions/`).
+Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://github.com/dotcommander/piglet-extensions).
 
 ```bash
 /extensions install          # From inside piglet — clones, builds, installs all
 /extensions update           # Rebuild from latest source
-
-# Or manually:
-cd ~/go/src/piglet-extensions && make extensions           # Build all
-cd ~/go/src/piglet-extensions && make extensions-safeguard  # Build one
 ```
 
 Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (24+ tools, 21 commands, interceptors, shortcuts, event handlers, message hooks — plus dynamic MCP tools).
@@ -234,9 +228,7 @@ The memory extension injects a **compact index** (not full content) as a static 
 - `fmt.Errorf` with `%w` for error wrapping
 - **New functionality = new extension, never core modification**
 
-## Release Safety (BLOCKING — private repo, public planned)
-
-This repo may become public. Treat every commit as if it already is.
+## Release Safety (BLOCKING — public repo)
 
 ### Never Commit
 
@@ -244,7 +236,7 @@ This repo may become public. Treat every commit as if it already is.
 |----------|---------|
 | API keys / secrets | `.env`, `auth.json`, tokens, passwords, key material |
 | User config | `~/.config/piglet/config.yaml`, `models.yaml`, session JSONL |
-| Local paths | `/Users/vampire/`, `~/www/`, absolute paths to user directories |
+| Local paths | `/Users/<name>/`, `~/www/`, absolute paths to user directories |
 | Scratch / work | `.work/`, `/tmp/` test scripts, one-off debug files |
 | Binary artifacts | The `piglet` binary, `.so`, `.dylib` |
 | Prompt content | `prompt.md`, `behavior.md` — these are user config, not source |
@@ -267,7 +259,7 @@ Before EVERY commit:
 4. **Smoke test**: `go build -o piglet ./cmd/piglet/ && ./piglet --version`
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
-7. **Extensions compatible**: `cd ~/go/src/piglet-extensions && go build ./...` — extensions must build against the tagged version
+7. **Extensions compatible**: clone `piglet-extensions`, run `go build ./...` — extensions must build against the tagged version
 
 ### Pre-Push Gate
 
