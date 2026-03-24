@@ -42,9 +42,9 @@ var curatedModels = []curatedModel{
 	// OpenRouter
 	{id: "auto", name: "Auto (best available)", provider: "openrouter", api: "openai", baseURL: "https://openrouter.ai/api"},
 	// Z.AI
-	{id: "glm-5", name: "GLM-5", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
-	{id: "glm-4.7", name: "GLM-4.7", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
-	{id: "glm-5-turbo", name: "GLM-5 Turbo", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/paas/v4"},
+	{id: "glm-5", name: "GLM-5", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/coding/paas/v4"},
+	{id: "glm-4.7", name: "GLM-4.7", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/coding/paas/v4"},
+	{id: "glm-5-turbo", name: "GLM-5 Turbo", provider: "zai", api: "openai", baseURL: "https://api.z.ai/api/coding/paas/v4"},
 	// LM Studio (local — not on models.dev)
 	{id: "local-model", name: "Local Model", provider: "lmstudio", api: "openai", baseURL: "http://localhost:1234"},
 }
