@@ -101,9 +101,7 @@ func parsePromptFile(data []byte) (description, body string) {
 	}
 
 	// Consume optional newline after closing delimiter.
-	if strings.HasPrefix(afterClose, "\n") {
-		afterClose = afterClose[1:]
-	}
+	afterClose = strings.TrimPrefix(afterClose, "\n")
 	body = strings.TrimSpace(afterClose)
 
 	var fm promptFrontmatter
