@@ -131,14 +131,14 @@ piglet.registerPromptSection({
 
 ### Go SDK
 
-The Go SDK (`sdk/go/`) provides the same capabilities for compiled Go extensions. All of piglet's own extensions (in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)) use this SDK.
+The Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)) provides the same capabilities for compiled Go extensions. All of piglet's own extensions (in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)) use this SDK.
 
 ```go
 package main
 
 import (
     "context"
-    sdk "github.com/dotcommander/piglet/sdk/go"
+    sdk "github.com/dotcommander/piglet/sdk"
 )
 
 func main() {
@@ -192,6 +192,11 @@ Go SDK API:
 | `e.ShowMessage(text)` | Display a message in conversation |
 | `e.Log(level, msg)` | Log to the host |
 | `e.CWD()` | Get the working directory |
+| `e.ConfigGet(ctx, keys...)` | Read host config values (protocol v3) |
+| `e.ConfigReadExtension(ctx, name)` | Read extension config file (protocol v3) |
+| `e.AuthGetKey(ctx, provider)` | Get API key from host auth (protocol v3) |
+| `e.Chat(ctx, req)` | Single-turn LLM call via host (protocol v3) |
+| `e.RunAgent(ctx, req)` | Full agent loop via host (protocol v3) |
 | `e.Run()` | Start the JSON-RPC loop |
 
 ### Writing an SDK for Another Language

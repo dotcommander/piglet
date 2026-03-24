@@ -326,6 +326,149 @@ type HostTool struct {
 	Execute func(ctx context.Context, args map[string]any) (*ToolResult, error)
 }
 
+// ---------------------------------------------------------------------------
+// Host service types (extension → host requests)
+// ---------------------------------------------------------------------------
+
+// ChatMessage is a single message in a chat request.
+type ChatMessage struct {
+	Role    string `json:"role"`    // "user" or "assistant"
+	Content string `json:"content"`
+}
+
+// ChatRequest asks the host to make an LLM call.
+type ChatRequest struct {
+	System    string        `json:"system,omitempty"`
+	Messages  []ChatMessage `json:"messages"`
+	Model     string        `json:"model,omitempty"`     // "small", "default", or explicit model ID
+	MaxTokens int           `json:"maxTokens,omitempty"` // 0 = provider default
+}
+
+// ChatResponse is the host's response to a chat request.
+type ChatResponse struct {
+	Text  string     `json:"text"`
+	Usage TokenUsage `json:"usage"`
+}
+
+// TokenUsage reports token consumption.
+type TokenUsage struct {
+	Input  int `json:"input"`
+	Output int `json:"output"`
+}
+
+// AgentRequest asks the host to run a full agent loop.
+type AgentRequest struct {
+	System   string `json:"system,omitempty"`
+	Task     string `json:"task"`
+	Tools    string `json:"tools,omitempty"`    // "background_safe" (default) or "all"
+	Model    string `json:"model,omitempty"`    // "small", "default", or explicit model ID
+	MaxTurns int    `json:"maxTurns,omitempty"` // 0 = use config default
+}
+
+// AgentResponse is the host's response to an agent run.
+type AgentResponse struct {
+	Text  string     `json:"text"`
+	Turns int        `json:"turns"`
+	Usage TokenUsage `json:"usage"`
+}
+
+// ---------------------------------------------------------------------------
+// Host service methods (extension → host)
+// ---------------------------------------------------------------------------
+
+// ConfigGet retrieves configuration values from the host.
+// Keys use dot notation (e.g. "defaultModel", "agent.compactAt").
+// Returns a map of key → value. Missing keys are omitted.
+func (e *Extension) ConfigGet(ctx context.Context, keys ...string) (map[string]any, error) {
+	resp, err := e.request(ctx, "host/config.get", map[string]any{"keys": keys})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("config get: %s", resp.Error.Message)
+	}
+	var result struct {
+		Values map[string]any `json:"values"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	return result.Values, nil
+}
+
+// ConfigReadExtension reads an extension's markdown config file from
+// ~/.config/piglet/<name>.md via the host.
+func (e *Extension) ConfigReadExtension(ctx context.Context, name string) (string, error) {
+	resp, err := e.request(ctx, "host/config.readExtension", map[string]any{"name": name})
+	if err != nil {
+		return "", err
+	}
+	if resp.Error != nil {
+		return "", fmt.Errorf("config read extension: %s", resp.Error.Message)
+	}
+	var result struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("unmarshal extension config: %w", err)
+	}
+	return result.Content, nil
+}
+
+// AuthGetKey retrieves an API key for a provider from the host's auth store.
+func (e *Extension) AuthGetKey(ctx context.Context, provider string) (string, error) {
+	resp, err := e.request(ctx, "host/auth.getKey", map[string]any{"provider": provider})
+	if err != nil {
+		return "", err
+	}
+	if resp.Error != nil {
+		return "", fmt.Errorf("auth get key: %s", resp.Error.Message)
+	}
+	var result struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("unmarshal auth key: %w", err)
+	}
+	return result.Key, nil
+}
+
+// Chat makes a single-turn LLM call via the host. The host handles model
+// resolution, provider creation, and streaming. Use for lightweight calls
+// like title generation or summary refinement.
+func (e *Extension) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	resp, err := e.request(ctx, "host/chat", req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("chat: %s", resp.Error.Message)
+	}
+	var result ChatResponse
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal chat response: %w", err)
+	}
+	return &result, nil
+}
+
+// RunAgent asks the host to run a full agent loop with tools to completion.
+// The host handles model resolution, tool access, and multi-turn execution.
+// Returns the final agent text output and usage statistics.
+func (e *Extension) RunAgent(ctx context.Context, req AgentRequest) (*AgentResponse, error) {
+	resp, err := e.request(ctx, "host/agent.run", req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("run agent: %s", resp.Error.Message)
+	}
+	var result AgentResponse
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal agent response: %w", err)
+	}
+	return &result, nil
+}
+
 // request sends a JSON-RPC request to the host and waits for the response.
 func (e *Extension) request(ctx context.Context, method string, params any) (*rpcMessage, error) {
 	id := int(e.nextID.Add(1))

@@ -28,7 +28,6 @@ tui/, cmd/  → anything (wiring layer)
 | Shortcuts | 2 | `command/` | `RegisterShortcut` |
 | Status sections | 5 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 4 | `prompt/` (behavior, selfknowledge, gitcontext, projectdocs) | `RegisterPromptSection` |
-| Compactor | 1 | `command/` | `RegisterCompactor` |
 
 **External** (standalone Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
 
@@ -47,7 +46,7 @@ tui/, cmd/  → anything (wiring layer)
 | `bulk` | 1 tool, 1 prompt section |
 | `mcp` | dynamic tools, 1 command, 1 prompt section |
 
-All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK (`sdk/go/`).
+All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
 
 ### Five Primitives
 
@@ -96,7 +95,7 @@ func Register(app *ext.App) {
 }
 ```
 
-External extensions (in `piglet-extensions` repo) use the Go SDK (`sdk/go/`):
+External extensions (in `piglet-extensions` repo) use the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)):
 
 ```go
 // Example: piglet-extensions/safeguard/cmd/main.go
@@ -123,7 +122,7 @@ ext/           Registration surface (ext.App) — the central API
   domain.go    Session/model domain methods
   events.go    Event handler dispatch (Observe primitive)
   external/    JSON-RPC v2 bridge for external extensions (Go/TypeScript/Python)
-sdk/go/        Go Extension SDK — JSON-RPC client for building external extensions
+sdk/           Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk)
 tool/          7 compiled-in tools
 command/       18 compiled-in commands, 5 status sections, 2 shortcuts
 prompt/        System prompt builder + 4 compiled-in prompt sections

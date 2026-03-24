@@ -60,7 +60,7 @@ piglet
 
 ### Extensions
 
-First launch automatically builds and installs 11 [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
+First launch automatically builds and installs 12 [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
 
 To rebuild extensions later (e.g. after an update), run `/extensions update` inside piglet.
 
@@ -107,7 +107,7 @@ command/    18 slash commands, 2 keyboard shortcuts, 5 status sections.
 prompt/     System prompt builder + 4 prompt sections.
 provider/   OpenAI, Anthropic, Google streaming providers.
 tui/        Bubble Tea v2 terminal UI.
-sdk/go/     Go SDK for building external extensions.
+sdk/        Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk).
 ```
 
 Everything is an extension. The core agent loop knows nothing about files, git, or code — tools and extensions provide all capabilities through a single registration API (`ext.App`). The [architecture test](ext/architecture_test.go) enforces dependency boundaries at build time.
@@ -124,6 +124,7 @@ Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 | xAI | `grok-3` | `XAI_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
+| Z.AI | `glm-5`, `glm-4.7`, `glm-5-turbo` | `ZAI_API_KEY` |
 | LM Studio | Any local model (localhost:1234) | — |
 
 Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config.

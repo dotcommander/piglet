@@ -308,11 +308,99 @@ type HostExecuteToolResult struct {
 type ShutdownParams struct{}
 
 // Protocol version
-const ProtocolVersion = "2"
+const ProtocolVersion = "3"
 
 // CancelParams tells the extension to abort the request with the given ID.
 type CancelParams struct {
 	ID int `json:"id"`
+}
+
+// ---------------------------------------------------------------------------
+// Host config service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostConfigGetParams requests configuration values.
+type HostConfigGetParams struct {
+	Keys []string `json:"keys"`
+}
+
+// HostConfigGetResult is the host's response.
+type HostConfigGetResult struct {
+	Values map[string]any `json:"values"`
+}
+
+// HostConfigReadExtParams requests an extension's markdown config.
+type HostConfigReadExtParams struct {
+	Name string `json:"name"`
+}
+
+// HostConfigReadExtResult is the host's response.
+type HostConfigReadExtResult struct {
+	Content string `json:"content"`
+}
+
+// ---------------------------------------------------------------------------
+// Host auth service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostAuthGetKeyParams requests an API key for a provider.
+type HostAuthGetKeyParams struct {
+	Provider string `json:"provider"`
+}
+
+// HostAuthGetKeyResult is the host's response.
+type HostAuthGetKeyResult struct {
+	Key string `json:"key"`
+}
+
+// ---------------------------------------------------------------------------
+// Host chat service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// ChatMessage is a single message in a chat request.
+type ChatMessage struct {
+	Role    string `json:"role"`    // "user" or "assistant"
+	Content string `json:"content"`
+}
+
+// HostChatParams asks the host to make a single-turn LLM call.
+type HostChatParams struct {
+	System    string        `json:"system,omitempty"`
+	Messages  []ChatMessage `json:"messages"`
+	Model     string        `json:"model,omitempty"`     // "small", "default", or explicit model ID
+	MaxTokens int           `json:"maxTokens,omitempty"`
+}
+
+// HostChatResult is the host's response.
+type HostChatResult struct {
+	Text  string         `json:"text"`
+	Usage HostTokenUsage `json:"usage"`
+}
+
+// HostTokenUsage reports token consumption.
+type HostTokenUsage struct {
+	Input  int `json:"input"`
+	Output int `json:"output"`
+}
+
+// ---------------------------------------------------------------------------
+// Host agent service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostAgentRunParams asks the host to run a full agent loop.
+type HostAgentRunParams struct {
+	System   string `json:"system,omitempty"`
+	Task     string `json:"task"`
+	Tools    string `json:"tools,omitempty"`    // "background_safe" (default) or "all"
+	Model    string `json:"model,omitempty"`    // "small", "default", or explicit model ID
+	MaxTurns int    `json:"maxTurns,omitempty"`
+}
+
+// HostAgentRunResult is the host's response.
+type HostAgentRunResult struct {
+	Text  string         `json:"text"`
+	Turns int            `json:"turns"`
+	Usage HostTokenUsage `json:"usage"`
 }
 
 // Method names
@@ -338,6 +426,11 @@ const (
 	MethodMessageHookOnMessage  = "messageHook/onMessage"
 	MethodHostListTools         = "host/listTools"
 	MethodHostExecuteTool       = "host/executeTool"
+	MethodHostConfigGet         = "host/config.get"
+	MethodHostConfigReadExt     = "host/config.readExtension"
+	MethodHostAuthGetKey        = "host/auth.getKey"
+	MethodHostChat              = "host/chat"
+	MethodHostAgentRun          = "host/agent.run"
 	MethodNotify                = "notify"
 	MethodLog                   = "log"
 	MethodShowMessage           = "showMessage"

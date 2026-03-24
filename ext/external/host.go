@@ -13,7 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dotcommander/piglet/config"
+	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/provider"
 )
 
 // Host manages a single external extension process.
@@ -492,6 +495,16 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostListTools(msg)
 	case MethodHostExecuteTool:
 		h.handleHostExecuteTool(msg)
+	case MethodHostConfigGet:
+		h.handleHostConfigGet(msg)
+	case MethodHostConfigReadExt:
+		h.handleHostConfigReadExt(msg)
+	case MethodHostAuthGetKey:
+		h.handleHostAuthGetKey(msg)
+	case MethodHostChat:
+		go h.handleHostChat(msg) // may be slow (LLM call)
+	case MethodHostAgentRun:
+		go h.handleHostAgentRun(msg) // may be slow (agent loop)
 	default:
 		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
 	}
@@ -560,6 +573,216 @@ func (h *Host) handleHostExecuteTool(msg *Message) {
 	}
 
 	h.respond(*msg.ID, HostExecuteToolResult{Content: coreToWire(result.Content)})
+}
+
+func (h *Host) handleHostConfigGet(msg *Message) {
+	var params HostConfigGetParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	settings, err := config.Load()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "load config: "+err.Error())
+		return
+	}
+
+	values := make(map[string]any, len(params.Keys))
+	for _, key := range params.Keys {
+		switch key {
+		case "defaultModel":
+			values[key] = settings.ResolveDefaultModel()
+		case "smallModel":
+			values[key] = settings.ResolveSmallModel()
+		case "agent.compactAt":
+			values[key] = config.IntOr(settings.Agent.CompactAt, 0)
+		case "agent.maxTurns":
+			values[key] = config.IntOr(settings.Agent.MaxTurns, 10)
+		}
+	}
+	h.respond(*msg.ID, HostConfigGetResult{Values: values})
+}
+
+func (h *Host) handleHostConfigReadExt(msg *Message) {
+	var params HostConfigReadExtParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	content, _ := config.ReadExtensionConfig(params.Name)
+	h.respond(*msg.ID, HostConfigReadExtResult{Content: content})
+}
+
+func (h *Host) handleHostAuthGetKey(msg *Message) {
+	var params HostAuthGetKeyParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	auth, err := config.NewAuthDefault()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "load auth: "+err.Error())
+		return
+	}
+
+	key := auth.GetAPIKey(params.Provider)
+	h.respond(*msg.ID, HostAuthGetKeyResult{Key: key})
+}
+
+func (h *Host) handleHostChat(msg *Message) {
+	var params HostChatParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	prov, err := h.resolveProvider(params.Model)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
+		return
+	}
+
+	msgs := make([]core.Message, len(params.Messages))
+	for i, m := range params.Messages {
+		switch m.Role {
+		case "assistant":
+			msgs[i] = &core.AssistantMessage{
+				Content: []core.AssistantContent{core.TextContent{Text: m.Content}},
+			}
+		default:
+			msgs[i] = &core.UserMessage{Content: m.Content}
+		}
+	}
+
+	req := core.StreamRequest{
+		System:   params.System,
+		Messages: msgs,
+	}
+	if params.MaxTokens > 0 {
+		req.Options.MaxTokens = &params.MaxTokens
+	}
+
+	ch := prov.Stream(context.Background(), req)
+
+	var text strings.Builder
+	var usage HostTokenUsage
+	for evt := range ch {
+		switch evt.Type {
+		case core.StreamTextDelta:
+			text.WriteString(evt.Delta)
+		case core.StreamDone:
+			if evt.Message != nil {
+				usage.Input += evt.Message.Usage.InputTokens
+				usage.Output += evt.Message.Usage.OutputTokens
+			}
+		case core.StreamError:
+			h.respondError(*msg.ID, -32603, "chat error: "+evt.Error.Error())
+			return
+		}
+	}
+
+	h.respond(*msg.ID, HostChatResult{Text: text.String(), Usage: usage})
+}
+
+func (h *Host) handleHostAgentRun(msg *Message) {
+	var params HostAgentRunParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+
+	prov, err := h.resolveProvider(params.Model)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
+		return
+	}
+
+	var tools []core.Tool
+	if params.Tools == "all" {
+		tools = h.app.CoreTools()
+	} else {
+		tools = h.app.BackgroundSafeTools()
+	}
+
+	maxTurns := params.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = 10
+	}
+
+	sub := core.NewAgent(core.AgentConfig{
+		System:   params.System,
+		Provider: prov,
+		Tools:    tools,
+		MaxTurns: maxTurns,
+	})
+
+	ch := sub.Start(context.Background(), params.Task)
+
+	var result string
+	var totalIn, totalOut, turns int
+	for evt := range ch {
+		if te, ok := evt.(core.EventTurnEnd); ok {
+			turns++
+			if te.Assistant != nil {
+				totalIn += te.Assistant.Usage.InputTokens
+				totalOut += te.Assistant.Usage.OutputTokens
+				for _, c := range te.Assistant.Content {
+					if tc, ok := c.(core.TextContent); ok {
+						result = tc.Text
+					}
+				}
+			}
+		}
+	}
+
+	h.respond(*msg.ID, HostAgentRunResult{
+		Text:  result,
+		Turns: turns,
+		Usage: HostTokenUsage{Input: totalIn, Output: totalOut},
+	})
+}
+
+// resolveProvider creates a StreamProvider for the given model specifier.
+// Model can be "small", "default", or an explicit model ID.
+func (h *Host) resolveProvider(model string) (core.StreamProvider, error) {
+	auth, err := config.NewAuthDefault()
+	if err != nil {
+		return nil, fmt.Errorf("load auth: %w", err)
+	}
+
+	settings, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	modelQuery := model
+	switch model {
+	case "", "default":
+		modelQuery = settings.ResolveDefaultModel()
+	case "small":
+		modelQuery = settings.ResolveSmallModel()
+	}
+	if modelQuery == "" {
+		return nil, fmt.Errorf("no model configured")
+	}
+
+	registry := provider.NewRegistry()
+	resolved, ok := registry.Resolve(modelQuery)
+	if !ok {
+		return nil, fmt.Errorf("unknown model: %s", modelQuery)
+	}
+
+	return registry.Create(resolved, func() string {
+		return auth.GetAPIKey(resolved.Provider)
+	})
 }
 
 func (h *Host) respond(id int, result any) {
