@@ -60,7 +60,7 @@ piglet
 
 ### Extensions
 
-First launch automatically builds and installs 12 [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
+First launch automatically builds and installs the [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
 
 To rebuild extensions later (e.g. after an update), run `/extensions update` inside piglet.
 
@@ -116,20 +116,22 @@ Everything is an extension. The core agent loop knows nothing about files, git, 
 
 Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 
-| Provider | Example models | Env Variable |
-|----------|----------------|--------------|
-| Anthropic | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
-| OpenAI | `gpt-5.4`, `gpt-5`, `o4-mini`, `gpt-4.1`, `o3` | `OPENAI_API_KEY` |
-| Google | `gemini-3.1-pro-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
-| xAI | `grok-3` | `XAI_API_KEY` |
-| Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
-| OpenRouter | `auto` (routes best available) | `OPENROUTER_API_KEY` |
-| Z.AI | `glm-5`, `glm-4.7`, `glm-5-turbo` | `ZAI_API_KEY` |
-| LM Studio | Any local model (localhost:1234) | — |
+| Provider | Env Variable |
+|----------|--------------|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Google | `GOOGLE_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Z.AI | `ZAI_API_KEY` |
+| LM Studio | — (localhost:1234) |
 
-Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config.
+Any OpenAI-compatible endpoint works via base URL override in config.
 
-> Piglet writes `models.yaml` to `~/.config/piglet/` on first run with the current model catalog. To update available models after a piglet upgrade, delete the file and restart — it regenerates automatically.
+Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config. Run `/model` to see all available models.
+
+> Piglet writes `models.yaml` to `~/.config/piglet/` on first run with the current model catalog. To refresh after a piglet upgrade, delete the file and restart — it regenerates automatically.
 
 ## Commands and Shortcuts
 
@@ -185,8 +187,10 @@ Install with [`piglet-extensions`](https://github.com/dotcommander/piglet-extens
 | **safeguard** | Block dangerous commands (configurable profiles) |
 | **rtk** | Rewrite bash commands for 60-90% token savings |
 | **subagent** | Delegate work to independent sub-agents |
+| **bulk** | Parallel shell commands across repos/dirs/files |
 | **clipboard** | Paste images from clipboard into conversation |
 | **autotitle** | Auto-generate session titles |
+| **mcp** | Bridge MCP servers (stdio/HTTP) as piglet tools |
 
 ### Write Your Own
 
