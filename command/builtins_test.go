@@ -21,7 +21,7 @@ import (
 func newTestApp(t *testing.T) *ext.App {
 	t.Helper()
 	app := ext.NewApp(t.TempDir())
-	RegisterBuiltins(app, nil)
+	RegisterBuiltins(app, nil, "test")
 	return app
 }
 
@@ -650,7 +650,7 @@ func TestRegisterBuiltinsRegistersExpectedCommands(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("/tmp")
-	RegisterBuiltins(app, nil)
+	RegisterBuiltins(app, nil, "test")
 
 	cmds := app.Commands()
 	expected := []string{
@@ -668,7 +668,7 @@ func TestRegisterBuiltinsRegistersShortcuts(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("/tmp")
-	RegisterBuiltins(app, nil)
+	RegisterBuiltins(app, nil, "test")
 
 	shortcuts := app.Shortcuts()
 	assert.Contains(t, shortcuts, keyModel)
@@ -681,7 +681,7 @@ func TestRegisterBuiltinsCustomShortcutOverride(t *testing.T) {
 	app := ext.NewApp("/tmp")
 	RegisterBuiltins(app, map[string]string{
 		shortcutModel: "ctrl+m",
-	})
+	}, "test")
 
 	shortcuts := app.Shortcuts()
 	assert.Contains(t, shortcuts, "ctrl+m", "custom key should override default")

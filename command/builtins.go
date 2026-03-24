@@ -24,7 +24,7 @@ const (
 
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
 // All commands operate exclusively through the ext.App SDK.
-func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
+func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string) {
 	registerStatusSections(app)
 	registerHelp(app)
 	registerClear(app)
@@ -43,6 +43,8 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string) {
 	registerTitle(app)
 	registerUndo(app)
 	registerConfig(app)
+	registerUpdate(app)
+	registerUpgrade(app, version)
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands

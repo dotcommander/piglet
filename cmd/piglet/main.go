@@ -17,6 +17,7 @@ import (
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
 	"github.com/dotcommander/piglet/modelsdev"
@@ -101,6 +102,12 @@ func run() error {
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
 		return config.RunSetup(writeModels)
 	}
+	if len(promptArgs) == 1 && promptArgs[0] == "update" {
+		return command.RunUpdate(os.Stderr)
+	}
+	if len(promptArgs) == 1 && promptArgs[0] == "upgrade" {
+		return command.RunUpgrade(os.Stderr, resolveVersion())
+	}
 
 	// Determine prompt: args after flags or stdin
 	userPrompt := strings.Join(promptArgs, " ")
@@ -137,6 +144,20 @@ func run() error {
 				fmt.Fprintf(os.Stderr, "models.dev refresh: %v\n", err)
 			}
 		}()
+	}
+
+	// Background update check (every 24h, non-blocking)
+	if selfupdate.CheckStale() {
+		go func() {
+			uCtx, uCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer uCancel()
+			if rel, err := selfupdate.FetchLatestRelease(uCtx); err == nil {
+				_ = selfupdate.WriteCache(rel)
+			}
+		}()
+	}
+	if notice := selfupdate.UpdateNotice(resolveVersion()); notice != "" {
+		fmt.Fprintf(os.Stderr, "%s\n", notice)
 	}
 
 	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
@@ -194,7 +215,7 @@ func run() error {
 		ReadLimit: settings.Tools.ReadLimit,
 		GrepLimit: settings.Tools.GrepLimit,
 	})
-	command.RegisterBuiltins(app, settings.Shortcuts)
+	command.RegisterBuiltins(app, settings.Shortcuts, resolveVersion())
 	command.RegisterPrompts(app)
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
@@ -412,6 +433,8 @@ Usage:
   piglet                  Interactive TUI mode (runs setup on first launch)
   piglet <prompt>         Single-shot mode (prints response and exits)
   piglet init             Run first-time setup (config, models, API key detection)
+  piglet update           Update extensions to latest
+  piglet upgrade          Upgrade piglet to latest release
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads
