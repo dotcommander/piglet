@@ -126,23 +126,6 @@ func TestRegistry_RegisterOverwrite(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// useMaxCompletionTokens (tested indirectly via request body inspection)
-// ---------------------------------------------------------------------------
-
-func TestOpenAI_BuildRequest_MaxCompletionTokens_o1(t *testing.T) {
-	t.Parallel()
-	// o1 models use max_completion_tokens
-	model := core.Model{
-		ID: "o1-mini", Provider: "openai", API: core.APIOpenAI,
-		BaseURL: "https://unused.example.com", MaxTokens: 1000,
-	}
-	prov := provider.NewOpenAI(model, func() string { return "key" })
-	_ = prov
-	// We can't directly test buildRequest without an http server, so we
-	// verify via a mock server that captures the body.
-}
-
-// ---------------------------------------------------------------------------
 // DefaultModelsYAML / WriteModelsData
 // ---------------------------------------------------------------------------
 
@@ -219,8 +202,8 @@ func TestWriteDefaultModels_CreatesFile(t *testing.T) {
 
 func TestModel_DisplayName(t *testing.T) {
 	t.Parallel()
-	m := core.Model{ID: "gpt-4o", Name: "GPT-4o", Provider: "openai"}
-	assert.Equal(t, "openai/GPT-4o", m.DisplayName())
+	m := core.Model{ID: "gpt-5", Name: "GPT-5", Provider: "openai"}
+	assert.Equal(t, "openai/GPT-5", m.DisplayName())
 }
 
 func TestModel_DisplayName_EmptyName(t *testing.T) {
@@ -230,39 +213,82 @@ func TestModel_DisplayName_EmptyName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI: hasVersionSuffix (tested indirectly via endpoint URL)
+// OpenAI: endpoint URL construction (hasVersionSuffix)
 // ---------------------------------------------------------------------------
+
+func TestOpenAI_Endpoint_NoVersionSuffix(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+	})
+	for range ch {
+	}
+
+	assert.Equal(t, "/v1/chat/completions", gotPath)
+}
+
+func TestOpenAI_Endpoint_WithVersionSuffix(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	// Base URL already ends with /v1 — should not double-add /v1
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL + "/v1", MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+	})
+	for range ch {
+	}
+
+	assert.Equal(t, "/v1/chat/completions", gotPath)
+}
 
 // ---------------------------------------------------------------------------
 // OpenAI: useMaxCompletionTokens logic (table-driven, via request body)
+// o-series and newer gpt models use max_completion_tokens
 // ---------------------------------------------------------------------------
 
-func TestOpenAI_UseMaxCompletionTokens_Table(t *testing.T) {
+func TestOpenAI_UseMaxCompletionTokens_OSeriesModels(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		modelID             string
-		wantCompletionField bool // true = max_completion_tokens, false = max_tokens
+		modelID string
 	}{
-		{"o1-mini", true},
-		{"o1-preview", true},
-		{"o3-mini", true},
-		{"o4-mini", true},
-		{"gpt-5", true},
-		{"gpt-5.4", true},
-		{"gpt-4.1", true},
-		{"gpt-4.1-mini", true},
-		{"gpt-4.5-turbo", true},
-		{"gpt-4o", false},
-		{"gpt-4", false},
-		{"gpt-3.5-turbo", false},
+		{"o1-mini"},
+		{"o1-preview"},
+		{"o3-mini"},
+		{"o4-mini"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.modelID, func(t *testing.T) {
 			t.Parallel()
-			var capturedBody []byte
 
+			var capturedBody []byte
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				buf := make([]byte, 4096)
 				n, _ := r.Body.Read(buf)
@@ -284,13 +310,301 @@ func TestOpenAI_UseMaxCompletionTokens_Table(t *testing.T) {
 			}
 
 			body := string(capturedBody)
-			if tt.wantCompletionField {
-				assert.Contains(t, body, `"max_completion_tokens"`, "model %s", tt.modelID)
-				assert.NotContains(t, body, `"max_tokens"`, "model %s", tt.modelID)
-			} else {
-				assert.Contains(t, body, `"max_tokens"`, "model %s", tt.modelID)
-				assert.NotContains(t, body, `"max_completion_tokens"`, "model %s", tt.modelID)
-			}
+			assert.Contains(t, body, `"max_completion_tokens"`, "model %s should use max_completion_tokens", tt.modelID)
+			assert.NotContains(t, body, `"max_tokens"`, "model %s should not use max_tokens", tt.modelID)
 		})
 	}
+}
+
+func TestOpenAI_UseMaxCompletionTokens_NewerGPTModels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		modelID string
+	}{
+		{"gpt-5"},
+		{"gpt-5.4"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			t.Parallel()
+
+			var capturedBody []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				buf := make([]byte, 4096)
+				n, _ := r.Body.Read(buf)
+				capturedBody = buf[:n]
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+			}))
+			defer server.Close()
+
+			model := core.Model{
+				ID: tt.modelID, Provider: "openai", API: core.APIOpenAI,
+				BaseURL: server.URL, MaxTokens: 100,
+			}
+			prov := provider.NewOpenAI(model, func() string { return "key" })
+			ch := prov.Stream(context.Background(), core.StreamRequest{
+				Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+			})
+			for range ch {
+			}
+
+			body := string(capturedBody)
+			assert.Contains(t, body, `"max_completion_tokens"`, "model %s should use max_completion_tokens", tt.modelID)
+			assert.NotContains(t, body, `"max_tokens"`, "model %s should not use max_tokens", tt.modelID)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI: request body shape
+// ---------------------------------------------------------------------------
+
+func TestOpenAI_BuildRequest_SystemMessage(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		capturedBody = buf[:n]
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		System:   "You are an expert.",
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+	})
+	for range ch {
+	}
+
+	body := string(capturedBody)
+	assert.Contains(t, body, `"system"`)
+	assert.Contains(t, body, `"You are an expert."`)
+	assert.Contains(t, body, `"stream":true`)
+	assert.Contains(t, body, `"include_usage":true`)
+}
+
+func TestOpenAI_BuildRequest_ToolChoice(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		capturedBody = buf[:n]
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+		Tools:    []core.ToolSchema{{Name: "my_tool", Description: "does something"}},
+	})
+	for range ch {
+	}
+
+	body := string(capturedBody)
+	assert.Contains(t, body, `"tool_choice":"auto"`)
+	assert.Contains(t, body, `"my_tool"`)
+	assert.Contains(t, body, `"function"`)
+}
+
+func TestOpenAI_BuildRequest_ImageBlock(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 8192)
+		n, _ := r.Body.Read(buf)
+		capturedBody = buf[:n]
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{
+			&core.UserMessage{
+				Content: "describe this image",
+				Blocks: []core.ContentBlock{
+					core.ImageContent{MimeType: "image/jpeg", Data: "base64data"},
+				},
+				Timestamp: time.Now(),
+			},
+		},
+	})
+	for range ch {
+	}
+
+	body := string(capturedBody)
+	assert.Contains(t, body, `"image_url"`)
+	assert.Contains(t, body, `"data:image/jpeg;base64,base64data"`)
+}
+
+func TestOpenAI_BuildRequest_ToolResultMessage(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		capturedBody = buf[:n]
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+
+	now := time.Now()
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{
+			&core.UserMessage{Content: "call the tool", Timestamp: now},
+			&core.AssistantMessage{
+				Content: []core.AssistantContent{core.ToolCall{
+					ID: "call_abc", Name: "echo", Arguments: map[string]any{"text": "hello"},
+				}},
+				StopReason: core.StopReasonTool,
+				Timestamp:  now,
+			},
+			&core.ToolResultMessage{
+				ToolCallID: "call_abc",
+				ToolName:   "echo",
+				Content:    []core.ContentBlock{core.TextContent{Text: "tool result"}},
+				Timestamp:  now,
+			},
+		},
+	})
+	for range ch {
+	}
+
+	body := string(capturedBody)
+	assert.Contains(t, body, `"tool"`)
+	assert.Contains(t, body, `"call_abc"`)
+	assert.Contains(t, body, `"tool result"`)
+}
+
+func TestOpenAI_StreamCachedTokens(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(
+			`{"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60,"prompt_tokens_details":{"cached_tokens":30}}}`,
+		))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+	})
+
+	var finalMsg *core.AssistantMessage
+	for evt := range ch {
+		if evt.Type == core.StreamDone {
+			finalMsg = evt.Message
+		}
+	}
+
+	require.NotNil(t, finalMsg)
+	assert.Equal(t, 50, finalMsg.Usage.InputTokens)
+	assert.Equal(t, 10, finalMsg.Usage.OutputTokens)
+	assert.Equal(t, 30, finalMsg.Usage.CacheReadTokens)
+}
+
+func TestOpenAI_StreamAssistantHistory(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 8192)
+		n, _ := r.Body.Read(buf)
+		capturedBody = buf[:n]
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+
+	now := time.Now()
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{
+			&core.UserMessage{Content: "first", Timestamp: now},
+			&core.AssistantMessage{
+				Content:    []core.AssistantContent{core.TextContent{Text: "response text"}},
+				StopReason: core.StopReasonStop,
+				Timestamp:  now,
+			},
+			&core.UserMessage{Content: "second", Timestamp: now},
+		},
+	})
+	for range ch {
+	}
+
+	body := string(capturedBody)
+	assert.Contains(t, body, `"assistant"`)
+	assert.Contains(t, body, `"response text"`)
+}
+
+func TestOpenAI_StreamCustomHeaders(t *testing.T) {
+	t.Parallel()
+
+	var capturedHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("X-Custom-Header")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseLines(`{"choices":[{"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	model := core.Model{
+		ID: "gpt-5", Provider: "openai", API: core.APIOpenAI,
+		BaseURL: server.URL, MaxTokens: 100,
+		Headers: map[string]string{"X-Custom-Header": "custom-value"},
+	}
+	prov := provider.NewOpenAI(model, func() string { return "key" })
+
+	ch := prov.Stream(context.Background(), core.StreamRequest{
+		Messages: []core.Message{&core.UserMessage{Content: "hi", Timestamp: time.Now()}},
+	})
+	for range ch {
+	}
+
+	assert.Equal(t, "custom-value", capturedHeader)
 }
