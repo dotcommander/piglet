@@ -47,12 +47,13 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
 			m.messages = append(m.messages, e.Assistant)
-			m.totalIn += e.Assistant.Usage.InputTokens
+			// InputTokens is the full context size (not incremental), so assign rather than accumulate
+			m.totalIn = e.Assistant.Usage.InputTokens
 			m.totalOut += e.Assistant.Usage.OutputTokens
 			m.totalCost += e.Assistant.Usage.Cost
 			m.totalCacheRead += e.Assistant.Usage.CacheReadTokens
 			m.totalCacheWrite += e.Assistant.Usage.CacheWriteTokens
-			m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut, m.totalCacheRead)))
+			m.updateTokenStatus()
 			m.status.Set(ext.StatusKeyCost, m.styles.Muted.Render(formatCost(m.totalCost)))
 
 			if m.cfg.Session != nil {
@@ -97,6 +98,11 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 				core.TextContent{Text: fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)},
 			},
 		})
+		// Rough estimate until the next EventTurnEnd corrects it
+		if e.Before > 0 {
+			m.totalIn = (m.totalIn * e.After) / e.Before
+			m.updateTokenStatus()
+		}
 	}
 
 	// Apply actions only after events that can produce them (not stream deltas)
@@ -114,6 +120,10 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		return m, pollEvents(m.eventCh)
 	}
 	return m, actionCmd
+}
+
+func (m *Model) updateTokenStatus() {
+	m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut, m.totalCacheRead)))
 }
 
 // pollEvents reads the next event from the agent channel.
