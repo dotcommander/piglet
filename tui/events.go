@@ -88,7 +88,7 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	case core.EventRetry:
 		m.messages = append(m.messages, &core.AssistantMessage{
 			Content: []core.AssistantContent{
-				core.TextContent{Text: fmt.Sprintf("Retrying (%d/%d)...", e.Attempt, e.Max)},
+				core.TextContent{Text: fmt.Sprintf("Retrying (%d/%d): %s", e.Attempt, e.Max, e.Error)},
 			},
 		})
 
