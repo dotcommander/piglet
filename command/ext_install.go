@@ -60,7 +60,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 		}
 
 		destDir := filepath.Join(extDir, name)
-		if err := os.MkdirAll(destDir, 0750); err != nil {
+		if err := os.MkdirAll(destDir, 0755); err != nil {
 			failures = append(failures, fmt.Sprintf("  %s: mkdir: %v", name, err))
 			failed++
 			continue
@@ -82,7 +82,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 			failed++
 			continue
 		}
-		if err := os.WriteFile(dst, data, 0600); err != nil {
+		if err := os.WriteFile(dst, data, 0644); err != nil {
 			failures = append(failures, fmt.Sprintf("  %s: write manifest: %v", name, err))
 			failed++
 			continue
