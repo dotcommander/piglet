@@ -402,7 +402,7 @@ func openDebugLog() (*slog.Logger, func(), error) {
 	}
 	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	fmt.Fprintf(os.Stderr, "debug: logging to %s\n", path)
-	return logger, func() { f.Close() }, nil
+	return logger, func() { _ = f.Close() }, nil
 }
 
 func printHelp() {

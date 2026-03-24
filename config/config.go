@@ -179,7 +179,7 @@ func SaveTo(s Settings, path string) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("rename config: %w", err)
 	}
 	return nil

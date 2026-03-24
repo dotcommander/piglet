@@ -159,7 +159,7 @@ func (m *Model) applyActions() tea.Cmd {
 		case ext.ActionSwapSession:
 			if s, ok := act.Session.(*session.Session); ok {
 				if m.cfg.Session != nil {
-					m.cfg.Session.Close()
+					_ = m.cfg.Session.Close()
 				}
 				m.cfg.Session = s
 				msgs := s.Messages()

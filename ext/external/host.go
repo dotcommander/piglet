@@ -121,7 +121,7 @@ func (h *Host) Stop() {
 			Method:  MethodShutdown,
 		})
 
-		h.stdin.Close()
+		_ = h.stdin.Close()
 		close(h.closed)
 
 		if h.cmd.Process != nil {

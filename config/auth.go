@@ -177,7 +177,7 @@ func (a *Auth) save() error {
 		return fmt.Errorf("write auth: %w", err)
 	}
 	if err := os.Rename(tmp, a.path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("rename auth: %w", err)
 	}
 	return nil
