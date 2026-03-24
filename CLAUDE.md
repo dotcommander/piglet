@@ -233,3 +233,57 @@ The memory extension injects a **compact index** (not full content) as a static 
 - `context.Context` as first param
 - `fmt.Errorf` with `%w` for error wrapping
 - **New functionality = new extension, never core modification**
+
+## Release Safety (BLOCKING — private repo, public planned)
+
+This repo may become public. Treat every commit as if it already is.
+
+### Never Commit
+
+| Category | Examples |
+|----------|---------|
+| API keys / secrets | `.env`, `auth.json`, tokens, passwords, key material |
+| User config | `~/.config/piglet/config.yaml`, `models.yaml`, session JSONL |
+| Local paths | `/Users/vampire/`, `~/www/`, absolute paths to user directories |
+| Scratch / work | `.work/`, `/tmp/` test scripts, one-off debug files |
+| Binary artifacts | The `piglet` binary, `.so`, `.dylib` |
+| Prompt content | `prompt.md`, `behavior.md` — these are user config, not source |
+
+### Pre-Commit Gate
+
+Before EVERY commit:
+
+1. **`git diff --cached`** — read the full staged diff. Look for hardcoded paths, API keys, user-specific config, or debug print statements.
+2. **`git diff --cached --name-only`** — verify no unexpected files. Especially: no binaries, no `~/.config/` content, no `.work/` artifacts.
+3. **No absolute user paths** — grep the diff for `/Users/`, `/home/`, `~/`. Config code may reference `os.UserConfigDir()` (fine) but never literal home paths.
+4. **No embedded secrets** — grep for `sk-`, `api_key`, `bearer`, `password`. The `config/auth.go` reads keys at runtime — keys never appear in source.
+5. **No test scripts in repo** — `/tmp/` test files stay in `/tmp/`.
+
+### Pre-Tag Gate (before `git tag`)
+
+1. **All tests pass**: `go test -race ./... | tail -30`
+2. **Build clean**: `go build ./... 2>&1 | tail -10`
+3. **go.mod current**: `go mod tidy && go build ./...` — stale deps break `go install` consumers
+4. **Smoke test**: `go build -o piglet ./cmd/piglet/ && ./piglet --version`
+5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
+6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
+7. **Extensions compatible**: `cd ~/go/src/piglet-extensions && go build ./...` — extensions must build against the tagged version
+
+### Pre-Push Gate
+
+1. **Review commit list**: `git log origin/main..HEAD --oneline` — every commit is about to be permanent
+2. **No force push to main** — ever
+3. **No amended published commits** — create new commits to fix mistakes
+
+### .gitignore Hygiene
+
+These MUST be in `.gitignore` and stay there:
+
+```
+/piglet              # binary
+.work/               # scratch/specs/audits
+.DS_Store            # macOS
+repomix-output.md    # export artifacts
+```
+
+Periodically verify: `git ls-files --others --ignored --exclude-standard | head -20` — nothing sensitive should appear.
