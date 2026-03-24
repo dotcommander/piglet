@@ -70,7 +70,7 @@ func registerExtInit(app *ext.App) {
 			}
 
 			dir := filepath.Join(extDir, name)
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, 0750); err != nil {
 				return fmt.Errorf("create dir: %w", err)
 			}
 
@@ -112,10 +112,10 @@ piglet.registerCommand({
 });
 `)
 
-			if err := os.WriteFile(dir+"/manifest.yaml", []byte(manifest), 0644); err != nil {
+			if err := os.WriteFile(dir+"/manifest.yaml", []byte(manifest), 0600); err != nil {
 				return fmt.Errorf("write manifest: %w", err)
 			}
-			if err := os.WriteFile(dir+"/index.ts", []byte(indexTS), 0644); err != nil {
+			if err := os.WriteFile(dir+"/index.ts", []byte(indexTS), 0600); err != nil {
 				return fmt.Errorf("write index.ts: %w", err)
 			}
 

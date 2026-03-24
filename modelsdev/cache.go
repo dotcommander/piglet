@@ -60,7 +60,7 @@ func writeCache(c *cache) error {
 		return fmt.Errorf("marshal cache: %w", err)
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write cache: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -124,11 +124,11 @@ func updateRegistryFromData(registry *provider.Registry, data apiResponse) {
 // writeModelsAtomic overwrites models.yaml atomically (always writes, unlike
 // WriteModelsData which skips if the file exists).
 func writeModelsAtomic(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
