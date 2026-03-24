@@ -49,6 +49,19 @@ func InstallOfficialExtensions(w io.Writer) error {
 		return nil
 	}
 
+	// Strip local replace directives that break builds outside the dev machine
+	dropReplace := exec.Command("go", "mod", "edit",
+		"-dropreplace=github.com/dotcommander/piglet/sdk",
+	)
+	dropReplace.Dir = tmpDir
+	_ = dropReplace.Run()
+
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd.Dir = tmpDir
+	if out, err := tidyCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
+	}
+
 	var built, failed int
 	var failures []string
 
