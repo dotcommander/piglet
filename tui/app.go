@@ -74,8 +74,8 @@ type Model struct {
 	// State
 	messages        []core.Message
 	streaming       bool
-	streamText      strings.Builder
-	streamThink     strings.Builder
+	streamText      *strings.Builder
+	streamThink     *strings.Builder
 	activeTool      string
 	spinnerVerb     string
 	totalIn         int
@@ -137,6 +137,8 @@ func New(cfg Config) Model {
 		status:       status,
 		msgView:      NewMessageView(styles, 80),
 		spinner:      sp,
+		streamText:   &strings.Builder{},
+		streamThink:  &strings.Builder{},
 		bgResult:     &strings.Builder{},
 		focused:      true,
 		followOutput: true,
