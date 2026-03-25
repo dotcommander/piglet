@@ -5,13 +5,14 @@ import (
 	"io"
 	"strings"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 )
 
 // RunUpdate updates extensions from the CLI (no ext.App needed).
-func RunUpdate(w io.Writer) error {
+func RunUpdate(w io.Writer, settings config.Settings) error {
 	fmt.Fprintln(w, "Updating extensions...")
-	return InstallOfficialExtensions(w)
+	return InstallOfficialExtensions(w, settings)
 }
 
 func registerUpdate(app *ext.App) {
@@ -19,9 +20,10 @@ func registerUpdate(app *ext.App) {
 		Name:        "update",
 		Description: "Update extensions to latest",
 		Handler: func(args string, a *ext.App) error {
+			settings, _ := config.Load()
 			var b strings.Builder
 			b.WriteString("Updating extensions...\n")
-			if err := InstallOfficialExtensions(&b); err != nil {
+			if err := InstallOfficialExtensions(&b, settings); err != nil {
 				a.ShowMessage("Update failed: " + err.Error())
 				return nil
 			}

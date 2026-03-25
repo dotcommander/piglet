@@ -103,7 +103,8 @@ func run() error {
 		return config.RunSetup(writeModels)
 	}
 	if len(promptArgs) == 1 && promptArgs[0] == "update" {
-		return command.RunUpdate(os.Stderr)
+		settings, _ := config.Load()
+		return command.RunUpdate(os.Stderr, settings)
 	}
 	if len(promptArgs) == 1 && promptArgs[0] == "upgrade" {
 		return command.RunUpgrade(os.Stderr, resolveVersion())
@@ -234,7 +235,7 @@ func run() error {
 	defer extCleanup()
 
 	if interactive && loaded == 0 {
-		if err := command.InstallOfficialExtensions(os.Stderr); err != nil {
+		if err := command.InstallOfficialExtensions(os.Stderr, settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
 		// Reload after install attempt (picks up freshly built extensions)

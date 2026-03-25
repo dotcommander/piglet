@@ -8,18 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
 )
 
-const extensionsRepoURL = "https://github.com/dotcommander/piglet-extensions.git"
-
-var officialExtensions = []string{
-	"safeguard", "rtk", "autotitle", "clipboard", "skill",
-	"memory", "subagent", "lsp", "repomap", "plan", "bulk",
-}
-
-func InstallOfficialExtensions(w io.Writer) error {
+func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		fmt.Fprintln(w, "git not found in PATH — skipping extension install")
 		return nil
@@ -34,7 +28,9 @@ func InstallOfficialExtensions(w io.Writer) error {
 		return fmt.Errorf("extensions dir: %w", err)
 	}
 
-	total := len(officialExtensions)
+	extensions := settings.ExtInstall.ResolveOfficial()
+	repoURL := settings.ExtInstall.ResolveRepoURL()
+	total := len(extensions)
 	fmt.Fprintf(w, "Cloning piglet-extensions...\n")
 
 	tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
@@ -43,7 +39,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", extensionsRepoURL, tmpDir)
+	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", repoURL, tmpDir)
 	if out, err := cloneCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
 		return nil
@@ -67,7 +63,7 @@ func InstallOfficialExtensions(w io.Writer) error {
 
 	// Use \r for TTY (os.Stderr), newline for non-TTY (strings.Builder in TUI path)
 	isTTY := w == os.Stderr
-	for i, name := range officialExtensions {
+	for i, name := range extensions {
 		if isTTY {
 			fmt.Fprintf(w, "\rBuilding extensions (%d/%d) %s...\033[K", i+1, total, name)
 		}
@@ -115,8 +111,9 @@ func InstallOfficialExtensions(w io.Writer) error {
 }
 
 func installExtensions(a *ext.App) error {
+	settings, _ := config.Load()
 	var b strings.Builder
-	if err := InstallOfficialExtensions(&b); err != nil {
+	if err := InstallOfficialExtensions(&b, settings); err != nil {
 		return err
 	}
 	if msg := b.String(); msg != "" {
