@@ -24,10 +24,10 @@ tui/, cmd/  → anything (wiring layer)
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
 | Tools | 7 | `tool/` | `RegisterTool` |
-| Commands | 18 | `command/` | `RegisterCommand` |
+| Commands | 9 | `command/` | `RegisterCommand` |
 | Shortcuts | 2 | `command/` | `RegisterShortcut` |
 | Status sections | 5 | `command/` | `RegisterStatusSection` |
-| Prompt sections | 4 | `prompt/` (behavior, selfknowledge, gitcontext, projectdocs) | `RegisterPromptSection` |
+| Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
 
 **External** (standalone Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
 
@@ -125,7 +125,7 @@ ext/           Registration surface (ext.App) — the central API
 sdk/           Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk)
 tool/          7 compiled-in tools
 command/       18 compiled-in commands, 5 status sections, 2 shortcuts
-prompt/        System prompt builder + 4 compiled-in prompt sections
+prompt/        System prompt builder + 2 compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
 session/       JSONL conversation persistence, compaction
@@ -172,7 +172,7 @@ Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://g
 /extensions update           # Rebuild from latest source
 ```
 
-Without extensions, piglet starts as a minimal agent (7 tools, 18 commands, no interceptors/events). With extensions installed, full functionality is available (24+ tools, 21 commands, interceptors, shortcuts, event handlers, message hooks — plus dynamic MCP tools).
+Without extensions, piglet starts as a minimal agent (7 tools, 9 commands, no interceptors/events). With extensions installed, full functionality is available (24+ tools, 21 commands, interceptors, shortcuts, event handlers, message hooks — plus dynamic MCP tools).
 
 ## Config
 
