@@ -124,7 +124,7 @@ ext/           Registration surface (ext.App) — the central API
   external/    JSON-RPC v2 bridge for external extensions (Go/TypeScript/Python)
 sdk/           Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk)
 tool/          7 compiled-in tools
-command/       18 compiled-in commands, 5 status sections, 2 shortcuts
+command/       9 compiled-in commands, 5 status sections, 2 shortcuts
 prompt/        System prompt builder + 2 compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
@@ -218,6 +218,39 @@ The memory extension injects a **compact index** (not full content) as a static 
 | bubbles | `charm.land/bubbles/v2` v2.0.0 |
 | lipgloss | `charm.land/lipgloss/v2` v2.0.0 |
 | glamour | `github.com/charmbracelet/glamour` v1.0.0 |
+
+## Core Freeze (BLOCKING)
+
+`core/` is **frozen**. No new types, events, methods, or behavior changes. All future functionality lives in extensions. The 16 agent events and 5 extension primitives are the complete API surface.
+
+### Agent Events (complete — do not add more)
+
+| Event | When | Payload |
+|-------|------|---------|
+| `EventAgentStart` | Agent loop begins | — |
+| `EventSessionLoad` | Pre-loaded messages exist at start | `MessageCount` |
+| `EventAgentInit` | Agent configured, before first message | `ToolCount` |
+| `EventPromptBuild` | Final system prompt assembled | `System` |
+| `EventMessagePre` | User message about to enter history | `Content` |
+| `EventTurnStart` | New turn begins | — |
+| `EventStreamDelta` | Incremental streaming chunk | `Kind`, `Index`, `Delta` |
+| `EventStreamDone` | LLM finished streaming | `Message` |
+| `EventToolStart` | Tool execution begins | `ToolCallID`, `ToolName`, `Args` |
+| `EventToolUpdate` | Partial tool result | `ToolCallID`, `ToolName`, `Partial` |
+| `EventToolEnd` | Tool execution finished | `ToolCallID`, `ToolName`, `Result`, `IsError` |
+| `EventTurnEnd` | Turn completed | `Assistant`, `ToolResults` |
+| `EventRetry` | Retrying after error | `Attempt`, `Max`, `DelayMs`, `Error` |
+| `EventMaxTurns` | Max turns reached | `Count`, `Max` |
+| `EventStepWait` | Paused for step approval | `ToolCallID`, `ToolName`, `Args` |
+| `EventCompact` | Auto-compaction occurred | `Before`, `After`, `TokensAtCompact` |
+
+### What "frozen" means
+
+- **No new events** — 16 events cover the full lifecycle. Extensions observe, they don't need new hooks.
+- **No new types** — Message/Content unions are sealed. Encode custom data in `TextContent` or `ToolResult.Details`.
+- **No new methods** — Agent API is complete. Extensions interact through `ext.App`, not `core.Agent`.
+- **Bug fixes only** — Security patches and correctness fixes are allowed. Feature additions are not.
+- **Test gate** — `ext/architecture_test.go` enforces dependency direction. Core drift breaks the build.
 
 ## Conventions
 

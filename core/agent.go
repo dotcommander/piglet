@@ -286,6 +286,19 @@ func (a *Agent) run(ctx context.Context, prompt string) {
 
 	a.emit(EventAgentStart{})
 
+	// Lifecycle: session restored?
+	a.mu.RLock()
+	preCount := len(a.messages)
+	toolCount := len(a.cfg.Tools)
+	system := a.cfg.System
+	a.mu.RUnlock()
+	if preCount > 0 {
+		a.emit(EventSessionLoad{MessageCount: preCount})
+	}
+	a.emit(EventAgentInit{ToolCount: toolCount})
+	a.emit(EventPromptBuild{System: system})
+	a.emit(EventMessagePre{Content: prompt})
+
 	// Add the user prompt as a message
 	a.mu.Lock()
 	a.messages = append(a.messages, &UserMessage{

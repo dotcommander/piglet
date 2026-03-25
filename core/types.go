@@ -351,3 +351,35 @@ type EventCompact struct {
 }
 
 func (EventCompact) eventType() string { return "compact" }
+
+// EventSessionLoad signals that the agent has pre-loaded conversation history.
+// Emitted at the start of a run when messages were restored from a prior session.
+type EventSessionLoad struct {
+	MessageCount int
+}
+
+func (EventSessionLoad) eventType() string { return "session_load" }
+
+// EventAgentInit signals the agent is fully configured and about to process.
+// Emitted after session load check, before the first user message is appended.
+type EventAgentInit struct {
+	ToolCount int
+}
+
+func (EventAgentInit) eventType() string { return "agent_init" }
+
+// EventPromptBuild signals the final assembled system prompt.
+// Extensions can observe it for debugging or logging.
+type EventPromptBuild struct {
+	System string
+}
+
+func (EventPromptBuild) eventType() string { return "prompt_build" }
+
+// EventMessagePre signals a user message is about to be appended to history.
+// Emitted before the message enters the conversation, allowing observers to react.
+type EventMessagePre struct {
+	Content string
+}
+
+func (EventMessagePre) eventType() string { return "message_pre" }
