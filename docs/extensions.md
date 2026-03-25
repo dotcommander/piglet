@@ -2,7 +2,7 @@
 
 Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
 
-Piglet ships with a minimal compiled-in set (7 tools, 9 commands, 1 shortcut). Additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), providing the full experience (24+ tools, 21 commands, 3 shortcuts, interceptors, event handlers, message hooks — plus dynamic MCP tools).
+Piglet ships with a small compiled-in set of core tools and commands. Additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), adding tools, commands, shortcuts, interceptors, event handlers, message hooks, and dynamic MCP tools. Run `/extensions` to see what's loaded.
 
 ## Quick Start
 
@@ -221,7 +221,7 @@ func Register(app *ext.App) {
 }
 ```
 
-These use the same `ext.App` API as external extensions. Currently compiled-in: 7 core tools (`tool/`), 9 commands (`command/`), 2 prompt sections (`prompt/`).
+These use the same `ext.App` API as external extensions. See `tool/`, `command/`, and `prompt/` for the compiled-in set.
 
 ## Tools
 
@@ -396,11 +396,10 @@ The same applies to commands — register a command named `help` and your handle
 
 ## Extension Loading Order
 
-1. Compiled-in tools (`tool/` — 7 total)
-2. Compiled-in commands (`command/` — 9 total)
-3. Compiled-in shortcuts, prompt sections
-4. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
-   - Official extensions (from [piglet-extensions](https://github.com/dotcommander/piglet-extensions)): safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan, bulk, mcp, gitcontext, prompts, behavior, admin, scaffold, session-tools, background, extensions-list, export, undo, usage, pipeline
+1. Compiled-in tools (`tool/`)
+2. Compiled-in commands, shortcuts, prompt sections (`command/`, `prompt/`)
+3. External extensions from `~/.config/piglet/extensions/` (alphabetical by directory name)
+   - Official extensions from [piglet-extensions](https://github.com/dotcommander/piglet-extensions)
    - User extensions: anything else in the extensions directory
 
 Later registrations overwrite earlier ones for the same name.
@@ -416,7 +415,7 @@ make extensions              # Build + install all to ~/.config/piglet/extension
 make extensions-safeguard    # Build a single extension
 ```
 
-Without extensions installed, piglet runs as a minimal agent with 7 tools and 9 commands.
+Without extensions installed, piglet runs as a minimal agent with only the compiled-in tools and commands.
 
 ## Examples
 

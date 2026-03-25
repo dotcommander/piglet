@@ -123,9 +123,9 @@ ext/           Registration surface (ext.App) — the central API
   events.go    Event handler dispatch (Observe primitive)
   external/    JSON-RPC v2 bridge for external extensions (Go/TypeScript/Python)
 sdk/           Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk)
-tool/          7 compiled-in tools
-command/       9 compiled-in commands, 5 status sections, 2 shortcuts
-prompt/        System prompt builder + 2 compiled-in prompt sections
+tool/          Compiled-in tools (see tool/register.go)
+command/       Compiled-in commands, status sections, shortcuts (see command/builtins.go)
+prompt/        System prompt builder + compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
 session/       JSONL conversation persistence, compaction
@@ -172,7 +172,7 @@ Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://g
 /extensions update           # Rebuild from latest source
 ```
 
-Without extensions, piglet starts as a minimal agent (7 tools, 9 commands, no interceptors/events). With extensions installed, full functionality is available (24+ tools, 21 commands, interceptors, shortcuts, event handlers, message hooks — plus dynamic MCP tools).
+Without extensions, piglet starts as a minimal agent with only compiled-in tools and commands. With extensions installed, full functionality is available (interceptors, shortcuts, event handlers, message hooks, additional tools/commands — plus dynamic MCP tools). Run `/extensions` for the live inventory.
 
 ## Config
 
