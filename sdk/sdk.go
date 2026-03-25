@@ -208,8 +208,10 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 	// back to the host (e.g. CallHostTool) without deadlocking the read loop.
 	switch msg.Method {
 	case "initialize":
-		// Initialize must be synchronous (registrations happen before response)
-		e.handleInitialize(msg)
+		// Async so OnInit callbacks can make host calls (e.g. ConfigReadExtension)
+		// without deadlocking the read loop. Registrations still precede the
+		// initialize response because handleInitialize sends them sequentially.
+		go e.handleInitialize(msg)
 	case "tool/execute":
 		go e.handleToolExecute(msg)
 	case "command/execute":
