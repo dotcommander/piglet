@@ -73,15 +73,7 @@ func resolvePath(cwd, path string) string {
 }
 
 func atomicWrite(path string, data []byte) error {
-	tmp := path + ".piglet-tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return config.AtomicWrite(path, data, 0644)
 }
 
 // ---------------------------------------------------------------------------

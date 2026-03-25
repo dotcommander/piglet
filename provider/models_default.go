@@ -3,9 +3,10 @@ package provider
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/dotcommander/piglet/config"
 )
 
 // CuratedModel defines a model in the default catalog.
@@ -155,20 +156,5 @@ func WriteModelsData(path string, data string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create models dir: %w", err)
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil {
-		return fmt.Errorf("write models data: %w", err)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("install models data: %w", err)
-	}
-
-	return nil
+	return config.AtomicWrite(path, []byte(data), 0o644)
 }

@@ -29,6 +29,7 @@ type Settings struct {
 	Debug           bool              `yaml:"debug,omitempty"`       // log all request/response payloads
 	Safeguard       *bool             `yaml:"safeguard,omitempty"`   // nil/true = enabled; false = disabled
 	SubAgent        SubAgentSettings  `yaml:"subagent,omitempty"`
+	ExtInstall      ExtensionSettings `yaml:"extInstall,omitempty"`
 }
 
 // ProjectDoc maps a filename to a prompt section title.
@@ -83,6 +84,35 @@ type BashSettings struct {
 // SubAgentSettings controls the dispatch tool's sub-agent defaults.
 type SubAgentSettings struct {
 	MaxTurns int `yaml:"maxTurns,omitempty"` // default 10
+}
+
+const defaultExtensionsRepoURL = "https://github.com/dotcommander/piglet-extensions.git"
+
+var defaultOfficialExtensions = []string{
+	"safeguard", "rtk", "autotitle", "clipboard", "skill",
+	"memory", "subagent", "lsp", "repomap", "plan", "bulk",
+}
+
+// ExtensionSettings controls extension installation defaults.
+type ExtensionSettings struct {
+	RepoURL  string   `yaml:"repoUrl,omitempty"`
+	Official []string `yaml:"official,omitempty"`
+}
+
+// ResolveRepoURL returns the configured repo URL or the default.
+func (s ExtensionSettings) ResolveRepoURL() string {
+	if s.RepoURL != "" {
+		return s.RepoURL
+	}
+	return defaultExtensionsRepoURL
+}
+
+// ResolveOfficial returns the configured extension list or the default.
+func (s ExtensionSettings) ResolveOfficial() []string {
+	if len(s.Official) > 0 {
+		return s.Official
+	}
+	return defaultOfficialExtensions
 }
 
 // ConfigDir returns ~/.config/piglet/, respecting XDG_CONFIG_HOME.
@@ -163,24 +193,29 @@ func Save(s Settings) error {
 
 // SaveTo writes settings to a specific path.
 func SaveTo(s Settings, path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-
 	data, err := yaml.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
+	return AtomicWrite(path, data, 0600)
+}
 
-	// Atomic write: temp file then rename
+// AtomicWrite writes data to path using a temp file + rename pattern.
+// Creates parent directories with 0o755 if needed.
+func AtomicWrite(path string, data []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create dir: %w", err)
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return fmt.Errorf("write temp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("rename config: %w", err)
+		return err
 	}
 	return nil
 }

@@ -124,16 +124,5 @@ func updateRegistryFromData(registry *provider.Registry, data apiResponse) {
 // writeModelsAtomic overwrites models.yaml atomically (always writes, unlike
 // WriteModelsData which skips if the file exists).
 func writeModelsAtomic(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create dir: %w", err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return config.AtomicWrite(path, []byte(content), 0o644)
 }

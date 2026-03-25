@@ -166,21 +166,10 @@ func (a *Auth) save() error {
 		return fmt.Errorf("marshal auth: %w", err)
 	}
 
-	dir := filepath.Dir(a.path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(a.path), 0700); err != nil {
 		return fmt.Errorf("create auth dir: %w", err)
 	}
-
-	// Atomic write
-	tmp := a.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return fmt.Errorf("write auth: %w", err)
-	}
-	if err := os.Rename(tmp, a.path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename auth: %w", err)
-	}
-	return nil
+	return AtomicWrite(a.path, data, 0600)
 }
 
 // envKeyCandidates returns possible environment variable names for a provider.
