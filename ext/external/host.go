@@ -13,14 +13,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
 
+// providerResolverFn resolves a model specifier to a StreamProvider.
+type providerResolverFn func(model string) (core.StreamProvider, error)
+
 // Host manages a single external extension process.
 type Host struct {
-	manifest *Manifest
-	cwd      string
-	app      *ext.App // nil until bridge wires it
+	manifest           *Manifest
+	cwd                string
+	app                *ext.App // nil until bridge wires it
+	resolveProviderFn  providerResolverFn
 
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -56,6 +61,9 @@ func NewHost(m *Manifest, cwd string) *Host {
 
 // SetApp wires the host to the main application for runtime notifications.
 func (h *Host) SetApp(app *ext.App) { h.app = app }
+
+// SetProviderResolver sets the function used to resolve a model to a StreamProvider.
+func (h *Host) SetProviderResolver(fn providerResolverFn) { h.resolveProviderFn = fn }
 
 // Start spawns the extension process, performs the initialize handshake,
 // and collects registrations. Returns after the extension sends initialize result.

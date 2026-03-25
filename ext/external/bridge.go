@@ -9,8 +9,10 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/provider"
 )
 
 // LoadAll discovers and starts all external extensions, registering their
@@ -60,6 +62,7 @@ func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err
 			continue
 		}
 		r.host.SetApp(app)
+		r.host.SetProviderResolver(makeProviderResolver())
 		hosts = append(hosts, r.host)
 		bridge(app, r.host)
 	}
@@ -191,7 +194,7 @@ func proxyToolExecute(h *Host, toolName string) core.ToolExecuteFn {
 // proxyCommandExecute returns a command handler that proxies to the extension.
 func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App) error {
 	return func(args string, app *ext.App) error {
-		return h.ExecuteCommand(context.TODO(), cmdName, args)
+		return h.ExecuteCommand(context.Background(), cmdName, args)
 	}
 }
 
@@ -242,7 +245,7 @@ func proxyEventHandle(h *Host) func(ctx context.Context, evt core.Event) ext.Act
 // proxyShortcutHandle returns a Handler function that proxies to the extension.
 func proxyShortcutHandle(h *Host, key string) func(app *ext.App) (ext.Action, error) {
 	return func(app *ext.App) (ext.Action, error) {
-		ar, err := h.HandleShortcut(context.TODO(), key)
+		ar, err := h.HandleShortcut(context.Background(), key)
 		if err != nil {
 			return nil, fmt.Errorf("ext %s shortcut %s: %w", h.Name(), key, err)
 		}
@@ -395,4 +398,36 @@ func coreToWire(blocks []core.ContentBlock) []ContentBlock {
 		}
 	}
 	return out
+}
+
+// makeProviderResolver returns a providerResolverFn that loads config and auth at call time.
+func makeProviderResolver() providerResolverFn {
+	return func(model string) (core.StreamProvider, error) {
+		auth, err := config.NewAuthDefault()
+		if err != nil {
+			return nil, fmt.Errorf("load auth: %w", err)
+		}
+		settings, err := config.Load()
+		if err != nil {
+			return nil, fmt.Errorf("load config: %w", err)
+		}
+		modelQuery := model
+		switch model {
+		case "", "default":
+			modelQuery = settings.ResolveDefaultModel()
+		case "small":
+			modelQuery = settings.ResolveSmallModel()
+		}
+		if modelQuery == "" {
+			return nil, fmt.Errorf("no model configured")
+		}
+		registry := provider.NewRegistry()
+		resolved, ok := registry.Resolve(modelQuery)
+		if !ok {
+			return nil, fmt.Errorf("unknown model: %s", modelQuery)
+		}
+		return registry.Create(resolved, func() string {
+			return auth.GetAPIKey(resolved.Provider)
+		})
+	}
 }

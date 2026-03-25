@@ -3,7 +3,6 @@ package external
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/tool"
 )
 
@@ -151,7 +149,12 @@ func (h *Host) handleHostChat(msg *Message) {
 		return
 	}
 
-	prov, err := h.resolveProvider(params.Model)
+	if h.resolveProviderFn == nil {
+		h.respondError(*msg.ID, -32603, "provider resolver not available")
+		return
+	}
+
+	prov, err := h.resolveProviderFn(params.Model)
 	if err != nil {
 		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
 		return
@@ -211,7 +214,12 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 		return
 	}
 
-	prov, err := h.resolveProvider(params.Model)
+	if h.resolveProviderFn == nil {
+		h.respondError(*msg.ID, -32603, "provider resolver not available")
+		return
+	}
+
+	prov, err := h.resolveProviderFn(params.Model)
 	if err != nil {
 		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
 		return
@@ -457,39 +465,4 @@ func (h *Host) handleHostUndoRestore(msg *Message) {
 		return
 	}
 	h.respond(*msg.ID, struct{}{})
-}
-
-// resolveProvider creates a StreamProvider for the given model specifier.
-// Model can be "small", "default", or an explicit model ID.
-func (h *Host) resolveProvider(model string) (core.StreamProvider, error) {
-	auth, err := config.NewAuthDefault()
-	if err != nil {
-		return nil, fmt.Errorf("load auth: %w", err)
-	}
-
-	settings, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-
-	modelQuery := model
-	switch model {
-	case "", "default":
-		modelQuery = settings.ResolveDefaultModel()
-	case "small":
-		modelQuery = settings.ResolveSmallModel()
-	}
-	if modelQuery == "" {
-		return nil, fmt.Errorf("no model configured")
-	}
-
-	registry := provider.NewRegistry()
-	resolved, ok := registry.Resolve(modelQuery)
-	if !ok {
-		return nil, fmt.Errorf("unknown model: %s", modelQuery)
-	}
-
-	return registry.Create(resolved, func() string {
-		return auth.GetAPIKey(resolved.Provider)
-	})
 }
