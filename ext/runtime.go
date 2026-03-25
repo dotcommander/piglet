@@ -12,14 +12,10 @@ import (
 // CWD returns the working directory.
 func (a *App) CWD() string { return a.cwd }
 
-// SendMessage queues a user message for the agent as a follow-up.
+// SendMessage enqueues an ActionSendMessage that the TUI will pick up
+// and feed into the agent loop as a follow-up user message.
 func (a *App) SendMessage(content string) {
-	a.mu.RLock()
-	agent := a.agent
-	a.mu.RUnlock()
-	if agent != nil {
-		agent.FollowUp(&core.UserMessage{Content: content})
-	}
+	a.enqueue(ActionSendMessage{Content: content})
 }
 
 // Steer injects a steering message that interrupts the current turn.

@@ -128,6 +128,10 @@ func ActionDetachImage() *Action {
 	return &Action{Type: "detachImage"}
 }
 
+func ActionSendMessage(content string) *Action {
+	return &Action{Type: "sendMessage", Payload: map[string]string{"content": content}}
+}
+
 // ---------------------------------------------------------------------------
 // Host service types (extension → host requests)
 // ---------------------------------------------------------------------------
@@ -185,4 +189,29 @@ type HostToolInfo struct {
 type HostTool struct {
 	Name    string
 	Execute func(ctx context.Context, args map[string]any) (*ToolResult, error)
+}
+
+// SessionInfo describes a session returned by Sessions().
+type SessionInfo struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	CWD       string `json:"cwd"`
+	CreatedAt string `json:"createdAt"` // RFC3339
+	ParentID  string `json:"parentId,omitempty"`
+	Path      string `json:"path"`
+}
+
+// ExtInfo describes a loaded extension returned by ExtInfos().
+type ExtInfo struct {
+	Name          string   `json:"name"`
+	Version       string   `json:"version,omitempty"`
+	Kind          string   `json:"kind"`
+	Runtime       string   `json:"runtime,omitempty"`
+	Tools         []string `json:"tools,omitempty"`
+	Commands      []string `json:"commands,omitempty"`
+	Interceptors  []string `json:"interceptors,omitempty"`
+	EventHandlers []string `json:"eventHandlers,omitempty"`
+	Shortcuts     []string `json:"shortcuts,omitempty"`
+	MessageHooks  []string `json:"messageHooks,omitempty"`
+	Compactor     string   `json:"compactor,omitempty"`
 }

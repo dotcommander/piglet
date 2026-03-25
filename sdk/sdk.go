@@ -119,6 +119,11 @@ func (e *Extension) ShowMessage(text string) {
 	e.sendNotification("showMessage", map[string]string{"text": text})
 }
 
+// SendMessage injects a user message into the agent loop.
+func (e *Extension) SendMessage(content string) {
+	e.sendNotification("sendMessage", map[string]string{"content": content})
+}
+
 // Log sends a log message to the host.
 func (e *Extension) Log(level, msg string) {
 	e.sendNotification("log", map[string]string{"level": level, "message": msg})

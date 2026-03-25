@@ -144,6 +144,11 @@ type ShowMessageParams struct {
 	Text string `json:"text"`
 }
 
+// SendMessageParams is the payload for a sendMessage notification.
+type SendMessageParams struct {
+	Content string `json:"content"`
+}
+
 // ---------------------------------------------------------------------------
 // Command execution: host → extension (request/response)
 // ---------------------------------------------------------------------------
@@ -403,6 +408,104 @@ type HostAgentRunResult struct {
 	Usage HostTokenUsage `json:"usage"`
 }
 
+// ---------------------------------------------------------------------------
+// Host session service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostConversationMessagesResult is the host's response with raw message JSON.
+type HostConversationMessagesResult struct {
+	Messages json.RawMessage `json:"messages"`
+}
+
+// HostSessionsResult is the host's response with session summaries.
+type HostSessionsResult struct {
+	Sessions []WireSessionInfo `json:"sessions"`
+}
+
+// WireSessionInfo is the wire representation of a session summary.
+type WireSessionInfo struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	CWD       string `json:"cwd"`
+	CreatedAt string `json:"createdAt"` // RFC3339
+	ParentID  string `json:"parentId,omitempty"`
+	Path      string `json:"path"`
+}
+
+// HostLoadSessionParams requests loading a session by path.
+type HostLoadSessionParams struct {
+	Path string `json:"path"`
+}
+
+// HostForkSessionResult is the host's response after forking.
+type HostForkSessionResult struct {
+	ParentID     string `json:"parentID"`
+	MessageCount int    `json:"messageCount"`
+}
+
+// HostSetSessionTitleParams sets the current session's title.
+type HostSetSessionTitleParams struct {
+	Title string `json:"title"`
+}
+
+// HostSyncModelsResult is the host's response after syncing models.
+type HostSyncModelsResult struct {
+	Updated int `json:"updated"`
+}
+
+// HostRunBackgroundParams starts a background agent.
+type HostRunBackgroundParams struct {
+	Prompt string `json:"prompt"`
+}
+
+// HostIsBackgroundRunningResult is the host's response.
+type HostIsBackgroundRunningResult struct {
+	Running bool `json:"running"`
+}
+
+// ---------------------------------------------------------------------------
+// Host extension info service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostExtInfosResult is the host's response with loaded extension metadata.
+type HostExtInfosResult struct {
+	Extensions []WireExtInfo `json:"extensions"`
+}
+
+// WireExtInfo is the wire representation of an extension's metadata.
+type WireExtInfo struct {
+	Name          string   `json:"name"`
+	Version       string   `json:"version,omitempty"`
+	Kind          string   `json:"kind"`
+	Runtime       string   `json:"runtime,omitempty"`
+	Tools         []string `json:"tools,omitempty"`
+	Commands      []string `json:"commands,omitempty"`
+	Interceptors  []string `json:"interceptors,omitempty"`
+	EventHandlers []string `json:"eventHandlers,omitempty"`
+	Shortcuts     []string `json:"shortcuts,omitempty"`
+	MessageHooks  []string `json:"messageHooks,omitempty"`
+	Compactor     string   `json:"compactor,omitempty"`
+}
+
+// HostExtensionsDirResult is the host's response with the extensions directory.
+type HostExtensionsDirResult struct {
+	Path string `json:"path"`
+}
+
+// ---------------------------------------------------------------------------
+// Host undo service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostUndoSnapshotsResult is the host's response with undo snapshot info.
+type HostUndoSnapshotsResult struct {
+	Snapshots map[string]int `json:"snapshots"` // path → size in bytes
+}
+
+// HostUndoRestoreParams requests restoring a file from its undo snapshot.
+type HostUndoRestoreParams struct {
+	Path string `json:"path"`
+}
+
 // Method names
 const (
 	MethodInitialize            = "initialize"
@@ -424,14 +527,28 @@ const (
 	MethodEventDispatch         = "event/dispatch"
 	MethodShortcutHandle        = "shortcut/handle"
 	MethodMessageHookOnMessage  = "messageHook/onMessage"
-	MethodHostListTools         = "host/listTools"
-	MethodHostExecuteTool       = "host/executeTool"
-	MethodHostConfigGet         = "host/config.get"
-	MethodHostConfigReadExt     = "host/config.readExtension"
-	MethodHostAuthGetKey        = "host/auth.getKey"
-	MethodHostChat              = "host/chat"
-	MethodHostAgentRun          = "host/agent.run"
-	MethodNotify                = "notify"
+	MethodHostListTools              = "host/listTools"
+	MethodHostExecuteTool            = "host/executeTool"
+	MethodHostConfigGet              = "host/config.get"
+	MethodHostConfigReadExt          = "host/config.readExtension"
+	MethodHostAuthGetKey             = "host/auth.getKey"
+	MethodHostChat                   = "host/chat"
+	MethodHostAgentRun               = "host/agent.run"
+	MethodHostConversationMessages   = "host/conversationMessages"
+	MethodHostSessions               = "host/sessions"
+	MethodHostLoadSession            = "host/loadSession"
+	MethodHostForkSession            = "host/forkSession"
+	MethodHostSetSessionTitle        = "host/setSessionTitle"
+	MethodHostSyncModels             = "host/syncModels"
+	MethodHostRunBackground          = "host/runBackground"
+	MethodHostCancelBackground       = "host/cancelBackground"
+	MethodHostIsBackgroundRunning    = "host/isBackgroundRunning"
+	MethodHostExtInfos               = "host/extInfos"
+	MethodHostExtensionsDir          = "host/extensionsDir"
+	MethodHostUndoSnapshots          = "host/undoSnapshots"
+	MethodHostUndoRestore            = "host/undoRestore"
+	MethodNotify                     = "notify"
 	MethodLog                   = "log"
 	MethodShowMessage           = "showMessage"
+	MethodSendMessage           = "sendMessage"
 )

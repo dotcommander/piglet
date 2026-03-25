@@ -43,6 +43,9 @@ type ActionAttachImage struct{ Image any }
 // ActionDetachImage removes a pending image attachment.
 type ActionDetachImage struct{}
 
+// ActionSendMessage injects a user message into the agent loop.
+type ActionSendMessage struct{ Content string }
+
 // ActionExec hands the terminal to an external process (e.g., $EDITOR).
 // Cmd is typed as any to avoid importing os/exec from ext/.
 // The TUI asserts *exec.Cmd and uses tea.ExecProcess.
@@ -58,4 +61,5 @@ func (ActionSetSessionTitle) isAction() {}
 func (ActionRunAsync) isAction()        {}
 func (ActionAttachImage) isAction()     {}
 func (ActionDetachImage) isAction()     {}
+func (ActionSendMessage) isAction()     {}
 func (ActionExec) isAction()            {}

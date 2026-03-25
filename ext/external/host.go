@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/provider"
+	"github.com/dotcommander/piglet/tool"
 )
 
 // Host manages a single external extension process.
@@ -478,6 +480,11 @@ func (h *Host) handleMessage(msg *Message) {
 		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
 			h.app.ShowMessage(p.Text)
 		}
+	case MethodSendMessage:
+		var p SendMessageParams
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.SendMessage(p.Content)
+		}
 	case MethodLog:
 		var p LogParams
 		if json.Unmarshal(msg.Params, &p) == nil {
@@ -505,6 +512,32 @@ func (h *Host) handleRequest(msg *Message) {
 		go h.handleHostChat(msg) // may be slow (LLM call)
 	case MethodHostAgentRun:
 		go h.handleHostAgentRun(msg) // may be slow (agent loop)
+	case MethodHostConversationMessages:
+		h.handleHostConversationMessages(msg)
+	case MethodHostSessions:
+		h.handleHostSessions(msg)
+	case MethodHostLoadSession:
+		h.handleHostLoadSession(msg)
+	case MethodHostForkSession:
+		h.handleHostForkSession(msg)
+	case MethodHostSetSessionTitle:
+		h.handleHostSetSessionTitle(msg)
+	case MethodHostSyncModels:
+		h.handleHostSyncModels(msg)
+	case MethodHostRunBackground:
+		h.handleHostRunBackground(msg)
+	case MethodHostCancelBackground:
+		h.handleHostCancelBackground(msg)
+	case MethodHostIsBackgroundRunning:
+		h.handleHostIsBackgroundRunning(msg)
+	case MethodHostExtInfos:
+		h.handleHostExtInfos(msg)
+	case MethodHostExtensionsDir:
+		h.handleHostExtensionsDir(msg)
+	case MethodHostUndoSnapshots:
+		h.handleHostUndoSnapshots(msg)
+	case MethodHostUndoRestore:
+		h.handleHostUndoRestore(msg)
 	default:
 		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
 	}
@@ -748,6 +781,203 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 		Turns: turns,
 		Usage: HostTokenUsage{Input: totalIn, Output: totalOut},
 	})
+}
+
+func (h *Host) handleHostConversationMessages(msg *Message) {
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	msgs := h.app.ConversationMessages()
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "marshal messages: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, HostConversationMessagesResult{Messages: data})
+}
+
+func (h *Host) handleHostSessions(msg *Message) {
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	summaries, err := h.app.Sessions()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "sessions: "+err.Error())
+		return
+	}
+	infos := make([]WireSessionInfo, len(summaries))
+	for i, s := range summaries {
+		infos[i] = WireSessionInfo{
+			ID:        s.ID,
+			Title:     s.Title,
+			CWD:       s.CWD,
+			CreatedAt: s.CreatedAt.Format(time.RFC3339),
+			ParentID:  s.ParentID,
+			Path:      s.Path,
+		}
+	}
+	h.respond(*msg.ID, HostSessionsResult{Sessions: infos})
+}
+
+func (h *Host) handleHostLoadSession(msg *Message) {
+	var params HostLoadSessionParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	if err := h.app.LoadSession(params.Path); err != nil {
+		h.respondError(*msg.ID, -32603, "load session: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostForkSession(msg *Message) {
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	parentID, count, err := h.app.ForkSession()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "fork session: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, HostForkSessionResult{ParentID: parentID, MessageCount: count})
+}
+
+func (h *Host) handleHostSetSessionTitle(msg *Message) {
+	var params HostSetSessionTitleParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	if err := h.app.SetSessionTitle(params.Title); err != nil {
+		h.respondError(*msg.ID, -32603, "set session title: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostSyncModels(msg *Message) {
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	updated, err := h.app.SyncModels()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "sync models: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, HostSyncModelsResult{Updated: updated})
+}
+
+func (h *Host) handleHostRunBackground(msg *Message) {
+	var params HostRunBackgroundParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return
+	}
+	if err := h.app.RunBackground(params.Prompt); err != nil {
+		h.respondError(*msg.ID, -32603, "run background: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostCancelBackground(msg *Message) {
+	if h.app != nil {
+		h.app.CancelBackground()
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostIsBackgroundRunning(msg *Message) {
+	running := h.app != nil && h.app.IsBackgroundRunning()
+	h.respond(*msg.ID, HostIsBackgroundRunningResult{Running: running})
+}
+
+func (h *Host) handleHostExtInfos(msg *Message) {
+	if h.app == nil {
+		h.respond(*msg.ID, HostExtInfosResult{})
+		return
+	}
+	infos := h.app.ExtInfos()
+	wires := make([]WireExtInfo, len(infos))
+	for i, info := range infos {
+		wires[i] = WireExtInfo{
+			Name:          info.Name,
+			Version:       info.Version,
+			Kind:          info.Kind,
+			Runtime:       info.Runtime,
+			Tools:         info.Tools,
+			Commands:      info.Commands,
+			Interceptors:  info.Interceptors,
+			EventHandlers: info.EventHandlers,
+			Shortcuts:     info.Shortcuts,
+			MessageHooks:  info.MessageHooks,
+			Compactor:     info.Compactor,
+		}
+	}
+	h.respond(*msg.ID, HostExtInfosResult{Extensions: wires})
+}
+
+func (h *Host) handleHostExtensionsDir(msg *Message) {
+	dir, err := ExtensionsDir()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "extensions dir: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, HostExtensionsDirResult{Path: dir})
+}
+
+func (h *Host) handleHostUndoSnapshots(msg *Message) {
+	snapshots, err := tool.UndoSnapshots()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "undo snapshots: "+err.Error())
+		return
+	}
+	sizes := make(map[string]int, len(snapshots))
+	for path, data := range snapshots {
+		sizes[path] = len(data)
+	}
+	h.respond(*msg.ID, HostUndoSnapshotsResult{Snapshots: sizes})
+}
+
+func (h *Host) handleHostUndoRestore(msg *Message) {
+	var params HostUndoRestoreParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+	snapshots, err := tool.UndoSnapshots()
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "undo snapshots: "+err.Error())
+		return
+	}
+	data, ok := snapshots[params.Path]
+	if !ok {
+		h.respondError(*msg.ID, -32604, "no snapshot for path: "+params.Path)
+		return
+	}
+	if err := os.WriteFile(params.Path, data, 0600); err != nil {
+		h.respondError(*msg.ID, -32603, "write file: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
 }
 
 // resolveProvider creates a StreamProvider for the given model specifier.

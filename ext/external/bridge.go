@@ -89,7 +89,6 @@ func bridge(app *ext.App, h *Host) {
 	for _, c := range commands {
 		info.Commands = append(info.Commands, c.Name)
 	}
-	app.RegisterExtInfo(info)
 	// Register tools
 	for _, t := range tools {
 		app.RegisterTool(&ext.ToolDef{
@@ -172,6 +171,9 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.Compactor = cp.Name
 	}
+
+	// Register extension metadata after all fields are populated
+	app.RegisterExtInfo(info)
 }
 
 // proxyToolExecute returns a ToolExecuteFn that proxies to the extension process.
@@ -355,6 +357,10 @@ func actionResultToAction(ar *ActionResult) ext.Action {
 		return ext.ActionAttachImage{Image: &core.ImageContent{Data: p.Data, MimeType: p.MimeType}}
 	case "detachImage":
 		return ext.ActionDetachImage{}
+	case "sendMessage":
+		var p struct{ Content string }
+		_ = json.Unmarshal(ar.Payload, &p)
+		return ext.ActionSendMessage{Content: p.Content}
 	default:
 		slog.Debug("unknown action type from extension", "type", ar.Type)
 		return nil
