@@ -20,7 +20,6 @@ import (
 	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/modelsdev"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -78,15 +77,9 @@ type runtime struct {
 	sessDir  string
 }
 
-// writeModelsYAML tries models.dev API first, falls back to hardcoded default.
+// writeModelsYAML writes the default model catalog. The modelsdev extension
+// enriches it with live API data on first interactive startup.
 func writeModelsYAML(path string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	yaml, err := modelsdev.GenerateModelsYAML(ctx)
-	if err == nil {
-		return provider.WriteModelsData(path, yaml)
-	}
-	fmt.Fprintf(os.Stderr, "  models.dev unavailable, using defaults: %v\n", err)
 	return provider.WriteDefaultModels(path)
 }
 
@@ -190,16 +183,6 @@ func loadRuntime(debugFlag bool) (*runtime, func(), error) {
 	}
 
 	registry := provider.NewRegistry()
-
-	if modelsdev.CacheStale() {
-		go func() {
-			rCtx, rCancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer rCancel()
-			if err := modelsdev.RefreshCache(rCtx, registry); err != nil {
-				fmt.Fprintf(os.Stderr, "models.dev refresh: %v\n", err)
-			}
-		}()
-	}
 
 	if selfupdate.CheckStale() {
 		go func() {

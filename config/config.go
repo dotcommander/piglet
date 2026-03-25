@@ -90,7 +90,7 @@ const defaultExtensionsRepoURL = "https://github.com/dotcommander/piglet-extensi
 
 var defaultOfficialExtensions = []string{
 	"safeguard", "rtk", "autotitle", "clipboard", "skill",
-	"memory", "subagent", "lsp", "repomap", "plan", "bulk",
+	"memory", "subagent", "lsp", "repomap", "plan", "bulk", "modelsdev",
 }
 
 // ExtensionSettings controls extension installation defaults.

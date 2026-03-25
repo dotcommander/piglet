@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"github.com/dotcommander/piglet/modelsdev"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
 )
@@ -107,5 +105,5 @@ func (m *modelMgr) Switch(id string) (core.Model, core.StreamProvider, error) {
 }
 
 func (m *modelMgr) Sync() (int, error) {
-	return modelsdev.Sync(context.Background(), m.registry, m.auth)
+	return m.registry.ReloadModels()
 }

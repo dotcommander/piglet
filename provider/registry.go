@@ -21,7 +21,7 @@ type Registry struct {
 // NewRegistry creates a registry, loading models from ~/.config/piglet/models.yaml.
 func NewRegistry() *Registry {
 	r := &Registry{models: make(map[string]core.Model)}
-	if err := r.loadModels(); err != nil {
+	if _, err := r.loadModels(); err != nil {
 		// Non-fatal: registry starts empty, user gets "unknown model" errors
 		fmt.Fprintf(os.Stderr, "warning: load models: %v\n", err)
 	}
@@ -136,10 +136,10 @@ type modelEntry struct {
 	MaxTokens     int    `yaml:"maxTokens"`
 }
 
-func (r *Registry) loadModels() error {
+func (r *Registry) loadModels() (int, error) {
 	path, err := config.ModelsPath()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	data, err := os.ReadFile(path)
@@ -148,13 +148,13 @@ func (r *Registry) loadModels() error {
 			// Fall back to embedded defaults
 			data = []byte(DefaultModelsYAML())
 		} else {
-			return fmt.Errorf("read models: %w", err)
+			return 0, fmt.Errorf("read models: %w", err)
 		}
 	}
 
 	var file modelsFile
 	if err := yaml.Unmarshal(data, &file); err != nil {
-		return fmt.Errorf("parse models.yaml: %w", err)
+		return 0, fmt.Errorf("parse models.yaml: %w", err)
 	}
 
 	r.mu.Lock()
@@ -173,7 +173,12 @@ func (r *Registry) loadModels() error {
 		r.models[modelKey(m.Provider, m.ID)] = m
 	}
 
-	return nil
+	return len(file.Models), nil
+}
+
+// ReloadModels re-reads models.yaml from disk, replacing in-memory entries.
+func (r *Registry) ReloadModels() (int, error) {
+	return r.loadModels()
 }
 
 func parseAPI(s string) core.API {

@@ -2,6 +2,20 @@
 
 Extension-first TUI coding assistant. Go 1.26.x · Module: `github.com/dotcommander/piglet`
 
+## Why Piglet Exists
+
+Piglet is **orchestration, not features.** It is a minimal agent engine — provider-agnostic, extension-first — where every capability beyond "stream LLM, execute tools, repeat" lives in an extension.
+
+Existing AI coding assistants (Claude Code, Cursor, etc.) are closed, single-provider, and non-extensible at the architecture level. They are vendor tools for vendor models. Piglet inverts that:
+
+- **Pure orchestration** — The core is an agent loop, streaming, and types. ~1,300 lines. It does not know about files, git, memory, or code. Extensions provide all of that.
+- **Provider-agnostic** — Switch between Anthropic, OpenAI, Google, xAI, Groq, OpenRouter, or local models mid-session. No vendor lock.
+- **Extension-first** — Built-in tools use the same `ext.App` API as external extensions. Nothing is privileged. Any behavior can be replaced, intercepted, or augmented.
+- **Terminal-resident** — Lives where the work happens. No browser, no IDE plugin dependency. Sessions persist across days.
+- **User-owned** — All prompts, behavior, skills, and memory live in `~/.config/piglet/` as plain files. Go code reads config; it never contains content.
+
+The core is frozen at 16 events and 5 primitives. The answer to "how do I add X?" is always "write an extension." Piglet must remain small. Features are extensions. If it can't be an extension, question whether it belongs.
+
 ## Architecture: Extension-First (Extension-Only If We Could)
 
 Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Additional extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
@@ -45,6 +59,9 @@ tui/, cmd/  → anything (wiring layer)
 | `plan` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
 | `bulk` | 1 tool, 1 prompt section |
 | `mcp` | dynamic tools, 1 command, 1 prompt section |
+| `gitcontext` | 1 prompt section |
+| `prompts` | dynamic commands |
+| `modelsdev` | 1 event handler (OnInit: syncs model metadata from models.dev API) |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
 
