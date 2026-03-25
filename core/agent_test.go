@@ -617,7 +617,18 @@ func TestAgentAutoCompact(t *testing.T) {
 		CompactAt: 8000,
 		OnCompact: func(ctx context.Context, msgs []core.Message) ([]core.Message, error) {
 			compactCalled++
-			return core.CompactMessages(msgs, "Summary of earlier conversation."), nil
+			// Inline compaction: keep first + summary + last 6
+			const keepRecent = 6
+			if len(msgs) <= keepRecent+1 {
+				return msgs, nil
+			}
+			result := make([]core.Message, 0, keepRecent+2)
+			result = append(result, msgs[0])
+			result = append(result, &core.AssistantMessage{
+				Content: []core.AssistantContent{core.TextContent{Text: "Summary of earlier conversation."}},
+			})
+			result = append(result, msgs[len(msgs)-keepRecent:]...)
+			return result, nil
 		},
 	})
 

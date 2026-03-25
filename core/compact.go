@@ -95,20 +95,3 @@ func (a *Agent) enforceMessageCap() {
 	a.messages = trimmed
 }
 
-// CompactMessages keeps first message + summary + last keepRecent messages.
-// Used by both auto-compact (with LLM summary) and /compact command (with placeholder).
-func CompactMessages(msgs []Message, summary string) []Message {
-	const keepRecent = 6
-	if len(msgs) <= keepRecent+1 {
-		return msgs
-	}
-
-	result := make([]Message, 0, keepRecent+2)
-	result = append(result, msgs[0])
-	result = append(result, &AssistantMessage{
-		Content:   []AssistantContent{TextContent{Text: summary}},
-		Timestamp: time.Now(),
-	})
-	result = append(result, msgs[len(msgs)-keepRecent:]...)
-	return result
-}

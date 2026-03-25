@@ -56,22 +56,32 @@ type App struct {
 	isBackgroundRunning func() bool
 }
 
-// AgentAPI is the subset of *core.Agent that the extension runtime needs.
-// Using an interface keeps ext/ from depending on agent implementation details.
-type AgentAPI interface {
-	Steer(msg core.Message)
-	FollowUp(msg core.Message)
-	SetTools(tools []core.Tool)
-	SetModel(m core.Model)
-	SetProvider(p core.StreamProvider)
-	SetTurnContext(ctx []string)
+// AgentReader provides read-only access to agent state.
+type AgentReader interface {
 	Messages() []core.Message
-	IsRunning() bool
 	StepMode() bool
-	SetStepMode(on bool)
-	SetMessages(msgs []core.Message)
 	Provider() core.StreamProvider
 	System() string
+}
+
+// AgentWriter provides mutation access to the agent.
+type AgentWriter interface {
+	Steer(msg core.Message)
+	FollowUp(msg core.Message)
+	SetModel(m core.Model)
+	SetProvider(p core.StreamProvider)
+	SetMessages(msgs []core.Message)
+	SetStepMode(on bool)
+}
+
+// AgentAPI is the subset of *core.Agent that the extension runtime needs.
+// Using an interface keeps ext/ from depending on agent implementation details.
+//
+// Removed from interface (used only via *core.Agent in tui/ and cmd/):
+//   - SetTools, SetTurnContext, IsRunning
+type AgentAPI interface {
+	AgentReader
+	AgentWriter
 }
 
 // NewApp creates an extension App for the given working directory.
