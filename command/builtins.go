@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -30,19 +29,8 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerClear(app)
 	registerStep(app)
 	registerCompact(app)
-	registerExport(app)
-	registerExtensions(app)
-	registerExtInit(app)
 	registerModel(app)
 	registerSession(app)
-	registerModelsSync(app)
-	registerBranch(app)
-	registerBg(app)
-	registerBgCancel(app)
-	registerSearch(app)
-	registerTitle(app)
-	registerUndo(app)
-	registerConfig(app)
 	registerUpdate(app)
 	registerUpgrade(app, version)
 	registerQuit(app)
@@ -56,28 +44,24 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 		keys[action] = key
 	}
 
-	app.RegisterShortcut(&ext.Shortcut{
-		Key:         keys[shortcutModel],
-		Description: "Open model selector",
-		Handler: func(a *ext.App) (ext.Action, error) {
-			cmds := a.Commands()
-			if cmd, ok := cmds[shortcutModel]; ok {
-				return nil, cmd.Handler("", a)
-			}
-			return nil, nil
-		},
-	})
-	app.RegisterShortcut(&ext.Shortcut{
-		Key:         keys[shortcutSession],
-		Description: "Open session picker",
-		Handler: func(a *ext.App) (ext.Action, error) {
-			cmds := a.Commands()
-			if cmd, ok := cmds[shortcutSession]; ok {
-				return nil, cmd.Handler("", a)
-			}
-			return nil, nil
-		},
-	})
+	for _, sc := range []struct {
+		action, desc string
+	}{
+		{shortcutModel, "Open model selector"},
+		{shortcutSession, "Open session picker"},
+	} {
+		cmdName := sc.action
+		app.RegisterShortcut(&ext.Shortcut{
+			Key:         keys[sc.action],
+			Description: sc.desc,
+			Handler: func(a *ext.App) (ext.Action, error) {
+				if cmd, ok := a.Commands()[cmdName]; ok {
+					return nil, cmd.Handler("", a)
+				}
+				return nil, nil
+			},
+		})
+	}
 }
 
 func registerStatusSections(app *ext.App) {
@@ -174,30 +158,9 @@ func registerCompact(app *ext.App) {
 
 			// Fallback: static summary
 			summary := fmt.Sprintf("[%d earlier messages compacted]", len(msgs)-7)
-			compacted := core.CompactMessages(msgs, summary)
+			compacted := compactMessages(msgs, summary)
 			a.SetConversationMessages(compacted)
 			a.ShowMessage(fmt.Sprintf("Compacted: %d → %d messages", before, len(compacted)))
-			return nil
-		},
-	})
-}
-
-func registerExport(app *ext.App) {
-	app.RegisterCommand(&ext.Command{
-		Name:        "export",
-		Description: "Export conversation",
-		Handler: func(args string, a *ext.App) error {
-			msgs := a.ConversationMessages()
-			if len(msgs) == 0 {
-				a.ShowMessage("No messages to export")
-				return nil
-			}
-			path := fmt.Sprintf("piglet-export-%s.md", time.Now().Format("20060102-150405"))
-			if err := exportMarkdown(msgs, path); err != nil {
-				a.ShowMessage("Export failed: " + err.Error())
-				return nil
-			}
-			a.ShowMessage("Exported to " + path)
 			return nil
 		},
 	})
@@ -214,66 +177,19 @@ func registerQuit(app *ext.App) {
 	})
 }
 
-func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
-	items := make([]ext.PickerItem, len(summaries))
-	for i, s := range summaries {
-		label := s.Title
-		if label == "" {
-			label = s.ID[:8]
-		}
-		desc := s.CreatedAt.Format("2006-01-02 15:04")
-		if s.CWD != "" {
-			desc += " — " + s.CWD
-		}
-		if s.ParentID != "" {
-			parentShort := s.ParentID
-			if len(parentShort) > 8 {
-				parentShort = parentShort[:8]
-			}
-			desc += " (forked from " + parentShort + ")"
-		}
-		items[i] = ext.PickerItem{
-			ID:    s.Path,
-			Label: label,
-			Desc:  desc,
-		}
+// compactMessages keeps first message + summary + last 6 messages.
+// This is the static fallback when no extension compactor is registered.
+func compactMessages(msgs []core.Message, summary string) []core.Message {
+	const keepRecent = 6
+	if len(msgs) <= keepRecent+1 {
+		return msgs
 	}
-	return items
-}
-
-func exportMarkdown(messages []core.Message, path string) error {
-	var b strings.Builder
-	b.WriteString("# Piglet Conversation\n\n")
-
-	for _, msg := range messages {
-		switch m := msg.(type) {
-		case *core.UserMessage:
-			b.WriteString("## User\n\n")
-			b.WriteString(m.Content)
-			b.WriteString("\n\n")
-		case *core.AssistantMessage:
-			b.WriteString("## Assistant\n\n")
-			for _, c := range m.Content {
-				switch tc := c.(type) {
-				case core.TextContent:
-					b.WriteString(tc.Text)
-				case core.ThinkingContent:
-					b.WriteString("<details><summary>Thinking</summary>\n\n")
-					b.WriteString(tc.Thinking)
-					b.WriteString("\n</details>")
-				}
-			}
-			b.WriteString("\n\n")
-		case *core.ToolResultMessage:
-			fmt.Fprintf(&b, "### Tool: %s\n\n", m.ToolName)
-			for _, c := range m.Content {
-				if tc, ok := c.(core.TextContent); ok {
-					b.WriteString(tc.Text)
-				}
-			}
-			b.WriteString("\n\n")
-		}
-	}
-
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	result := make([]core.Message, 0, keepRecent+2)
+	result = append(result, msgs[0])
+	result = append(result, &core.AssistantMessage{
+		Content:   []core.AssistantContent{core.TextContent{Text: summary}},
+		Timestamp: time.Now(),
+	})
+	result = append(result, msgs[len(msgs)-keepRecent:]...)
+	return result
 }

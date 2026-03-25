@@ -216,7 +216,6 @@ func run() error {
 		GrepLimit: settings.Tools.GrepLimit,
 	})
 	command.RegisterBuiltins(app, settings.Shortcuts, resolveVersion())
-	command.RegisterPrompts(app)
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
@@ -225,19 +224,8 @@ func run() error {
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
 
-	// Core behavioral guidelines (tool usage, output style, safety)
-	prompt.RegisterBehavior(app)
-
 	// Project docs (configurable context files → system prompt)
 	prompt.RegisterProjectDocs(app, settings.ProjectDocs)
-
-	// Git context (diff + recent commits in system prompt)
-	prompt.RegisterGitContext(app, prompt.GitContextConfig{
-		MaxDiffStatFiles: settings.Git.MaxDiffStatFiles,
-		MaxLogLines:      settings.Git.MaxLogLines,
-		MaxDiffHunkLines: settings.Git.MaxDiffHunkLines,
-		CommandTimeout:   time.Duration(settings.Git.CommandTimeout) * time.Second,
-	})
 
 	// External extensions (TypeScript, Python, etc.)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
