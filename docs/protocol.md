@@ -224,6 +224,71 @@ Writes to the host's log file.
 
 These are requests that extensions can send to the host during runtime.
 
+### Config & Auth
+
+### `host/config.get` (Request)
+Reads one or more configuration values from the host.
+
+**Params:**
+- `keys` (string[]): Configuration keys to retrieve.
+
+**Response (Result):**
+- `values` (object): Key→value map of the requested configuration.
+
+### `host/config.readExtension` (Request)
+Reads the extension configuration file at `~/.config/piglet/<name>.md`.
+
+**Params:**
+- `name` (string): Extension name.
+
+**Response (Result):**
+- `content` (string): Markdown content of the extension config file.
+
+### `host/auth.getKey` (Request)
+Retrieves an authentication key for a provider.
+
+**Params:**
+- `provider` (string): Provider name (e.g. "openai", "anthropic").
+
+**Response (Result):**
+- `key` (string): The authentication key.
+
+---
+
+### LLM Access
+
+### `host/chat` (Request)
+Performs a single-turn LLM call.
+
+**Params:**
+- `system` (string, optional): System prompt.
+- `messages` (array): Array of `{ "role": "...", "content": "..." }` objects.
+- `model` (string, optional): Model to use — "small", "default", or an explicit model ID.
+- `maxTokens` (integer, optional): Maximum output tokens.
+
+**Response (Result):**
+- `text` (string): The model's response.
+- `usage` (object): `{ "input": N, "output": N }` token counts.
+
+### `host/agent.run` (Request)
+Runs a full agent loop with tool use.
+
+**Params:**
+- `system` (string, optional): System prompt.
+- `task` (string): The task or prompt to execute.
+- `tools` (string, optional): Tool access — "background_safe" or "all".
+- `model` (string, optional): Model to use.
+- `maxTurns` (integer, optional): Maximum agent turns.
+
+**Response (Result):**
+- `text` (string): Final agent response.
+- `turns` (integer): Number of turns taken.
+- `usage` (object): `{ "input": N, "output": N }` total token counts.
+
+---
+
+### Tools
+
 ### `host/listTools` (Request)
 Lists all tools available on the host (core tools + other extensions).
 
@@ -243,6 +308,130 @@ Executes a tool on the host.
 **Response (Result):**
 - `content` (array): [Content Blocks](#content-blocks).
 - `isError` (boolean): Whether execution failed.
+
+---
+
+### Session Management
+
+### `host/conversationMessages` (Request)
+Returns the current conversation's message history.
+
+**Params:** None.
+
+**Response (Result):**
+- `messages` (array): Raw JSON array of conversation messages.
+
+### `host/sessions` (Request)
+Lists all available sessions.
+
+**Params:** None.
+
+**Response (Result):**
+- `sessions` (array): Array of `{ "id": "...", "title": "...", "cwd": "...", "createdAt": "...", "parentId": "...", "path": "..." }` objects (`parentId` is optional).
+
+### `host/loadSession` (Request)
+Loads a session from a file path.
+
+**Params:**
+- `path` (string): Path to the session file.
+
+**Response (Result):** Empty.
+
+### `host/forkSession` (Request)
+Forks the current session into a new child session.
+
+**Params:** None.
+
+**Response (Result):**
+- `parentID` (string): ID of the parent session.
+- `messageCount` (integer): Number of messages copied to the fork.
+
+### `host/setSessionTitle` (Request)
+Updates the current session's title.
+
+**Params:**
+- `title` (string): New session title.
+
+**Response (Result):** Empty.
+
+---
+
+### Models
+
+### `host/syncModels` (Request)
+Syncs the model catalog from models.dev.
+
+**Params:** None.
+
+**Response (Result):**
+- `updated` (integer): Number of models updated.
+
+---
+
+### Background Agent
+
+### `host/runBackground` (Request)
+Starts a background agent with the given prompt.
+
+**Params:**
+- `prompt` (string): The prompt to run in the background.
+
+**Response (Result):** Empty.
+
+### `host/cancelBackground` (Request)
+Cancels the currently running background agent.
+
+**Params:** None.
+
+**Response (Result):** Empty.
+
+### `host/isBackgroundRunning` (Request)
+Checks whether a background agent is currently running.
+
+**Params:** None.
+
+**Response (Result):**
+- `running` (boolean): Whether a background agent is active.
+
+---
+
+### Extensions
+
+### `host/extInfos` (Request)
+Returns metadata about all loaded extensions.
+
+**Params:** None.
+
+**Response (Result):**
+- `extensions` (array): Array of `{ "name": "...", "version": "...", "kind": "...", "runtime": "...", "tools": [...], "commands": [...], "interceptors": [...], "eventHandlers": [...], "shortcuts": [...], "messageHooks": [...], "compactor": ... }` objects (all fields except `name` and `kind` are optional).
+
+### `host/extensionsDir` (Request)
+Returns the path to the extensions directory.
+
+**Params:** None.
+
+**Response (Result):**
+- `path` (string): Absolute path to `~/.config/piglet/extensions/`.
+
+---
+
+### Undo
+
+### `host/undoSnapshots` (Request)
+Lists all available undo snapshots (files with pending undo state).
+
+**Params:** None.
+
+**Response (Result):**
+- `snapshots` (object): Map of file path → snapshot size in bytes.
+
+### `host/undoRestore` (Request)
+Restores a file from its undo snapshot.
+
+**Params:**
+- `path` (string): Path of the file to restore.
+
+**Response (Result):** Empty.
 
 ---
 

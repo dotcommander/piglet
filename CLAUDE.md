@@ -25,7 +25,7 @@ tui/, cmd/  → anything (wiring layer)
 |------|-------|--------|-----|
 | Tools | 7 | `tool/` | `RegisterTool` |
 | Commands | 9 | `command/` | `RegisterCommand` |
-| Shortcuts | 2 | `command/` | `RegisterShortcut` |
+| Shortcuts | 1 | `command/` | `RegisterShortcut` |
 | Status sections | 5 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
 
