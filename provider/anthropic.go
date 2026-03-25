@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -120,24 +119,12 @@ func (p *Anthropic) buildRequest(req core.StreamRequest) ([]byte, error) {
 }
 
 func (p *Anthropic) convertMessages(req core.StreamRequest) []antMessage {
-	var msgs []antMessage
-
-	for _, m := range req.Messages {
-		switch msg := m.(type) {
-		case *core.UserMessage:
-			msgs = append(msgs, p.convertUserMessage(msg))
-		case *core.AssistantMessage:
-			msgs = append(msgs, p.convertAssistantMessage(msg))
-		case *core.ToolResultMessage:
-			msgs = append(msgs, p.convertToolResult(msg))
-		}
-	}
-
-	// Add cache breakpoint on the second-to-last user-role message.
-	// This enables incremental caching: on the next turn, the entire
-	// conversation prefix up to this point is a cache hit.
+	msgs := convertMessageList(req.Messages, messageConverters[antMessage]{
+		User:       p.convertUserMessage,
+		Assistant:  p.convertAssistantMessage,
+		ToolResult: p.convertToolResult,
+	})
 	addConversationCacheBreakpoint(msgs)
-
 	return msgs
 }
 
@@ -180,25 +167,19 @@ func (p *Anthropic) convertUserMessage(msg *core.UserMessage) antMessage {
 		return antMessage{Role: "user", Content: msg.Content}
 	}
 
-	var blocks []antBlock
-	if msg.Content != "" {
-		blocks = append(blocks, antBlock{Type: "text", Text: msg.Content})
-	}
-	for _, b := range msg.Blocks {
-		switch c := b.(type) {
-		case core.TextContent:
-			blocks = append(blocks, antBlock{Type: "text", Text: c.Text})
-		case core.ImageContent:
-			blocks = append(blocks, antBlock{
+	blocks := decodeUserBlocks(msg,
+		func(text string) antBlock { return antBlock{Type: "text", Text: text} },
+		func(img core.ImageContent) antBlock {
+			return antBlock{
 				Type: "image",
 				Source: &antImageSource{
 					Type:      "base64",
-					MediaType: c.MimeType,
-					Data:      c.Data,
+					MediaType: img.MimeType,
+					Data:      img.Data,
 				},
-			})
-		}
-	}
+			}
+		},
+	)
 
 	return antMessage{Role: "user", Content: blocks}
 }
@@ -235,19 +216,13 @@ func (p *Anthropic) convertToolResult(msg *core.ToolResultMessage) antMessage {
 }
 
 func (p *Anthropic) convertTools(tools []core.ToolSchema) []antTool {
-	out := make([]antTool, 0, len(tools))
-	for _, t := range tools {
-		schema := t.Parameters
-		if schema == nil {
-			schema = map[string]any{"type": "object"}
+	return convertToolSchemas(tools, func(name, desc string, params any) antTool {
+		return antTool{
+			Name:        name,
+			Description: desc,
+			InputSchema: params,
 		}
-		out = append(out, antTool{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: schema,
-		})
-	}
-	return out
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -317,24 +292,10 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder)
 
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
-			return msg
-		default:
-		}
-
-		line := scanner.Text()
-		data := extractSSEData(line)
-		if data == "" {
-			continue
-		}
-
+	scanSSE(ctx, reader, ch, func(data string) {
 		var evt antStreamEvent
 		if err := json.Unmarshal([]byte(data), &evt); err != nil {
-			continue
+			return
 		}
 
 		switch evt.Type {
@@ -364,7 +325,7 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 			if evt.Delta != nil {
 				var delta antDelta
 				if err := json.Unmarshal(evt.Delta, &delta); err != nil {
-					continue
+					return
 				}
 
 				switch delta.Type {
@@ -396,7 +357,7 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 				}
 			}
 		}
-	}
+	})
 
 	// Finalize tool arguments
 	for idx, builder := range toolArgs {
@@ -426,15 +387,12 @@ func (p *Anthropic) finalizeToolArgs(msg *core.AssistantMessage, idx int, argsJS
 	}
 }
 
+var antStopReasons = map[string]core.StopReason{
+	"end_turn":   core.StopReasonStop,
+	"max_tokens": core.StopReasonLength,
+	"tool_use":   core.StopReasonTool,
+}
+
 func (p *Anthropic) mapStopReason(reason string) core.StopReason {
-	switch reason {
-	case "end_turn":
-		return core.StopReasonStop
-	case "max_tokens":
-		return core.StopReasonLength
-	case "tool_use":
-		return core.StopReasonTool
-	default:
-		return core.StopReasonStop
-	}
+	return mapStopReasonFromTable(reason, antStopReasons)
 }

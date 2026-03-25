@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -109,6 +110,139 @@ type Debuggable interface {
 
 type debugLogger interface {
 	debugLog() *slog.Logger
+}
+
+// convertToolSchemas iterates tool schemas, normalises nil parameters,
+// and calls build to produce provider-specific tool definitions.
+func convertToolSchemas[T any](tools []core.ToolSchema, build func(name, desc string, params any) T) []T {
+	out := make([]T, 0, len(tools))
+	for _, t := range tools {
+		params := t.Parameters
+		if params == nil {
+			params = map[string]any{"type": "object"}
+		}
+		out = append(out, build(t.Name, t.Description, params))
+	}
+	return out
+}
+
+// messageConverters holds per-type callbacks for converting core messages
+// to a provider-specific wire type.
+type messageConverters[T any] struct {
+	User       func(*core.UserMessage) T
+	Assistant  func(*core.AssistantMessage) T
+	ToolResult func(*core.ToolResultMessage) T
+}
+
+// convertMessageList applies the appropriate converter for each message type.
+func convertMessageList[T any](msgs []core.Message, conv messageConverters[T]) []T {
+	var out []T
+	for _, m := range msgs {
+		switch msg := m.(type) {
+		case *core.UserMessage:
+			out = append(out, conv.User(msg))
+		case *core.AssistantMessage:
+			out = append(out, conv.Assistant(msg))
+		case *core.ToolResultMessage:
+			out = append(out, conv.ToolResult(msg))
+		}
+	}
+	return out
+}
+
+// mapStopReasonFromTable looks up a provider-specific stop reason string
+// in the given table, returning core.StopReasonStop as default.
+func mapStopReasonFromTable(reason string, table map[string]core.StopReason) core.StopReason {
+	if r, ok := table[reason]; ok {
+		return r
+	}
+	return core.StopReasonStop
+}
+
+// extractSSEData extracts the data payload from an SSE line.
+func extractSSEData(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "data: ") {
+		return strings.TrimPrefix(trimmed, "data: ")
+	}
+	if strings.HasPrefix(trimmed, "data:") {
+		return strings.TrimPrefix(trimmed, "data:")
+	}
+	// Some providers send raw JSON
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		return trimmed
+	}
+	return ""
+}
+
+// toolResultText extracts joined text from a ToolResultMessage.
+func toolResultText(msg *core.ToolResultMessage) string {
+	var parts []string
+	for _, b := range msg.Content {
+		if tc, ok := b.(core.TextContent); ok {
+			parts = append(parts, tc.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// appendText appends delta to the first TextContent in msg, or creates one.
+func appendText(msg *core.AssistantMessage, delta string) {
+	for i := range msg.Content {
+		if tc, ok := msg.Content[i].(core.TextContent); ok {
+			msg.Content[i] = core.TextContent{Text: tc.Text + delta}
+			return
+		}
+	}
+	msg.Content = append(msg.Content, core.TextContent{Text: delta})
+}
+
+// decodeUserBlocks converts a UserMessage's Content and Blocks into
+// provider-specific typed slices using the supplied callbacks.
+func decodeUserBlocks[T any](msg *core.UserMessage, text func(string) T, image func(core.ImageContent) T) []T {
+	var out []T
+	if msg.Content != "" {
+		out = append(out, text(msg.Content))
+	}
+	for _, b := range msg.Blocks {
+		switch c := b.(type) {
+		case core.TextContent:
+			out = append(out, text(c.Text))
+		case core.ImageContent:
+			out = append(out, image(c))
+		}
+	}
+	return out
+}
+
+// scanSSE reads SSE lines from reader, calling handler for each non-empty
+// data payload. Respects context cancellation (sends StreamError on cancel).
+func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, handler func(data string), opts ...scanOption) {
+	scanner := bufio.NewScanner(reader)
+	for _, opt := range opts {
+		opt(scanner)
+	}
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
+			return
+		default:
+		}
+		data := extractSSEData(scanner.Text())
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		handler(data)
+	}
+}
+
+type scanOption func(*bufio.Scanner)
+
+func withLargeBuffer(initial, max int) scanOption {
+	return func(s *bufio.Scanner) {
+		s.Buffer(make([]byte, 0, initial), max)
+	}
 }
 
 // runStream is the shared Stream() goroutine template.

@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,38 +111,20 @@ func (p *Google) buildRequest(req core.StreamRequest) ([]byte, error) {
 }
 
 func (p *Google) convertMessages(req core.StreamRequest) []gemContent {
-	var contents []gemContent
-
-	for _, m := range req.Messages {
-		switch msg := m.(type) {
-		case *core.UserMessage:
-			contents = append(contents, p.convertUserMessage(msg))
-		case *core.AssistantMessage:
-			contents = append(contents, p.convertAssistantMessage(msg))
-		case *core.ToolResultMessage:
-			contents = append(contents, p.convertToolResult(msg))
-		}
-	}
-
-	return contents
+	return convertMessageList(req.Messages, messageConverters[gemContent]{
+		User:       p.convertUserMessage,
+		Assistant:  p.convertAssistantMessage,
+		ToolResult: p.convertToolResult,
+	})
 }
 
 func (p *Google) convertUserMessage(msg *core.UserMessage) gemContent {
-	var parts []gemPart
-
-	if msg.Content != "" {
-		parts = append(parts, gemPart{Text: msg.Content})
-	}
-	for _, b := range msg.Blocks {
-		switch c := b.(type) {
-		case core.TextContent:
-			parts = append(parts, gemPart{Text: c.Text})
-		case core.ImageContent:
-			parts = append(parts, gemPart{
-				InlineData: &gemInlineData{MimeType: c.MimeType, Data: c.Data},
-			})
-		}
-	}
+	parts := decodeUserBlocks(msg,
+		func(text string) gemPart { return gemPart{Text: text} },
+		func(img core.ImageContent) gemPart {
+			return gemPart{InlineData: &gemInlineData{MimeType: img.MimeType, Data: img.Data}}
+		},
+	)
 
 	if len(parts) == 0 {
 		parts = append(parts, gemPart{Text: ""})
@@ -181,18 +162,13 @@ func (p *Google) convertToolResult(msg *core.ToolResultMessage) gemContent {
 }
 
 func (p *Google) convertTools(tools []core.ToolSchema) []gemTool {
-	decls := make([]gemFuncDecl, 0, len(tools))
-	for _, t := range tools {
-		params := t.Parameters
-		if params == nil {
-			params = map[string]any{"type": "object"}
-		}
-		decls = append(decls, gemFuncDecl{
-			Name:        t.Name,
-			Description: t.Description,
+	decls := convertToolSchemas(tools, func(name, desc string, params any) gemFuncDecl {
+		return gemFuncDecl{
+			Name:        name,
+			Description: desc,
 			Parameters:  params,
-		})
-	}
+		}
+	})
 	return []gemTool{{FunctionDeclarations: decls}}
 }
 
@@ -236,39 +212,23 @@ type gemUsage struct {
 func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 256*1024), 10*1024*1024)
-
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
-			return msg
-		default:
-		}
-
-		line := scanner.Text()
-		data := extractSSEData(line)
-		if data == "" {
-			continue
-		}
-
+	scanSSE(ctx, reader, ch, func(data string) {
 		var resp gemResponse
 		if err := json.Unmarshal([]byte(data), &resp); err != nil {
-			continue
+			return
 		}
 
 		// Usage
 		if resp.UsageMetadata != nil {
 			msg.Usage = core.Usage{
-				InputTokens:    resp.UsageMetadata.PromptTokenCount,
-				OutputTokens:   resp.UsageMetadata.CandidatesTokenCount,
+				InputTokens:     resp.UsageMetadata.PromptTokenCount,
+				OutputTokens:    resp.UsageMetadata.CandidatesTokenCount,
 				CacheReadTokens: resp.UsageMetadata.CachedContentTokenCount,
 			}
 		}
 
 		if len(resp.Candidates) == 0 {
-			continue
+			return
 		}
 
 		candidate := resp.Candidates[0]
@@ -296,20 +256,18 @@ func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		if candidate.FinishReason != "" {
 			msg.StopReason = p.mapFinishReason(candidate.FinishReason)
 		}
-	}
+	}, withLargeBuffer(256*1024, 10*1024*1024))
 
 	return msg
 }
 
+var gemStopReasons = map[string]core.StopReason{
+	"STOP":       core.StopReasonStop,
+	"MAX_TOKENS": core.StopReasonLength,
+	"SAFETY":     core.StopReasonError,
+	"RECITATION": core.StopReasonError,
+}
+
 func (p *Google) mapFinishReason(reason string) core.StopReason {
-	switch reason {
-	case "STOP":
-		return core.StopReasonStop
-	case "MAX_TOKENS":
-		return core.StopReasonLength
-	case "SAFETY", "RECITATION":
-		return core.StopReasonError
-	default:
-		return core.StopReasonStop
-	}
+	return mapStopReasonFromTable(reason, gemStopReasons)
 }

@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -62,9 +61,9 @@ type oaiTool struct {
 }
 
 type oaiFunction struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
 }
 
 type oaiToolCall struct {
@@ -113,27 +112,20 @@ func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
 
 func (p *OpenAI) convertMessages(req core.StreamRequest) []oaiMessage {
 	var msgs []oaiMessage
-
-	// System message
 	if req.System != "" {
 		msgs = append(msgs, oaiMessage{Role: "system", Content: req.System})
 	}
-
-	for _, m := range req.Messages {
-		switch msg := m.(type) {
-		case *core.UserMessage:
-			msgs = append(msgs, p.convertUserMessage(msg))
-		case *core.AssistantMessage:
-			msgs = append(msgs, p.convertAssistantMessage(msg))
-		case *core.ToolResultMessage:
-			msgs = append(msgs, oaiMessage{
+	msgs = append(msgs, convertMessageList(req.Messages, messageConverters[oaiMessage]{
+		User:      p.convertUserMessage,
+		Assistant: p.convertAssistantMessage,
+		ToolResult: func(msg *core.ToolResultMessage) oaiMessage {
+			return oaiMessage{
 				Role:       "tool",
 				Content:    toolResultText(msg),
 				ToolCallID: msg.ToolCallID,
-			})
-		}
-	}
-
+			}
+		},
+	})...)
 	return msgs
 }
 
@@ -142,21 +134,17 @@ func (p *OpenAI) convertUserMessage(msg *core.UserMessage) oaiMessage {
 		return oaiMessage{Role: "user", Content: msg.Content}
 	}
 
-	var blocks []map[string]any
-	if msg.Content != "" {
-		blocks = append(blocks, map[string]any{"type": "text", "text": msg.Content})
-	}
-	for _, b := range msg.Blocks {
-		switch c := b.(type) {
-		case core.TextContent:
-			blocks = append(blocks, map[string]any{"type": "text", "text": c.Text})
-		case core.ImageContent:
-			blocks = append(blocks, map[string]any{
+	blocks := decodeUserBlocks(msg,
+		func(text string) map[string]any {
+			return map[string]any{"type": "text", "text": text}
+		},
+		func(img core.ImageContent) map[string]any {
+			return map[string]any{
 				"type":      "image_url",
-				"image_url": map[string]any{"url": fmt.Sprintf("data:%s;base64,%s", c.MimeType, c.Data)},
-			})
-		}
-	}
+				"image_url": map[string]any{"url": fmt.Sprintf("data:%s;base64,%s", img.MimeType, img.Data)},
+			}
+		},
+	)
 
 	if len(blocks) == 0 {
 		return oaiMessage{Role: "user", Content: ""}
@@ -196,32 +184,16 @@ func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) oaiMessage 
 }
 
 func (p *OpenAI) convertTools(tools []core.ToolSchema) []oaiTool {
-	oaiTools := make([]oaiTool, 0, len(tools))
-	for _, t := range tools {
-		params, _ := t.Parameters.(map[string]any)
-		if params == nil {
-			params = map[string]any{"type": "object"}
-		}
-		oaiTools = append(oaiTools, oaiTool{
+	return convertToolSchemas(tools, func(name, desc string, params any) oaiTool {
+		return oaiTool{
 			Type: "function",
 			Function: oaiFunction{
-				Name:        t.Name,
-				Description: t.Description,
+				Name:        name,
+				Description: desc,
 				Parameters:  params,
 			},
-		})
-	}
-	return oaiTools
-}
-
-func toolResultText(msg *core.ToolResultMessage) string {
-	var parts []string
-	for _, b := range msg.Content {
-		if tc, ok := b.(core.TextContent); ok {
-			parts = append(parts, tc.Text)
 		}
-	}
-	return strings.Join(parts, "\n")
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -298,26 +270,12 @@ type oaiPromptTokensInfo struct {
 
 func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
-	toolArgs := make(map[int]*strings.Builder) // index → accumulated args JSON
+	toolArgs := make(map[int]*strings.Builder)
 
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
-			return msg
-		default:
-		}
-
-		line := scanner.Text()
-		data := extractSSEData(line)
-		if data == "" || data == "[DONE]" {
-			continue
-		}
-
+	scanSSE(ctx, reader, ch, func(data string) {
 		var evt oaiStreamEvent
 		if err := json.Unmarshal([]byte(data), &evt); err != nil {
-			continue
+			return
 		}
 
 		// Usage
@@ -332,7 +290,7 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		}
 
 		if len(evt.Choices) == 0 {
-			continue
+			return
 		}
 
 		choice := evt.Choices[0]
@@ -351,10 +309,8 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 					idx = *tc.Index
 				}
 
-				// Ensure tool call exists in message content
 				ensureToolCall(&msg, idx, tc)
 
-				// Accumulate arguments
 				if tc.Function.Arguments != "" {
 					if _, ok := toolArgs[idx]; !ok {
 						toolArgs[idx] = &strings.Builder{}
@@ -374,7 +330,7 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		if choice.FinishReason != "" {
 			msg.StopReason = mapStopReason(choice.FinishReason)
 		}
-	}
+	})
 
 	// Finalize tool call arguments
 	for idx, builder := range toolArgs {
@@ -382,31 +338,6 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 	}
 
 	return msg
-}
-
-func extractSSEData(line string) string {
-	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "data: ") {
-		return strings.TrimPrefix(trimmed, "data: ")
-	}
-	if strings.HasPrefix(trimmed, "data:") {
-		return strings.TrimPrefix(trimmed, "data:")
-	}
-	// Some providers send raw JSON
-	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
-		return trimmed
-	}
-	return ""
-}
-
-func appendText(msg *core.AssistantMessage, delta string) {
-	for i := range msg.Content {
-		if tc, ok := msg.Content[i].(core.TextContent); ok {
-			msg.Content[i] = core.TextContent{Text: tc.Text + delta}
-			return
-		}
-	}
-	msg.Content = append(msg.Content, core.TextContent{Text: delta})
 }
 
 func ensureToolCall(msg *core.AssistantMessage, idx int, tc oaiToolCall) {
@@ -455,17 +386,14 @@ func finalizeToolArgs(msg *core.AssistantMessage, idx int, argsJSON string) {
 	}
 }
 
+var oaiStopReasons = map[string]core.StopReason{
+	"stop":       core.StopReasonStop,
+	"length":     core.StopReasonLength,
+	"tool_calls": core.StopReasonTool,
+}
+
 func mapStopReason(reason string) core.StopReason {
-	switch reason {
-	case "stop":
-		return core.StopReasonStop
-	case "length":
-		return core.StopReasonLength
-	case "tool_calls":
-		return core.StopReasonTool
-	default:
-		return core.StopReasonStop
-	}
+	return mapStopReasonFromTable(reason, oaiStopReasons)
 }
 
 // useMaxCompletionTokens returns true for models that require
