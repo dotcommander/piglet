@@ -3,7 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,20 +22,20 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	switch e := evt.(type) {
 	case core.EventStreamDelta:
 		if e.Kind == "text" {
-			m.streamText += e.Delta
+			m.streamText.WriteString(e.Delta)
 			if m.spinnerVerb == "thinking..." {
 				m.spinnerVerb = "writing..."
 			}
 		} else if e.Kind == "thinking" {
-			m.streamThink += e.Delta
+			m.streamThink.WriteString(e.Delta)
 			if m.spinnerVerb == "thinking..." {
 				m.spinnerVerb = "reasoning..."
 			}
 		}
 
 	case core.EventStreamDone:
-		m.streamText = ""
-		m.streamThink = ""
+		m.streamText.Reset()
+		m.streamThink.Reset()
 
 	case core.EventToolStart:
 		m.activeTool = e.ToolName
@@ -46,7 +47,7 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
-			m.messages = append(m.messages, e.Assistant)
+			m.appendMessage(e.Assistant)
 			// InputTokens is the full context size (not incremental), so assign rather than accumulate
 			m.totalIn = e.Assistant.Usage.InputTokens
 			m.totalOut += e.Assistant.Usage.OutputTokens
@@ -55,16 +56,9 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 			m.totalCacheWrite += e.Assistant.Usage.CacheWriteTokens
 			m.updateTokenStatus()
 			m.status.Set(ext.StatusKeyCost, m.styles.Muted.Render(formatCost(m.totalCost)))
-
-			if m.cfg.Session != nil {
-				_ = m.cfg.Session.Append(e.Assistant)
-			}
 		}
 		for _, tr := range e.ToolResults {
-			m.messages = append(m.messages, tr)
-			if m.cfg.Session != nil {
-				_ = m.cfg.Session.Append(tr)
-			}
+			m.appendMessage(tr)
 		}
 
 	case core.EventAgentEnd:
@@ -73,31 +67,16 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.spinnerVerb = ""
 		m.status.SetSpinnerView("")
 		m.streamCache = StreamCache{}
-		m.refreshViewport()
-		if m.followOutput {
-			m.viewport.GotoBottom()
-		}
+		m.refreshAndFollow()
 
 	case core.EventMaxTurns:
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{
-				core.TextContent{Text: fmt.Sprintf("Stopped: max turns reached (%d)", e.Max)},
-			},
-		})
+		m.messages = append(m.messages, systemNote(fmt.Sprintf("Stopped: max turns reached (%d)", e.Max)))
 
 	case core.EventRetry:
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{
-				core.TextContent{Text: fmt.Sprintf("Retrying (%d/%d): %s", e.Attempt, e.Max, e.Error)},
-			},
-		})
+		m.messages = append(m.messages, systemNote(fmt.Sprintf("Retrying (%d/%d): %s", e.Attempt, e.Max, e.Error)))
 
 	case core.EventCompact:
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{
-				core.TextContent{Text: fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)},
-			},
-		})
+		m.messages = append(m.messages, systemNote(fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)))
 		// Rough estimate until the next EventTurnEnd corrects it
 		if e.Before > 0 {
 			m.totalIn = (m.totalIn * e.After) / e.Before
@@ -120,6 +99,15 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		return m, pollEvents(m.eventCh)
 	}
 	return m, actionCmd
+}
+
+// systemNote creates a synthetic assistant message for status/error display.
+// These are appended directly to m.messages (not via appendMessage) so they
+// are NOT persisted to the session JSONL.
+func systemNote(text string) *core.AssistantMessage {
+	return &core.AssistantMessage{
+		Content: []core.AssistantContent{core.TextContent{Text: text}},
+	}
 }
 
 func (m *Model) updateTokenStatus() {
@@ -155,11 +143,7 @@ func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		if result == "" {
 			result = "(background task produced no output)"
 		}
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{
-				core.TextContent{Text: fmt.Sprintf("Background task: %s\n\n%s", m.bgTask, result)},
-			},
-		})
+		m.messages = append(m.messages, systemNote(fmt.Sprintf("Background task: %s\n\n%s", m.bgTask, result)))
 		m.bgAgent = nil
 		m.bgEventCh = nil
 		m.bgTask = ""
@@ -191,13 +175,7 @@ func commandNames(app *ext.App) []string {
 	if app == nil {
 		return nil
 	}
-	cmds := app.Commands()
-	names := make([]string, 0, len(cmds))
-	for name := range cmds {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(app.Commands()))
 }
 
 // findModel looks up a model by "provider/name" or plain name.

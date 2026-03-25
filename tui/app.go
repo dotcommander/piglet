@@ -75,8 +75,8 @@ type Model struct {
 	// State
 	messages        []core.Message
 	streaming       bool
-	streamText      string
-	streamThink     string
+	streamText      strings.Builder
+	streamThink     strings.Builder
 	activeTool      string
 	spinnerVerb     string
 	totalIn         int
@@ -160,45 +160,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 
 	case tea.KeyPressMsg:
-		// Global shortcuts
-		if m.modal.Visible() {
-			var cmd tea.Cmd
-			m.modal, cmd = m.modal.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return m, tea.Batch(cmds...)
-		}
-
-		switch {
-		case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
-			if m.streaming {
-				m.cfg.Agent.Stop()
-				m.streaming = false
-				m.spinnerVerb = ""
-				m.status.SetSpinnerView("")
-				m.streamCache = StreamCache{}
-				return m, nil
-			}
-			m.quitting = true
-			return m, tea.Quit
-
-		case msg.Code == tea.KeyPgUp, msg.Code == tea.KeyPgDown:
-			m.viewport, _ = m.viewport.Update(msg)
-			m.followOutput = m.viewport.AtBottom()
-			return m, nil
-
-		case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
-			return m.handleSubmit()
-
-		case msg.Code == 'z' && msg.Mod.Contains(tea.ModCtrl):
-			return m, tea.Suspend
-
-		default:
-			// Dispatch registered keyboard shortcuts
-			if result, cmd, handled := m.runShortcut(msg); handled {
-				return result, cmd
-			}
+		if result, cmd, handled := m.handleKeyPress(msg); handled {
+			return result, cmd
 		}
 
 	case tea.ResumeMsg:
@@ -231,10 +194,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.streaming {
-			m.refreshViewport()
-			if m.followOutput {
-				m.viewport.GotoBottom()
-			}
+			m.refreshAndFollow()
 			cmds = append(cmds, tickCmd())
 		}
 
@@ -287,8 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case execDoneMsg:
 		if msg.err != nil {
-			m.showNotification("editor: " + msg.err.Error())
-			cmds = append(cmds, notifyTick())
+			cmds = append(cmds, m.notifyAndTick("editor: "+msg.err.Error()))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -302,6 +261,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// handleKeyPress processes keyboard input. Returns handled=true if the key
+// was consumed (modal, global shortcut, submit). When handled=false the
+// caller should let the input textarea handle the key.
+func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	if m.modal.Visible() {
+		var cmd tea.Cmd
+		m.modal, cmd = m.modal.Update(msg)
+		return m, cmd, true
+	}
+
+	switch {
+	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
+		if m.streaming {
+			m.cfg.Agent.Stop()
+			m.streaming = false
+			m.spinnerVerb = ""
+			m.status.SetSpinnerView("")
+			m.streamCache = StreamCache{}
+			return m, nil, true
+		}
+		m.quitting = true
+		return m, tea.Quit, true
+
+	case msg.Code == tea.KeyPgUp, msg.Code == tea.KeyPgDown:
+		m.viewport, _ = m.viewport.Update(msg)
+		m.followOutput = m.viewport.AtBottom()
+		return m, nil, true
+
+	case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
+		result, cmd := m.handleSubmit()
+		return result, cmd, true
+
+	case msg.Code == 'z' && msg.Mod.Contains(tea.ModCtrl):
+		return m, tea.Suspend, true
+
+	default:
+		if result, cmd, handled := m.runShortcut(msg); handled {
+			return result, cmd, true
+		}
+	}
+
+	return m, nil, false
 }
 
 // View implements tea.Model.
@@ -425,6 +428,37 @@ func (m *Model) showNotification(text string) {
 	m.notificationTimer = notifyDuration
 }
 
+// appendMessage adds a message to conversation history and persists to session.
+func (m *Model) appendMessage(msg core.Message) {
+	m.messages = append(m.messages, msg)
+	if m.cfg.Session != nil {
+		_ = m.cfg.Session.Append(msg)
+	}
+}
+
+// notifyAndTick shows a notification and returns the tick command to dismiss it.
+func (m *Model) notifyAndTick(text string) tea.Cmd {
+	m.showNotification(text)
+	return notifyTick()
+}
+
+// truncateRunes truncates a string to n runes, appending "..." if truncated.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "..."
+	}
+	return s
+}
+
+// refreshAndFollow updates viewport content and scrolls to bottom if following output.
+func (m *Model) refreshAndFollow() {
+	m.refreshViewport()
+	if m.followOutput {
+		m.viewport.GotoBottom()
+	}
+}
+
 func notifyTick() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return notifyTickMsg{}
@@ -441,7 +475,7 @@ func (m Model) renderMessages() string {
 
 	// Streaming content
 	if m.streaming {
-		b.WriteString(m.msgView.RenderStreaming(m.streamText, m.streamThink, &m.streamCache))
+		b.WriteString(m.msgView.RenderStreaming(m.streamText.String(), m.streamThink.String(), &m.streamCache))
 	}
 
 	// Active tool indicator

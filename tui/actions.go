@@ -46,30 +46,25 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.pendingImage = nil
 		m.input.SetAttachment("")
 	}
-	m.messages = append(m.messages, userMsg)
+	m.appendMessage(userMsg)
 
-	// Persist user message
-	if m.cfg.Session != nil {
-		_ = m.cfg.Session.Append(userMsg)
-	}
+	m.refreshAndFollow()
 
-	m.refreshViewport()
-	m.viewport.GotoBottom()
+	return m, m.startAgentLoop(text)
+}
 
-	// Run message hooks for ephemeral turn context
+// startAgentLoop runs message hooks and starts the agent, returning the polling batch command.
+func (m *Model) startAgentLoop(content string) tea.Cmd {
 	if m.cfg.App != nil {
-		if injections, err := m.cfg.App.RunMessageHooks(context.Background(), text); err == nil && len(injections) > 0 {
+		if injections, err := m.cfg.App.RunMessageHooks(context.Background(), content); err == nil && len(injections) > 0 {
 			m.cfg.Agent.SetTurnContext(injections)
 		}
 	}
-
-	// Start agent
-	ch := m.cfg.Agent.Start(context.Background(), text)
+	ch := m.cfg.Agent.Start(context.Background(), content)
 	m.eventCh = ch
 	m.streaming = true
 	m.spinnerVerb = "thinking..."
-
-	return m, tea.Batch(pollEvents(ch), tickCmd(), m.spinner.Tick)
+	return tea.Batch(pollEvents(ch), tickCmd(), m.spinner.Tick)
 }
 
 // bindApp wires sync callbacks that need return values or direct TUI mutation.
@@ -100,10 +95,7 @@ func (m *Model) bindApp() {
 			m.bgEventCh = ch
 			m.bgTask = prompt
 			m.bgResult.Reset()
-			task := prompt
-			if len([]rune(task)) > 20 {
-				task = string([]rune(task)[:20]) + "..."
-			}
+			task := truncateRunes(prompt, 20)
 			m.status.Set(ext.StatusKeyBg, m.styles.Spinner.Render("bg: "+task))
 			m.pendingBgStart = &bgStartResult{ch: ch}
 			return nil
@@ -133,89 +125,126 @@ func (m *Model) applyActions() tea.Cmd {
 
 	var cmds []tea.Cmd
 	for _, action := range m.cfg.App.PendingActions() {
-		switch act := action.(type) {
-		case ext.ActionShowMessage:
-			m.showNotification(act.Text)
-			cmds = append(cmds, notifyTick())
-		case ext.ActionNotify:
-			m.showNotification(act.Message)
-			cmds = append(cmds, notifyTick())
-		case ext.ActionSetStatus:
-			if act.Key == ext.StatusKeyModel {
-				m.cfg.Model = findModel(m.cfg.Models, act.Text)
-				m.status.Set(ext.StatusKeyModel, m.styles.Muted.Render(act.Text))
-			} else {
-				m.status.Set(act.Key, m.styles.Muted.Render(act.Text))
+		switch action.(type) {
+		case ext.ActionShowMessage, ext.ActionNotify,
+			ext.ActionShowPicker, ext.ActionAttachImage, ext.ActionDetachImage:
+			if cmd := m.applyUIAction(action); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
-		case ext.ActionShowPicker:
-			items := make([]ModalItem, len(act.Items))
-			for i, item := range act.Items {
-				items[i] = ModalItem{ID: item.ID, Label: item.Label, Desc: item.Desc}
+		case ext.ActionSetStatus, ext.ActionSwapSession, ext.ActionSetSessionTitle:
+			m.applyStateAction(action)
+		case ext.ActionRunAsync, ext.ActionExec, ext.ActionQuit, ext.ActionSendMessage:
+			if cmd := m.applyAsyncAction(action); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
-			m.modal = NewModalModel(act.Title, items, m.styles)
-			m.modal.SetSize(m.width, m.height)
-			m.modal.Show()
-			m.pickerCallback = act.OnSelect
-		case ext.ActionSwapSession:
-			if s, ok := act.Session.(*session.Session); ok {
-				if m.cfg.Session != nil {
-					_ = m.cfg.Session.Close()
-				}
-				m.cfg.Session = s
-				msgs := s.Messages()
-				m.messages = msgs
-				m.cfg.Agent.SetMessages(msgs)
-			}
-		case ext.ActionAttachImage:
-			if m.pendingImage != nil {
-				// Toggle off — second press removes attachment
-				m.pendingImage = nil
-				m.input.SetAttachment("")
-				m.showNotification("Image attachment removed")
-				cmds = append(cmds, notifyTick())
-			} else if img, ok := act.Image.(*core.ImageContent); ok {
-				m.pendingImage = img
-				m.input.SetAttachment("image")
-				size := len(img.Data) * 3 / 4
-				m.showNotification(fmt.Sprintf("Image attached (%s) — send with your next message", formatImageSize(size)))
-				cmds = append(cmds, notifyTick())
-			}
-		case ext.ActionDetachImage:
-			m.pendingImage = nil
-			m.input.SetAttachment("")
-			m.showNotification("Image attachment removed")
-			cmds = append(cmds, notifyTick())
-		case ext.ActionSetSessionTitle:
-			if m.cfg.Session != nil && act.Title != "" {
-				_ = m.cfg.Session.SetTitle(act.Title)
-			}
-		case ext.ActionRunAsync:
-			fn := act.Fn
-			cmds = append(cmds, func() tea.Msg {
-				result := fn()
-				if result != nil {
-					return asyncActionMsg{action: result}
-				}
-				return nil
-			})
-		case ext.ActionExec:
-			if c, ok := act.Cmd.(*exec.Cmd); ok {
-				cmds = append(cmds, tea.ExecProcess(c, func(err error) tea.Msg {
-					return execDoneMsg{err: err}
-				}))
-			}
-		case ext.ActionQuit:
-			m.quitting = true
 		}
 	}
 
-	// Check if a background agent was started
 	if m.pendingBgStart != nil {
 		ch := m.pendingBgStart.ch
 		m.pendingBgStart = nil
 		cmds = append(cmds, pollBgEvents(ch))
 	}
 	return tea.Batch(cmds...)
+}
+
+// applyUIAction handles display-only actions: notifications, modals, image attachments.
+func (m *Model) applyUIAction(action ext.Action) tea.Cmd {
+	switch act := action.(type) {
+	case ext.ActionShowMessage:
+		return m.notifyAndTick(act.Text)
+	case ext.ActionNotify:
+		return m.notifyAndTick(act.Message)
+	case ext.ActionShowPicker:
+		items := make([]ModalItem, len(act.Items))
+		for i, item := range act.Items {
+			items[i] = ModalItem{ID: item.ID, Label: item.Label, Desc: item.Desc}
+		}
+		m.modal = NewModalModel(act.Title, items, m.styles)
+		m.modal.SetSize(m.width, m.height)
+		m.modal.Show()
+		m.pickerCallback = act.OnSelect
+	case ext.ActionAttachImage:
+		if m.pendingImage != nil {
+			m.pendingImage = nil
+			m.input.SetAttachment("")
+			return m.notifyAndTick("Image attachment removed")
+		} else if img, ok := act.Image.(*core.ImageContent); ok {
+			m.pendingImage = img
+			m.input.SetAttachment("image")
+			size := len(img.Data) * 3 / 4
+			return m.notifyAndTick(fmt.Sprintf("Image attached (%s) — send with your next message", formatImageSize(size)))
+		}
+	case ext.ActionDetachImage:
+		m.pendingImage = nil
+		m.input.SetAttachment("")
+		return m.notifyAndTick("Image attachment removed")
+	}
+	return nil
+}
+
+// applyStateAction handles session and config mutations.
+func (m *Model) applyStateAction(action ext.Action) {
+	switch act := action.(type) {
+	case ext.ActionSetStatus:
+		if act.Key == ext.StatusKeyModel {
+			m.cfg.Model = findModel(m.cfg.Models, act.Text)
+			m.status.Set(ext.StatusKeyModel, m.styles.Muted.Render(act.Text))
+		} else {
+			m.status.Set(act.Key, m.styles.Muted.Render(act.Text))
+		}
+	case ext.ActionSwapSession:
+		if s, ok := act.Session.(*session.Session); ok {
+			if m.cfg.Session != nil {
+				_ = m.cfg.Session.Close()
+			}
+			m.cfg.Session = s
+			msgs := s.Messages()
+			m.messages = msgs
+			m.cfg.Agent.SetMessages(msgs)
+		}
+	case ext.ActionSetSessionTitle:
+		if m.cfg.Session != nil && act.Title != "" {
+			_ = m.cfg.Session.SetTitle(act.Title)
+		}
+	}
+}
+
+// applyAsyncAction handles actions that produce tea.Cmds or affect lifecycle.
+func (m *Model) applyAsyncAction(action ext.Action) tea.Cmd {
+	switch act := action.(type) {
+	case ext.ActionRunAsync:
+		fn := act.Fn
+		return func() tea.Msg {
+			result := fn()
+			if result != nil {
+				return asyncActionMsg{action: result}
+			}
+			return nil
+		}
+	case ext.ActionExec:
+		if c, ok := act.Cmd.(*exec.Cmd); ok {
+			return tea.ExecProcess(c, func(err error) tea.Msg {
+				return execDoneMsg{err: err}
+			})
+		}
+	case ext.ActionQuit:
+		m.quitting = true
+	case ext.ActionSendMessage:
+		if m.streaming {
+			return nil // ignore if already streaming
+		}
+		content := act.Content
+		m.followOutput = true
+		userMsg := &core.UserMessage{
+			Content:   content,
+			Timestamp: time.Now(),
+		}
+		m.appendMessage(userMsg)
+		m.refreshAndFollow()
+		return m.startAgentLoop(content)
+	}
+	return nil
 }
 
 // runCommand dispatches a slash command to the registered handler.
@@ -232,9 +261,7 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 	cmds := m.cfg.App.Commands()
 	cmd, ok := cmds[name]
 	if !ok {
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{core.TextContent{Text: "Unknown command: /" + name}},
-		})
+		m.messages = append(m.messages, systemNote("Unknown command: /"+name))
 		return m, nil
 	}
 
@@ -248,9 +275,7 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 	}
 
 	if err := cmd.Handler(args, m.cfg.App); err != nil {
-		m.messages = append(m.messages, &core.AssistantMessage{
-			Content: []core.AssistantContent{core.TextContent{Text: "Command error: " + err.Error()}},
-		})
+		m.messages = append(m.messages, systemNote("Command error: "+err.Error()))
 		return m, nil
 	}
 

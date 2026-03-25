@@ -92,7 +92,8 @@ func (m ModalModel) Update(msg tea.Msg) (ModalModel, tea.Cmd) {
 			}
 		case msg.Code == tea.KeyBackspace:
 			if len(m.filter) > 0 {
-				m.filter = m.filter[:len(m.filter)-1]
+				r := []rune(m.filter)
+				m.filter = string(r[:len(r)-1])
 				m.applyFilter()
 			}
 		default:
@@ -138,31 +139,15 @@ func (m ModalModel) View() string {
 
 	// Items
 	visible := m.filtered
+	scrollOff := 0
 	if len(visible) > maxH {
-		start := m.cursor - maxH/2
-		if start < 0 {
-			start = 0
-		}
-		if start+maxH > len(visible) {
-			start = len(visible) - maxH
-		}
-		visible = visible[start : start+maxH]
+		scrollOff = scrollStart(m.cursor, len(visible), maxH)
+		visible = visible[scrollOff : scrollOff+maxH]
 	}
 
 	for i, item := range visible {
 		prefix := "  "
-		idx := i
-		// Adjust index if we scrolled
-		if len(m.filtered) > maxH {
-			start := m.cursor - maxH/2
-			if start < 0 {
-				start = 0
-			}
-			if start+maxH > len(m.filtered) {
-				start = len(m.filtered) - maxH
-			}
-			idx = start + i
-		}
+		idx := scrollOff + i
 
 		if idx == m.cursor {
 			prefix = "> "
@@ -256,6 +241,18 @@ func fuzzyScore(haystack, needle []rune) (int, bool) {
 		}
 	}
 	return score, true
+}
+
+// scrollStart computes the first visible index for a centered scroll window.
+func scrollStart(cursor, items, height int) int {
+	start := cursor - height/2
+	if start < 0 {
+		start = 0
+	}
+	if start+height > items {
+		start = items - height
+	}
+	return start
 }
 
 // themeColors returns a Theme with default border color.

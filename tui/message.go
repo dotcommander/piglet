@@ -98,10 +98,7 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 				b.WriteByte('\n')
 			}
 		case core.ThinkingContent:
-			preview := block.Thinking
-			if len([]rune(preview)) > 80 {
-				preview = string([]rune(preview)[:80]) + "..."
-			}
+			preview := truncateRunes(block.Thinking, 80)
 			b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
 		case core.ToolCall:
 			b.WriteString(v.styles.ToolName.Render("tool: "+block.Name) + "\n")
@@ -161,10 +158,7 @@ func (v *MessageView) RenderStreaming(text string, thinking string, cache *Strea
 	}
 
 	if thinking != "" {
-		preview := thinking
-		if len([]rune(preview)) > 80 {
-			preview = string([]rune(preview)[:80]) + "..."
-		}
+		preview := truncateRunes(thinking, 80)
 		b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
 	}
 
