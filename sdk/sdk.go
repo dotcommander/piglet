@@ -165,13 +165,6 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-type wireContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	Data string `json:"data,omitempty"`
-	Mime string `json:"mime,omitempty"`
-}
-
 type wireActionResult struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload,omitempty"`
@@ -344,12 +337,8 @@ func (e *Extension) handleToolExecute(msg *rpcMessage) {
 		return
 	}
 
-	blocks := make([]wireContentBlock, len(result.Content))
-	for i, b := range result.Content {
-		blocks[i] = wireContentBlock(b)
-	}
 	e.sendResponse(*msg.ID, map[string]any{
-		"content": blocks,
+		"content": result.Content,
 		"isError": result.IsError,
 	})
 }

@@ -7,6 +7,39 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Generic RPC helpers
+// ---------------------------------------------------------------------------
+
+// hostCall sends a JSON-RPC request and unmarshals the result into T.
+func hostCall[T any](e *Extension, ctx context.Context, method string, params any) (T, error) {
+	var zero T
+	resp, err := e.request(ctx, method, params)
+	if err != nil {
+		return zero, err
+	}
+	if resp.Error != nil {
+		return zero, fmt.Errorf("%s: %s", method, resp.Error.Message)
+	}
+	var result T
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return zero, fmt.Errorf("unmarshal %s: %w", method, err)
+	}
+	return result, nil
+}
+
+// hostCallVoid sends a JSON-RPC request that returns no data.
+func hostCallVoid(e *Extension, ctx context.Context, method string, params any) error {
+	resp, err := e.request(ctx, method, params)
+	if err != nil {
+		return err
+	}
+	if resp.Error != nil {
+		return fmt.Errorf("%s: %s", method, resp.Error.Message)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Host service methods (extension → host)
 // ---------------------------------------------------------------------------
 
@@ -14,113 +47,66 @@ import (
 // Keys use dot notation (e.g. "defaultModel", "agent.compactAt").
 // Returns a map of key → value. Missing keys are omitted.
 func (e *Extension) ConfigGet(ctx context.Context, keys ...string) (map[string]any, error) {
-	resp, err := e.request(ctx, "host/config.get", map[string]any{"keys": keys})
+	type resp struct{ Values map[string]any `json:"values"` }
+	r, err := hostCall[resp](e, ctx, "host/config.get", map[string]any{"keys": keys})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("config get: %s", resp.Error.Message)
-	}
-	var result struct {
-		Values map[string]any `json:"values"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal config: %w", err)
-	}
-	return result.Values, nil
+	return r.Values, nil
 }
 
 // ConfigReadExtension reads an extension's markdown config file from
 // ~/.config/piglet/<name>.md via the host.
 func (e *Extension) ConfigReadExtension(ctx context.Context, name string) (string, error) {
-	resp, err := e.request(ctx, "host/config.readExtension", map[string]any{"name": name})
+	type resp struct{ Content string `json:"content"` }
+	r, err := hostCall[resp](e, ctx, "host/config.readExtension", map[string]any{"name": name})
 	if err != nil {
 		return "", err
 	}
-	if resp.Error != nil {
-		return "", fmt.Errorf("config read extension: %s", resp.Error.Message)
-	}
-	var result struct {
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return "", fmt.Errorf("unmarshal extension config: %w", err)
-	}
-	return result.Content, nil
+	return r.Content, nil
 }
 
 // AuthGetKey retrieves an API key for a provider from the host's auth store.
 func (e *Extension) AuthGetKey(ctx context.Context, provider string) (string, error) {
-	resp, err := e.request(ctx, "host/auth.getKey", map[string]any{"provider": provider})
+	type resp struct{ Key string `json:"key"` }
+	r, err := hostCall[resp](e, ctx, "host/auth.getKey", map[string]any{"provider": provider})
 	if err != nil {
 		return "", err
 	}
-	if resp.Error != nil {
-		return "", fmt.Errorf("auth get key: %s", resp.Error.Message)
-	}
-	var result struct {
-		Key string `json:"key"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return "", fmt.Errorf("unmarshal auth key: %w", err)
-	}
-	return result.Key, nil
+	return r.Key, nil
 }
 
 // Chat makes a single-turn LLM call via the host. The host handles model
 // resolution, provider creation, and streaming. Use for lightweight calls
 // like title generation or summary refinement.
 func (e *Extension) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	resp, err := e.request(ctx, "host/chat", req)
+	r, err := hostCall[ChatResponse](e, ctx, "host/chat", req)
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("chat: %s", resp.Error.Message)
-	}
-	var result ChatResponse
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal chat response: %w", err)
-	}
-	return &result, nil
+	return &r, nil
 }
 
 // RunAgent asks the host to run a full agent loop with tools to completion.
 // The host handles model resolution, tool access, and multi-turn execution.
 // Returns the final agent text output and usage statistics.
 func (e *Extension) RunAgent(ctx context.Context, req AgentRequest) (*AgentResponse, error) {
-	resp, err := e.request(ctx, "host/agent.run", req)
+	r, err := hostCall[AgentResponse](e, ctx, "host/agent.run", req)
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("run agent: %s", resp.Error.Message)
-	}
-	var result AgentResponse
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal agent response: %w", err)
-	}
-	return &result, nil
+	return &r, nil
 }
 
 // ListHostTools returns the schemas of tools available in the host.
 // Filter can be "all" (default) or "background_safe".
 func (e *Extension) ListHostTools(ctx context.Context, filter string) ([]HostToolInfo, error) {
-	resp, err := e.request(ctx, "host/listTools", map[string]any{"filter": filter})
+	type resp struct{ Tools []HostToolInfo `json:"tools"` }
+	r, err := hostCall[resp](e, ctx, "host/listTools", map[string]any{"filter": filter})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("list host tools: %s", resp.Error.Message)
-	}
-
-	var result struct {
-		Tools []HostToolInfo `json:"tools"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal host tools: %w", err)
-	}
-	return result.Tools, nil
+	return r.Tools, nil
 }
 
 // CallHostTool executes a host-registered tool and returns the result.
@@ -139,18 +125,13 @@ func (e *Extension) CallHostTool(ctx context.Context, name string, args map[stri
 	}
 
 	var result struct {
-		Content []wireContentBlock `json:"content"`
-		IsError bool               `json:"isError"`
+		Content []ContentBlock `json:"content"`
+		IsError bool           `json:"isError"`
 	}
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		return nil, fmt.Errorf("unmarshal host tool result: %w", err)
 	}
-
-	blocks := make([]ContentBlock, len(result.Content))
-	for i, b := range result.Content {
-		blocks[i] = ContentBlock(b)
-	}
-	return &ToolResult{Content: blocks, IsError: result.IsError}, nil
+	return &ToolResult{Content: result.Content, IsError: result.IsError}, nil
 }
 
 // HostTools returns core.Tool wrappers that proxy tool calls to the host.
@@ -171,207 +152,105 @@ func (e *Extension) HostTools(names ...string) []HostTool {
 
 // ConversationMessages returns the current conversation history as raw JSON.
 func (e *Extension) ConversationMessages(ctx context.Context) (json.RawMessage, error) {
-	resp, err := e.request(ctx, "host/conversationMessages", struct{}{})
+	type resp struct{ Messages json.RawMessage `json:"messages"` }
+	r, err := hostCall[resp](e, ctx, "host/conversationMessages", struct{}{})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("conversation messages: %s", resp.Error.Message)
-	}
-	var result struct {
-		Messages json.RawMessage `json:"messages"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal conversation messages: %w", err)
-	}
-	return result.Messages, nil
+	return r.Messages, nil
 }
 
 // Sessions returns all session summaries from the host.
 func (e *Extension) Sessions(ctx context.Context) ([]SessionInfo, error) {
-	resp, err := e.request(ctx, "host/sessions", struct{}{})
+	type resp struct{ Sessions []SessionInfo `json:"sessions"` }
+	r, err := hostCall[resp](e, ctx, "host/sessions", struct{}{})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("sessions: %s", resp.Error.Message)
-	}
-	var result struct {
-		Sessions []SessionInfo `json:"sessions"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal sessions: %w", err)
-	}
-	return result.Sessions, nil
-}
-
-// LoadSession loads a session by path.
-func (e *Extension) LoadSession(ctx context.Context, path string) error {
-	resp, err := e.request(ctx, "host/loadSession", map[string]any{"path": path})
-	if err != nil {
-		return err
-	}
-	if resp.Error != nil {
-		return fmt.Errorf("load session: %s", resp.Error.Message)
-	}
-	return nil
+	return r.Sessions, nil
 }
 
 // ForkSession forks the current session and returns the parent ID and message count.
 func (e *Extension) ForkSession(ctx context.Context) (parentID string, count int, err error) {
-	resp, err := e.request(ctx, "host/forkSession", struct{}{})
-	if err != nil {
-		return "", 0, err
-	}
-	if resp.Error != nil {
-		return "", 0, fmt.Errorf("fork session: %s", resp.Error.Message)
-	}
-	var result struct {
+	type resp struct {
 		ParentID     string `json:"parentID"`
 		MessageCount int    `json:"messageCount"`
 	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return "", 0, fmt.Errorf("unmarshal fork session: %w", err)
+	r, err := hostCall[resp](e, ctx, "host/forkSession", struct{}{})
+	if err != nil {
+		return "", 0, err
 	}
-	return result.ParentID, result.MessageCount, nil
+	return r.ParentID, r.MessageCount, nil
 }
 
 // SetSessionTitle sets the current session's title.
 func (e *Extension) SetSessionTitle(ctx context.Context, title string) error {
-	resp, err := e.request(ctx, "host/setSessionTitle", map[string]any{"title": title})
-	if err != nil {
-		return err
-	}
-	if resp.Error != nil {
-		return fmt.Errorf("set session title: %s", resp.Error.Message)
-	}
-	return nil
+	return hostCallVoid(e, ctx, "host/setSessionTitle", map[string]any{"title": title})
 }
 
 // SyncModels syncs the model catalog and returns the count of updated models.
 func (e *Extension) SyncModels(ctx context.Context) (int, error) {
-	resp, err := e.request(ctx, "host/syncModels", struct{}{})
+	type resp struct{ Updated int `json:"updated"` }
+	r, err := hostCall[resp](e, ctx, "host/syncModels", struct{}{})
 	if err != nil {
 		return 0, err
 	}
-	if resp.Error != nil {
-		return 0, fmt.Errorf("sync models: %s", resp.Error.Message)
-	}
-	var result struct {
-		Updated int `json:"updated"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return 0, fmt.Errorf("unmarshal sync models: %w", err)
-	}
-	return result.Updated, nil
+	return r.Updated, nil
 }
 
 // RunBackground starts a background agent with the given prompt.
 func (e *Extension) RunBackground(ctx context.Context, prompt string) error {
-	resp, err := e.request(ctx, "host/runBackground", map[string]any{"prompt": prompt})
-	if err != nil {
-		return err
-	}
-	if resp.Error != nil {
-		return fmt.Errorf("run background: %s", resp.Error.Message)
-	}
-	return nil
+	return hostCallVoid(e, ctx, "host/runBackground", map[string]any{"prompt": prompt})
 }
 
 // CancelBackground cancels the running background agent.
 func (e *Extension) CancelBackground(ctx context.Context) error {
-	resp, err := e.request(ctx, "host/cancelBackground", struct{}{})
-	if err != nil {
-		return err
-	}
-	if resp.Error != nil {
-		return fmt.Errorf("cancel background: %s", resp.Error.Message)
-	}
-	return nil
+	return hostCallVoid(e, ctx, "host/cancelBackground", struct{}{})
 }
 
 // IsBackgroundRunning returns whether a background agent is currently active.
 func (e *Extension) IsBackgroundRunning(ctx context.Context) (bool, error) {
-	resp, err := e.request(ctx, "host/isBackgroundRunning", struct{}{})
+	type resp struct{ Running bool `json:"running"` }
+	r, err := hostCall[resp](e, ctx, "host/isBackgroundRunning", struct{}{})
 	if err != nil {
 		return false, err
 	}
-	if resp.Error != nil {
-		return false, fmt.Errorf("is background running: %s", resp.Error.Message)
-	}
-	var result struct {
-		Running bool `json:"running"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return false, fmt.Errorf("unmarshal is background running: %w", err)
-	}
-	return result.Running, nil
+	return r.Running, nil
 }
 
 // ExtInfos returns metadata about all loaded extensions.
 func (e *Extension) ExtInfos(ctx context.Context) ([]ExtInfo, error) {
-	resp, err := e.request(ctx, "host/extInfos", struct{}{})
+	type resp struct{ Extensions []ExtInfo `json:"extensions"` }
+	r, err := hostCall[resp](e, ctx, "host/extInfos", struct{}{})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("ext infos: %s", resp.Error.Message)
-	}
-	var result struct {
-		Extensions []ExtInfo `json:"extensions"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal ext infos: %w", err)
-	}
-	return result.Extensions, nil
+	return r.Extensions, nil
 }
 
 // ExtensionsDir returns the path to the extensions directory.
 func (e *Extension) ExtensionsDir(ctx context.Context) (string, error) {
-	resp, err := e.request(ctx, "host/extensionsDir", struct{}{})
+	type resp struct{ Path string `json:"path"` }
+	r, err := hostCall[resp](e, ctx, "host/extensionsDir", struct{}{})
 	if err != nil {
 		return "", err
 	}
-	if resp.Error != nil {
-		return "", fmt.Errorf("extensions dir: %s", resp.Error.Message)
-	}
-	var result struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return "", fmt.Errorf("unmarshal extensions dir: %w", err)
-	}
-	return result.Path, nil
+	return r.Path, nil
 }
 
 // UndoSnapshots returns a map of file path to snapshot size in bytes.
 func (e *Extension) UndoSnapshots(ctx context.Context) (map[string]int, error) {
-	resp, err := e.request(ctx, "host/undoSnapshots", struct{}{})
+	type resp struct{ Snapshots map[string]int `json:"snapshots"` }
+	r, err := hostCall[resp](e, ctx, "host/undoSnapshots", struct{}{})
 	if err != nil {
 		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("undo snapshots: %s", resp.Error.Message)
-	}
-	var result struct {
-		Snapshots map[string]int `json:"snapshots"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal undo snapshots: %w", err)
-	}
-	return result.Snapshots, nil
+	return r.Snapshots, nil
 }
 
 // UndoRestore restores a file from its undo snapshot.
 func (e *Extension) UndoRestore(ctx context.Context, path string) error {
-	resp, err := e.request(ctx, "host/undoRestore", map[string]any{"path": path})
-	if err != nil {
-		return err
-	}
-	if resp.Error != nil {
-		return fmt.Errorf("undo restore: %s", resp.Error.Message)
-	}
-	return nil
+	return hostCallVoid(e, ctx, "host/undoRestore", map[string]any{"path": path})
 }
 
 // request sends a JSON-RPC request to the host and waits for the response.

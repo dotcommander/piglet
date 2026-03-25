@@ -116,16 +116,8 @@ func ActionSetStatus(key, text string) *Action {
 	return &Action{Type: "setStatus", Payload: map[string]string{"key": key, "text": text}}
 }
 
-func ActionQuit() *Action {
-	return &Action{Type: "quit"}
-}
-
 func ActionAttachImage(data, mimeType string) *Action {
 	return &Action{Type: "attachImage", Payload: map[string]string{"data": data, "mimeType": mimeType}}
-}
-
-func ActionDetachImage() *Action {
-	return &Action{Type: "detachImage"}
 }
 
 func ActionSendMessage(content string) *Action {
