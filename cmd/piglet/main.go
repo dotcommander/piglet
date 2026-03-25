@@ -67,9 +67,32 @@ func main() {
 	}
 }
 
+// runtime holds state threaded between startup phases.
+type runtime struct {
+	settings config.Settings
+	auth     *config.Auth
+	registry *provider.Registry
+	model    core.Model
+	prov     core.StreamProvider
+	cwd      string
+	sessDir  string
+}
+
+// writeModelsYAML tries models.dev API first, falls back to hardcoded default.
+func writeModelsYAML(path string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	yaml, err := modelsdev.GenerateModelsYAML(ctx)
+	if err == nil {
+		return provider.WriteModelsData(path, yaml)
+	}
+	fmt.Fprintf(os.Stderr, "  models.dev unavailable, using defaults: %v\n", err)
+	return provider.WriteDefaultModels(path)
+}
+
 func run() error {
 	// Handle flags before anything else
-	var debug bool
+	var debugFlag bool
 	var promptArgs []string
 	for _, arg := range os.Args[1:] {
 		switch arg {
@@ -80,27 +103,15 @@ func run() error {
 			fmt.Println("piglet " + resolveVersion())
 			return nil
 		case "--debug":
-			debug = true
+			debugFlag = true
 		default:
 			promptArgs = append(promptArgs, arg)
 		}
 	}
 
-	// writeModels tries models.dev API first, falls back to hardcoded default.
-	writeModels := func(path string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		yaml, err := modelsdev.GenerateModelsYAML(ctx)
-		if err == nil {
-			return provider.WriteModelsData(path, yaml)
-		}
-		fmt.Fprintf(os.Stderr, "  models.dev unavailable, using defaults: %v\n", err)
-		return provider.WriteDefaultModels(path)
-	}
-
 	// Subcommands (after flag parsing so --debug init works)
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
-		return config.RunSetup(writeModels)
+		return config.RunSetup(writeModelsYAML)
 	}
 	if len(promptArgs) == 1 && promptArgs[0] == "update" {
 		settings, _ := config.Load()
@@ -114,29 +125,72 @@ func run() error {
 	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
 
-	// First-run setup: auto-detect missing config and run interactive setup
+	rt, debugCleanup, err := loadRuntime(debugFlag)
+	if err != nil {
+		return err
+	}
+	defer debugCleanup()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	app, system, extCleanup := setupApp(ctx, rt, interactive)
+	defer extCleanup()
+	// Session
+	sess, err := session.New(rt.sessDir, rt.cwd)
+	if err != nil {
+		sess = nil
+	}
+	if sess != nil {
+		defer sess.Close()
+		sess.SetModel(rt.model.ID)
+	}
+
+	ag := buildAgent(app, rt, system)
+
+	// Bind domain managers so commands work through ext.App
+	sessPtr := &sess
+	app.Bind(ag,
+		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
+		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth}),
+	)
+
+	if interactive {
+		return tui.Run(tui.Config{
+			Agent:    ag,
+			Session:  sess,
+			Model:    rt.model,
+			Models:   rt.registry.Models(),
+			SessDir:  rt.sessDir,
+			Theme:    tui.DefaultTheme(),
+			App:      app,
+			Settings: &rt.settings,
+		})
+	}
+
+	return runPrint(ag, app, sess, userPrompt)
+}
+
+// loadRuntime performs first-run setup, loads config/auth, resolves the model,
+// creates the provider, and sets up debug logging.
+func loadRuntime(debugFlag bool) (*runtime, func(), error) {
 	if config.NeedsSetup() {
-		if err := config.RunSetup(writeModels); err != nil {
-			return fmt.Errorf("setup: %w", err)
+		if err := config.RunSetup(writeModelsYAML); err != nil {
+			return nil, nil, fmt.Errorf("setup: %w", err)
 		}
 	}
 
-	// Load config
 	settings, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("config: %w", err)
+		return nil, nil, fmt.Errorf("config: %w", err)
 	}
 
-	// Auth
 	auth, err := config.NewAuthDefault()
 	if err != nil {
-		return fmt.Errorf("init auth: %w", err)
+		return nil, nil, fmt.Errorf("init auth: %w", err)
 	}
 
-	// Registry and model resolution
 	registry := provider.NewRegistry()
 
-	// Background refresh of model catalog from models.dev (every 24h)
 	if modelsdev.CacheStale() {
 		go func() {
 			rCtx, rCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -147,7 +201,6 @@ func run() error {
 		}()
 	}
 
-	// Background update check (every 24h, non-blocking)
 	if selfupdate.CheckStale() {
 		go func() {
 			uCtx, uCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -166,57 +219,68 @@ func run() error {
 		modelQuery = settings.DefaultModel
 	}
 	if modelQuery == "" {
-		return fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet init")
+		return nil, nil, fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet init")
 	}
 
 	model, ok := registry.Resolve(modelQuery)
 	if !ok {
-		return fmt.Errorf("unknown model: %s", modelQuery)
+		return nil, nil, fmt.Errorf("unknown model: %s", modelQuery)
 	}
 
-	// Create provider
 	apiKeyFn := func() string {
 		return auth.GetAPIKey(model.Provider)
 	}
 	prov, err := registry.Create(model, apiKeyFn)
 	if err != nil {
-		return fmt.Errorf("create provider: %w", err)
+		return nil, nil, fmt.Errorf("create provider: %w", err)
 	}
 
-	// Debug logging (--debug flag or debug: true in config)
-	if debug || settings.Debug {
-		logger, cleanup, err := openDebugLog()
+	cleanup := func() {}
+	if debugFlag || settings.Debug {
+		logger, logCleanup, err := openDebugLog()
 		if err != nil {
-			return fmt.Errorf("debug log: %w", err)
+			return nil, nil, fmt.Errorf("debug log: %w", err)
 		}
-		defer cleanup()
+		cleanup = logCleanup
 		if d, ok := prov.(provider.Debuggable); ok {
 			d.SetLogger(logger)
 		}
 		logger.Info("session start", "model", model.ID, "provider", model.Provider)
 	}
 
-	// Working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("get cwd: %w", err)
+		return nil, cleanup, fmt.Errorf("get cwd: %w", err)
 	}
 
-	// Session directory
 	sessDir, _ := config.SessionsDir()
 
-	// Extension app + built-in tools + commands
-	app := ext.NewApp(cwd)
+	rt := &runtime{
+		settings: settings,
+		auth:     auth,
+		registry: registry,
+		model:    model,
+		prov:     prov,
+		cwd:      cwd,
+		sessDir:  sessDir,
+	}
+	return rt, cleanup, nil
+}
+
+// setupApp creates the extension app, registers tools/commands/extensions,
+// builds the system prompt, and returns the app with cleanup.
+func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, string, func()) {
+	app := ext.NewApp(rt.cwd)
 	tool.RegisterBuiltins(app, tool.BashConfig{
-		DefaultTimeout: settings.Bash.DefaultTimeout,
-		MaxTimeout:     settings.Bash.MaxTimeout,
-		MaxStdout:      settings.Bash.MaxStdout,
-		MaxStderr:      settings.Bash.MaxStderr,
+		DefaultTimeout: rt.settings.Bash.DefaultTimeout,
+		MaxTimeout:     rt.settings.Bash.MaxTimeout,
+		MaxStdout:      rt.settings.Bash.MaxStdout,
+		MaxStderr:      rt.settings.Bash.MaxStderr,
 	}, tool.ToolConfig{
-		ReadLimit: settings.Tools.ReadLimit,
-		GrepLimit: settings.Tools.GrepLimit,
+		ReadLimit: rt.settings.Tools.ReadLimit,
+		GrepLimit: rt.settings.Tools.GrepLimit,
 	})
-	command.RegisterBuiltins(app, settings.Shortcuts, resolveVersion())
+	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
@@ -225,92 +289,55 @@ func run() error {
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
 
-	// Project docs (configurable context files → system prompt)
-	prompt.RegisterProjectDocs(app, settings.ProjectDocs)
+	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
 
-	// External extensions (TypeScript, Python, etc.)
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	loaded, extCleanup, _ := external.LoadAll(ctx, app)
-	defer extCleanup()
 
 	if interactive && loaded == 0 {
-		if err := command.InstallOfficialExtensions(os.Stderr, settings); err != nil {
+		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
-		// Reload after install attempt (picks up freshly built extensions)
-		loaded, cleanup, _ := external.LoadAll(ctx, app)
-		defer cleanup()
-		if loaded > 0 {
-			fmt.Fprintf(os.Stderr, "Loaded %d extensions.\n\n", loaded)
+		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app)
+		origCleanup := extCleanup
+		extCleanup = func() { reloadCleanup(); origCleanup() }
+		if reloaded > 0 {
+			fmt.Fprintf(os.Stderr, "Loaded %d extensions.\n\n", reloaded)
 		}
 	}
 
-	// Self-knowledge (dynamic tools/commands/shortcuts listing)
 	prompt.RegisterSelfKnowledge(app)
 
-	// System prompt: config.yaml systemPrompt or prompt.md (no hardcoded fallback)
-	basePrompt := settings.SystemPrompt
+	basePrompt := rt.settings.SystemPrompt
 	system := prompt.Build(app, basePrompt, prompt.BuildOptions{
-		OrderOverrides: settings.PromptOrder,
+		OrderOverrides: rt.settings.PromptOrder,
 	})
 
-	// Session
-	sess, err := session.New(sessDir, cwd)
-	if err != nil {
-		// Non-fatal: continue without persistence
-		sess = nil
-	}
-	if sess != nil {
-		defer sess.Close()
-		sess.SetModel(model.ID)
-	}
+	return app, system, extCleanup
+}
 
-	// Agent
+// buildAgent creates the agent from app state and runtime config.
+func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
 	coreTools := app.CoreTools()
-	// Build agent config, pulling compactor from ext if registered
 	var opts core.StreamOptions
-	if settings.Agent.MaxTokens > 0 {
-		mt := settings.Agent.MaxTokens
+	if rt.settings.Agent.MaxTokens > 0 {
+		mt := rt.settings.Agent.MaxTokens
 		opts.MaxTokens = &mt
 	}
 	agCfg := core.AgentConfig{
-		Provider:        prov,
+		Provider:        rt.prov,
 		System:          system,
 		Tools:           coreTools,
 		Options:         opts,
-		MaxTurns:        config.IntOr(settings.Agent.MaxTurns, 10),
-		MaxMessages:     config.IntOr(settings.Agent.MaxMessages, 200),
-		MaxRetries:      settings.Agent.MaxRetries,
-		ToolConcurrency: settings.Agent.ToolConcurrency,
+		MaxTurns:        config.IntOr(rt.settings.Agent.MaxTurns, 10),
+		MaxMessages:     config.IntOr(rt.settings.Agent.MaxMessages, 200),
+		MaxRetries:      rt.settings.Agent.MaxRetries,
+		ToolConcurrency: rt.settings.Agent.ToolConcurrency,
 	}
 	if c := app.Compactor(); c != nil {
 		agCfg.CompactAt = c.Threshold
 		agCfg.OnCompact = c.Compact
 	}
-	ag := core.NewAgent(agCfg)
-
-	// Bind domain managers so commands work through ext.App
-	sessPtr := &sess
-	app.Bind(ag,
-		ext.WithSessionManager(&sessionMgr{dir: sessDir, current: sessPtr}),
-		ext.WithModelManager(&modelMgr{registry: registry, auth: auth}),
-	)
-
-	if interactive {
-		return tui.Run(tui.Config{
-			Agent:    ag,
-			Session:  sess,
-			Model:    model,
-			Models:   registry.Models(),
-			SessDir:  sessDir,
-			Theme:    tui.DefaultTheme(),
-			App:      app,
-			Settings: &settings,
-		})
-	}
-
-	return runPrint(ag, app, sess, userPrompt)
+	return core.NewAgent(agCfg)
 }
 
 func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
