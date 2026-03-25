@@ -146,7 +146,7 @@ func (r *Registry) loadModels() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Fall back to embedded defaults
-			data = []byte(defaultModelsYAML)
+			data = []byte(DefaultModelsYAML())
 		} else {
 			return fmt.Errorf("read models: %w", err)
 		}
