@@ -120,8 +120,15 @@ func (e *Extension) ShowMessage(text string) {
 }
 
 // SendMessage injects a user message into the agent loop.
+// The message is queued and delivered after the current turn completes.
 func (e *Extension) SendMessage(content string) {
 	e.sendNotification("sendMessage", map[string]string{"content": content})
+}
+
+// Steer interrupts the current turn and injects a message.
+// Remaining tool calls are cancelled and this message is processed next.
+func (e *Extension) Steer(content string) {
+	e.sendNotification("steer", map[string]string{"content": content})
 }
 
 // Log sends a log message to the host.

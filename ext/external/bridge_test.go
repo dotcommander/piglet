@@ -888,6 +888,7 @@ func TestMethodNameConstants(t *testing.T) {
 		{"log", MethodLog, "log"},
 		{"showMessage", MethodShowMessage, "showMessage"},
 		{"sendMessage", MethodSendMessage, "sendMessage"},
+		{"steer", MethodSteer, "steer"},
 	}
 
 	for _, tt := range tests {

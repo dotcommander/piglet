@@ -177,6 +177,11 @@ func (h *Host) handleMessage(msg *Message) {
 		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
 			h.app.SendMessage(p.Content)
 		}
+	case MethodSteer:
+		var p SteerParams
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.Steer(p.Content)
+		}
 	case MethodLog:
 		var p LogParams
 		if json.Unmarshal(msg.Params, &p) == nil {

@@ -149,6 +149,12 @@ type SendMessageParams struct {
 	Content string `json:"content"`
 }
 
+// SteerParams is the payload for a steer notification.
+// Interrupts the current turn and injects a message.
+type SteerParams struct {
+	Content string `json:"content"`
+}
+
 // ---------------------------------------------------------------------------
 // Command execution: host → extension (request/response)
 // ---------------------------------------------------------------------------
@@ -551,4 +557,5 @@ const (
 	MethodLog                   = "log"
 	MethodShowMessage           = "showMessage"
 	MethodSendMessage           = "sendMessage"
+	MethodSteer                 = "steer"
 )
