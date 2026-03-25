@@ -54,9 +54,9 @@ func TestCompareVersions(t *testing.T) {
 func withCacheDir(t *testing.T, dir string) {
 	t.Helper()
 	cacheDirMu.Lock()
-	SetCacheDir(dir)
+	cacheDir = dir
 	t.Cleanup(func() {
-		SetCacheDir("")
+		cacheDir = ""
 		cacheDirMu.Unlock()
 	})
 }

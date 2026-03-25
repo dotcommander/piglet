@@ -36,14 +36,8 @@ type updateCache struct {
 }
 
 // cacheDir is the directory used for the update cache. Empty string means
-// use config.ConfigDir() at runtime. Override via SetCacheDir for testing.
+// use config.ConfigDir() at runtime. Tests override directly.
 var cacheDir string
-
-// SetCacheDir overrides the directory used for the update cache file.
-// Pass an empty string to restore the default (config.ConfigDir()).
-func SetCacheDir(dir string) {
-	cacheDir = dir
-}
 
 // resolveCachePath returns the full path to the cache file.
 func resolveCachePath() (string, error) {
@@ -215,6 +209,33 @@ func RunUpgrade(ctx context.Context, w io.Writer, tag string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("go install %s: %w", pkg, err)
 	}
+	return nil
+}
+
+// CheckAndUpgrade fetches the latest release, compares against currentVersion,
+// and installs it via go install. Progress and results are written to w.
+// Returns nil if already up to date.
+func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) error {
+	fmt.Fprintf(w, "Current version: %s\n", currentVersion)
+	fmt.Fprintln(w, "Checking for updates...")
+
+	release, err := FetchLatestRelease(ctx)
+	if err != nil {
+		return fmt.Errorf("check latest version: %w", err)
+	}
+	_ = WriteCache(release)
+
+	if CompareVersions(currentVersion, release.TagName) >= 0 {
+		fmt.Fprintf(w, "Already up to date (%s)\n", currentVersion)
+		return nil
+	}
+
+	fmt.Fprintf(w, "Upgrading: %s → %s\n", currentVersion, release.TagName)
+	if err := RunUpgrade(ctx, w, release.TagName); err != nil {
+		return fmt.Errorf("upgrade failed: %w", err)
+	}
+
+	fmt.Fprintf(w, "\nUpgraded to %s. Restart piglet to use the new version.\n", release.TagName)
 	return nil
 }
 
