@@ -89,7 +89,7 @@ type SubAgentSettings struct {
 const defaultExtensionsRepoURL = "https://github.com/dotcommander/piglet-extensions.git"
 
 var defaultOfficialExtensions = []string{
-	"admin", "autotitle", "background", "behavior", "bulk", "clipboard",
+	"admin", "autotitle", "background", "behavior", "bulk", "cache", "clipboard",
 	"export", "extensions-list", "gitcontext", "inbox", "loop", "lsp",
 	"mcp", "memory", "modelsdev", "pipeline", "plan", "prompts",
 	"provider", "repomap", "rtk", "safeguard", "scaffold", "session-tools",
