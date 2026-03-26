@@ -166,7 +166,7 @@ func (m ModalModel) View() string {
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(m.styles.styles().Border).
+		BorderForeground(m.styles.BorderColor).
 		Padding(1, 2).
 		Width(w)
 
@@ -255,7 +255,3 @@ func scrollStart(cursor, items, height int) int {
 	return start
 }
 
-// themeColors returns a Theme with default border color.
-func (s Styles) styles() Theme {
-	return Theme{Border: lipgloss.Color("#45475A")}
-}

@@ -101,14 +101,7 @@ func (m *Model) bindApp() {
 			return nil
 		}),
 		ext.WithCancelBackground(func() {
-			if m.bgAgent != nil && m.bgAgent.IsRunning() {
-				m.bgAgent.Stop()
-			}
-			m.bgAgent = nil
-			m.bgEventCh = nil
-			m.bgTask = ""
-			m.bgResult.Reset()
-			m.status.Set(ext.StatusKeyBg, "")
+			m.stopBgAgent()
 		}),
 		ext.WithIsBackgroundRunning(func() bool {
 			return m.bgAgent != nil && m.bgAgent.IsRunning()
@@ -229,6 +222,7 @@ func (m *Model) applyAsyncAction(action ext.Action) tea.Cmd {
 			})
 		}
 	case ext.ActionQuit:
+		m.stopBgAgent()
 		m.quitting = true
 	case ext.ActionSendMessage:
 		if m.streaming {
@@ -245,6 +239,18 @@ func (m *Model) applyAsyncAction(action ext.Action) tea.Cmd {
 		return m.startAgentLoop(content)
 	}
 	return nil
+}
+
+// stopBgAgent cancels the background agent if one is running.
+func (m *Model) stopBgAgent() {
+	if m.bgAgent != nil && m.bgAgent.IsRunning() {
+		m.bgAgent.Stop()
+	}
+	m.bgAgent = nil
+	m.bgEventCh = nil
+	m.bgTask = ""
+	m.bgResult.Reset()
+	m.status.Set(ext.StatusKeyBg, "")
 }
 
 // runCommand dispatches a slash command to the registered handler.

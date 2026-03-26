@@ -49,8 +49,9 @@ type Styles struct {
 	Spinner      lipgloss.Style
 	InputBorder  lipgloss.Style
 	Muted        lipgloss.Style
-	Error        lipgloss.Style
-	Success      lipgloss.Style
+	Error       lipgloss.Style
+	Success     lipgloss.Style
+	BorderColor color.Color
 }
 
 // NewStyles creates styles from a theme.
@@ -92,5 +93,6 @@ func NewStyles(t Theme) Styles {
 			Foreground(t.Error),
 		Success: lipgloss.NewStyle().
 			Foreground(t.Success),
+		BorderColor: t.Border,
 	}
 }

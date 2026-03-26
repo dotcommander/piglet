@@ -130,10 +130,15 @@ func New(cfg Config) Model {
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	sp.Style = styles.Spinner
 
+	vp := viewport.New()
+	vp.MouseWheelDelta = 1
+	vp.Style = lipgloss.NewStyle()
+
 	return Model{
 		cfg:          cfg,
 		styles:       styles,
 		input:        NewInputModel(styles, commands),
+		viewport:     vp,
 		status:       status,
 		msgView:      NewMessageView(styles, 80),
 		spinner:      sp,
@@ -284,6 +289,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			m.streamCache = StreamCache{}
 			return m, nil, true
 		}
+		m.stopBgAgent()
 		m.quitting = true
 		return m, tea.Quit, true
 
@@ -354,9 +360,8 @@ func (m *Model) layout() {
 	}
 
 	wasAtBottom := m.followOutput
-	m.viewport = viewport.New(viewport.WithWidth(m.width-2), viewport.WithHeight(vpH))
-	m.viewport.MouseWheelDelta = 1
-	m.viewport.Style = lipgloss.NewStyle()
+	m.viewport.SetWidth(m.width - 2)
+	m.viewport.SetHeight(vpH)
 	m.refreshViewport()
 	if wasAtBottom {
 		m.viewport.GotoBottom()

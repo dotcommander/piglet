@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -18,10 +19,13 @@ type MessageView struct {
 
 // NewMessageView creates a message renderer.
 func NewMessageView(styles Styles, width int) MessageView {
-	r, _ := glamour.NewTermRenderer(
+	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(width-4),
 	)
+	if err != nil {
+		slog.Warn("glamour init failed, using plain text", "error", err)
+	}
 	return MessageView{styles: styles, renderer: r, width: width}
 }
 
@@ -32,10 +36,14 @@ func (v *MessageView) SetWidth(w int) {
 	}
 	v.width = w
 	v.cachedSep = "" // invalidate separator cache
-	v.renderer, _ = glamour.NewTermRenderer(
+	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(w-4),
 	)
+	if err != nil {
+		slog.Warn("glamour resize failed, using plain text", "error", err)
+	}
+	v.renderer = r
 }
 
 // RenderMessage renders a single message.
