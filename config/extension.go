@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,9 @@ import (
 // Looks for ~/.config/piglet/{name}.md.
 // Returns empty string (not error) if the file doesn't exist.
 func ReadExtensionConfig(name string) (string, error) {
+	if filepath.Base(name) != name || strings.ContainsRune(name, filepath.Separator) {
+		return "", fmt.Errorf("invalid extension name: %q", name)
+	}
 	dir, err := ConfigDir()
 	if err != nil {
 		return "", err

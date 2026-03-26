@@ -193,9 +193,6 @@ func Save(s Settings) error {
 
 // SaveTo writes settings to a specific path.
 func SaveTo(s Settings, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
 	data, err := yaml.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -204,17 +201,33 @@ func SaveTo(s Settings, path string) error {
 }
 
 // AtomicWrite writes data to path using a temp file + rename pattern.
-// Creates parent directories with 0o755 if needed.
+// Creates parent directories with 0o700 if needed.
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	tmp, err := os.CreateTemp(dir, ".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("write temp: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
 		return err
 	}
 	return nil

@@ -68,8 +68,9 @@ func TestSaveTo_AtomicWrite(t *testing.T) {
 	assert.Equal(t, "light", loaded.Theme)
 
 	// No .tmp file left behind
-	_, err = os.Stat(path + ".tmp")
-	assert.True(t, os.IsNotExist(err))
+	matches, globErr := filepath.Glob(filepath.Join(filepath.Dir(path), ".*.tmp"))
+	require.NoError(t, globErr)
+	assert.Empty(t, matches)
 }
 
 func TestLoadFrom_InvalidYAML(t *testing.T) {

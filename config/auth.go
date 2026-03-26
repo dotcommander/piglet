@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 // providerAliases maps shorthand names to canonical provider names.
@@ -136,6 +139,7 @@ func (a *Auth) Providers() []string {
 	for k := range a.credentials {
 		out = append(out, k)
 	}
+	slices.Sort(out)
 	return out
 }
 
@@ -159,9 +163,9 @@ func (a *Auth) save() error {
 	if a.path == "" {
 		return nil
 	}
-	a.mu.RLock()
+	a.mu.Lock()
 	data, err := json.MarshalIndent(a.credentials, "", "  ")
-	a.mu.RUnlock()
+	a.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("marshal auth: %w", err)
 	}
@@ -208,7 +212,7 @@ func resolveValue(value string) string {
 		if cmd == "" {
 			return ""
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10_000_000_000) // 10s
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var c *exec.Cmd
 		if runtime.GOOS == "windows" {
@@ -218,6 +222,7 @@ func resolveValue(value string) string {
 		}
 		out, err := c.Output()
 		if err != nil {
+			slog.Warn("credential command failed", "cmd", cmd, "error", err)
 			return ""
 		}
 		return strings.TrimSpace(string(out))
