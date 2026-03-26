@@ -261,7 +261,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 
 	ch := sub.Start(h.ctx, params.Task)
 
-	var result string
+	var resultBuilder strings.Builder
 	var totalIn, totalOut, turns int
 	for evt := range ch {
 		if te, ok := evt.(core.EventTurnEnd); ok {
@@ -271,7 +271,10 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 				totalOut += te.Assistant.Usage.OutputTokens
 				for _, c := range te.Assistant.Content {
 					if tc, ok := c.(core.TextContent); ok {
-						result = tc.Text
+						if resultBuilder.Len() > 0 {
+							resultBuilder.WriteByte('\n')
+						}
+						resultBuilder.WriteString(tc.Text)
 					}
 				}
 			}
@@ -279,7 +282,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 	}
 
 	h.respond(*msg.ID, HostAgentRunResult{
-		Text:  result,
+		Text:  resultBuilder.String(),
 		Turns: turns,
 		Usage: HostTokenUsage{Input: totalIn, Output: totalOut},
 	})

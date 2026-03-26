@@ -3,6 +3,7 @@ package external
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -535,21 +536,13 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 			p.host.releaseDeltaChan(requestID)
 
 			// Drain any deltas that arrived before we removed the channel.
-			for {
-				select {
-				case d := <-deltaCh:
-					ch <- deltaToStreamEvent(d)
-				default:
-					goto drained
-				}
-			}
-		drained:
+			drainDeltas(deltaCh, ch)
 			if resp.err != nil {
 				ch <- core.StreamEvent{Type: core.StreamError, Error: resp.err}
 				return
 			}
 			if resp.msg.Error != nil {
-				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("%s", resp.msg.Error.Message)}
+				ch <- core.StreamEvent{Type: core.StreamError, Error: errors.New(resp.msg.Error.Message)}
 				return
 			}
 			var result ProviderStreamResult
@@ -558,7 +551,7 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 				return
 			}
 			if result.Error != "" {
-				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("%s", result.Error)}
+				ch <- core.StreamEvent{Type: core.StreamError, Error: errors.New(result.Error)}
 				return
 			}
 			var msg core.AssistantMessage
@@ -577,6 +570,19 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 		case <-p.host.closed:
 			p.host.releaseDeltaChan(requestID)
 			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("extension %s crashed", p.host.manifest.Name)}
+			return
+		}
+	}
+}
+
+// drainDeltas flushes any remaining buffered deltas from deltaCh into ch.
+// Called after releaseDeltaChan to avoid losing events that arrived concurrently.
+func drainDeltas(deltaCh <-chan ProviderDeltaParams, ch chan<- core.StreamEvent) {
+	for {
+		select {
+		case d := <-deltaCh:
+			ch <- deltaToStreamEvent(d)
+		default:
 			return
 		}
 	}
