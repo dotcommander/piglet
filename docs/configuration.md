@@ -32,9 +32,9 @@ providers:
 | `shortcuts` | map | `{}` | Action → keybind (e.g. `model: ctrl+p`) |
 | `promptOrder` | map | `{}` | Prompt section title → order override |
 | `projectDocs` | list | `[]` | Files to auto-read for context (see below) |
-| `rtk` | bool | auto-detect | Enable/disable RTK token optimization |
+| `rtk` | *bool | `nil` (auto-detect) | RTK token optimization: `nil` = auto-detect, `true` = force enable, `false` = disable |
 | `debug` | bool | `false` | Log all request/response payloads |
-| `safeguard` | bool | `true` | Enable/disable dangerous command blocking |
+| `safeguard` | *bool | `nil` (enabled) | Dangerous command blocking: `nil`/`true` = enabled, `false` = disabled |
 
 #### Agent Settings (`agent:`)
 

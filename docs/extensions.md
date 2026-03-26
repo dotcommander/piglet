@@ -12,13 +12,13 @@ The fastest way to create an extension:
 /ext-init my-extension
 ```
 
-This creates `~/.config/piglet/extensions/my-extension/` with a ready-to-run scaffold. Restart piglet to load it.
+This creates `~/.config/piglet/extensions/my-extension/` with a ready-to-run scaffold. Restart piglet to load it. (Requires the `scaffold` extension from [piglet-extensions](https://github.com/dotcommander/piglet-extensions).)
 
 To see what's loaded: `/extensions`
 
 ## External Extensions (Go, TypeScript, Python, etc.)
 
-External extensions run as child processes and communicate via JSON-RPC v2 over stdin/stdout. They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions (safeguard, rtk, autotitle, clipboard, skill, memory, subagent, lsp, repomap, plan, bulk, mcp, gitcontext, prompts, behavior, admin, scaffold, session-tools, background, extensions-list, export, undo, usage, pipeline) are external Go binaries in the [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) repo.
+External extensions run as child processes and communicate via JSON-RPC v2 over **FD 3/4** (not stdin/stdout — those are free for the extension's own use). They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions are external Go binaries in the [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) repo.
 
 ### Directory Structure
 
@@ -171,7 +171,7 @@ func main() {
         },
     })
 
-    e.Run() // JSON-RPC loop over stdin/stdout
+    e.Run() // JSON-RPC loop over FD 3/4
 }
 ```
 
@@ -192,16 +192,22 @@ Go SDK API:
 | `e.ShowMessage(text)` | Display a message in conversation |
 | `e.Log(level, msg)` | Log to the host |
 | `e.CWD()` | Get the working directory |
-| `e.ConfigGet(ctx, keys...)` | Read host config values (protocol v3) |
-| `e.ConfigReadExtension(ctx, name)` | Read extension config file (protocol v3) |
-| `e.AuthGetKey(ctx, provider)` | Get API key from host auth (protocol v3) |
-| `e.Chat(ctx, req)` | Single-turn LLM call via host (protocol v3) |
-| `e.RunAgent(ctx, req)` | Full agent loop via host (protocol v3) |
+| `e.RegisterCompactor(def)` | Register a conversation compactor |
+| `e.RegisterProvider(api)` | Declare provider streaming capability |
+| `e.OnProviderStream(handler)` | Handle provider/stream requests from host |
+| `e.SendProviderDelta(reqID, kind, idx, delta, tool)` | Send streaming delta to host |
+| `e.SendMessage(content)` | Inject a user message into the agent loop |
+| `e.Steer(content)` | Interrupt current turn with a steering message |
+| `e.ConfigGet(ctx, keys...)` | Read host config values |
+| `e.ConfigReadExtension(ctx, name)` | Read extension config file |
+| `e.AuthGetKey(ctx, provider)` | Get API key from host auth |
+| `e.Chat(ctx, req)` | Single-turn LLM call via host |
+| `e.RunAgent(ctx, req)` | Full agent loop via host |
 | `e.Run()` | Start the JSON-RPC loop |
 
 ### Writing an SDK for Another Language
 
-The protocol is newline-delimited JSON-RPC 2.0 over stdin/stdout. See [docs/protocol.md](protocol.md) for the full message specification. The flow:
+The protocol is newline-delimited JSON-RPC 2.0 over FD 3 (host→extension) and FD 4 (extension→host). See [docs/protocol.md](protocol.md) for the full message specification. The flow:
 
 1. Host sends `initialize` request with `{ protocolVersion, cwd }`
 2. Extension sends `register/*` notifications (tool, command, promptSection, interceptor, eventHandler, shortcut, messageHook)

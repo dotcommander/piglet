@@ -1,6 +1,6 @@
 # Piglet JSON-RPC Protocol
 
-Piglet extensions communicate with the host via JSON-RPC 2.0 over `stdin` and `stdout`. This document specifies the message formats and the lifecycle of an external extension.
+Piglet extensions communicate with the host via JSON-RPC 2.0 over **FD 3** (host→extension) and **FD 4** (extension→host). This leaves stdin/stdout free for the extension's own use (logging, debugging). The Go and TypeScript SDKs handle the FD wiring automatically. This document specifies the message formats and the lifecycle of an external extension.
 
 ## Message Format
 
@@ -38,7 +38,7 @@ All messages are newline-delimited JSON. Piglet uses a standard JSON-RPC 2.0 str
 Sent immediately after the extension starts.
 
 **Params:**
-- `protocolVersion` (string): Currently "3".
+- `protocolVersion` (string): Currently "4".
 - `cwd` (string): The current working directory of the host.
 
 **Response (Result):**
@@ -201,6 +201,10 @@ Extensions should send these notifications **during the handshake phase** (after
 **Params:**
 - `name` (string): Compactor name.
 - `threshold` (integer, optional): Token threshold to trigger compaction.
+
+### `register/provider`
+**Params:**
+- `api` (string): The API type this extension can stream (e.g., "openai", "anthropic", "google").
 
 ---
 
