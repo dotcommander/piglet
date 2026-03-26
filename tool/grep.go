@@ -117,7 +117,7 @@ func grepFile(re *regexp.Regexp, path, displayPath string, limit int, count *int
 
 	var results []string
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 4096), 1024*1024)
 	lineNum := 0
 
 	for scanner.Scan() {

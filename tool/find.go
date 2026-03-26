@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
+
+var errLimitReached = errors.New("limit reached")
 
 func findTool(app *ext.App) *ext.ToolDef {
 	return &ext.ToolDef{
@@ -51,7 +54,7 @@ func findTool(app *ext.App) *ext.ToolDef {
 					return nil
 				}
 				if len(results) >= limit {
-					return doublestar.SkipDir
+					return errLimitReached
 				}
 				results = append(results, path)
 				return nil

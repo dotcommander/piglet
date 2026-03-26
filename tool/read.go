@@ -30,6 +30,18 @@ func readTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 				return errResult, nil
 			}
 
+			info, err := os.Stat(path)
+			if err != nil {
+				return textResult(fmt.Sprintf("error: %v", err)), nil
+			}
+			const maxReadSize = 50 << 20 // 50 MB
+			if !info.Mode().IsRegular() {
+				return textResult("error: not a regular file"), nil
+			}
+			if info.Size() > maxReadSize {
+				return textResult(fmt.Sprintf("error: file too large (%s, max 50MB)", FormatSize(info.Size()))), nil
+			}
+
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return textResult(fmt.Sprintf("error: %v", err)), nil

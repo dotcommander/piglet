@@ -31,6 +31,9 @@ func editTool(app *ext.App) *ext.ToolDef {
 			}
 			oldText, _ := args["old_text"].(string)
 			newText, _ := args["new_text"].(string)
+			if oldText == "" {
+				return textResult("error: old_text is required and cannot be empty"), nil
+			}
 
 			data, err := os.ReadFile(path)
 			if err != nil {

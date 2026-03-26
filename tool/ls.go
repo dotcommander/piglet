@@ -35,8 +35,9 @@ func lsTool(app *ext.App) *ext.ToolDef {
 
 			var b strings.Builder
 			count := 0
-			for _, e := range entries {
+			for i, e := range entries {
 				if count >= limit {
+					fmt.Fprintf(&b, "\n... (%d more entries, use limit to see more)", len(entries)-i)
 					break
 				}
 				info, err := e.Info()
@@ -53,11 +54,8 @@ func lsTool(app *ext.App) *ext.ToolDef {
 				count++
 			}
 
-			if count == 0 {
+			if count == 0 && count < limit {
 				return textResult("(empty directory)"), nil
-			}
-			if count >= limit {
-				fmt.Fprintf(&b, "\n... (%d more entries, use limit to see more)", len(entries)-limit)
 			}
 			return textResult(b.String()), nil
 		},

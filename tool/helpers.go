@@ -107,7 +107,7 @@ func (f filteredFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	filtered := entries[:0]
+	filtered := make([]fs.DirEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() && f.skip(e.Name()) {
 			continue
@@ -154,9 +154,15 @@ func (w *boundedWriter) Truncated() bool { return w.buf.Len() >= w.limit }
 // Only the most recent snapshot per file is kept (overwritten on each write).
 // Errors are silently ignored — undo is best-effort.
 func snapshotFile(path string) {
+	info, err := os.Stat(path)
+	const maxSnapshotSize = 10 << 20 // 10 MB
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxSnapshotSize {
+		return // new file, non-regular, or too large to snapshot
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return // new file, nothing to snapshot
+		return
 	}
 
 	dir, err := undoDir()
