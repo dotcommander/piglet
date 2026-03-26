@@ -23,7 +23,7 @@ import (
 
 func TestRegistry_ParseAPIOpenAI(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	// xai uses openai protocol
 	models := r.ModelsByProvider("xai")
 	require.NotEmpty(t, models)
@@ -34,7 +34,7 @@ func TestRegistry_ParseAPIOpenAI(t *testing.T) {
 
 func TestRegistry_ParseAPIAnthropic(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("anthropic")
 	require.NotEmpty(t, models)
 	for _, m := range models {
@@ -44,7 +44,7 @@ func TestRegistry_ParseAPIAnthropic(t *testing.T) {
 
 func TestRegistry_ParseAPIGoogle(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("google")
 	require.NotEmpty(t, models)
 	for _, m := range models {
@@ -54,7 +54,7 @@ func TestRegistry_ParseAPIGoogle(t *testing.T) {
 
 func TestRegistry_CreateUnknownAPIDefaultsToOpenAI(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	m := core.Model{
 		ID:       "unknown-model",
 		Provider: "custom",
@@ -70,7 +70,7 @@ func TestRegistry_CreateUnknownAPIDefaultsToOpenAI(t *testing.T) {
 
 func TestRegistry_ResolvePrefixAmbiguous(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	// "gpt-4" is a prefix of several models — any match is valid, just not a panic
 	m, ok := r.Resolve("gpt-4")
 	assert.True(t, ok)
@@ -79,7 +79,7 @@ func TestRegistry_ResolvePrefixAmbiguous(t *testing.T) {
 
 func TestRegistry_ResolveExactWinsOverPrefix(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	r.Register(core.Model{ID: "exact-model", Provider: "test", API: core.APIOpenAI})
 	r.Register(core.Model{ID: "exact-model-long", Provider: "test", API: core.APIOpenAI})
 
@@ -91,14 +91,14 @@ func TestRegistry_ResolveExactWinsOverPrefix(t *testing.T) {
 
 func TestRegistry_ModelsByProviderEmpty(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("nonexistent-provider")
 	assert.Empty(t, models)
 }
 
 func TestRegistry_ModelsByProviderCaseInsensitive(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	upper := r.ModelsByProvider("OPENAI")
 	lower := r.ModelsByProvider("openai")
 	assert.Equal(t, len(lower), len(upper))
@@ -106,7 +106,7 @@ func TestRegistry_ModelsByProviderCaseInsensitive(t *testing.T) {
 
 func TestRegistry_ModelsByProviderSorted(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("openai")
 	require.Greater(t, len(models), 1)
 	for i := 1; i < len(models); i++ {
@@ -116,7 +116,7 @@ func TestRegistry_ModelsByProviderSorted(t *testing.T) {
 
 func TestRegistry_RegisterOverwrite(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	r.Register(core.Model{ID: "my-model", Provider: "test", API: core.APIOpenAI, BaseURL: "https://original.com"})
 	r.Register(core.Model{ID: "my-model", Provider: "test", API: core.APIOpenAI, BaseURL: "https://updated.com"})
 

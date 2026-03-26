@@ -9,16 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newTestRegistry(t *testing.T) *provider.Registry {
+	t.Helper()
+	r, err := provider.NewRegistryFromData([]byte(provider.DefaultModelsYAML()))
+	require.NoError(t, err)
+	return r
+}
+
 func TestRegistry_BuiltinModels(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.Models()
 	assert.Greater(t, len(models), 5)
 }
 
 func TestRegistry_ResolveExact(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	m, ok := r.Resolve("openai/gpt-4o")
 	require.True(t, ok)
@@ -28,7 +35,7 @@ func TestRegistry_ResolveExact(t *testing.T) {
 
 func TestRegistry_ResolveByID(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	m, ok := r.Resolve("gpt-4o")
 	require.True(t, ok)
@@ -37,7 +44,7 @@ func TestRegistry_ResolveByID(t *testing.T) {
 
 func TestRegistry_ResolvePrefix(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	r.Register(core.Model{
 		ID:       "test-prefix-model",
 		Provider: "testprov",
@@ -51,7 +58,7 @@ func TestRegistry_ResolvePrefix(t *testing.T) {
 
 func TestRegistry_ResolveNotFound(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	_, ok := r.Resolve("nonexistent-model")
 	assert.False(t, ok)
@@ -59,7 +66,7 @@ func TestRegistry_ResolveNotFound(t *testing.T) {
 
 func TestRegistry_RegisterCustom(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	custom := core.Model{
 		ID:       "custom-1",
@@ -77,7 +84,7 @@ func TestRegistry_RegisterCustom(t *testing.T) {
 
 func TestRegistry_ModelsByProvider(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	models := r.ModelsByProvider("openai")
 	assert.Greater(t, len(models), 0)
@@ -88,7 +95,7 @@ func TestRegistry_ModelsByProvider(t *testing.T) {
 
 func TestRegistry_CreateOpenAI(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	m, ok := r.Resolve("gpt-4o")
 	require.True(t, ok)
@@ -100,7 +107,7 @@ func TestRegistry_CreateOpenAI(t *testing.T) {
 
 func TestRegistry_ModelsSorted(t *testing.T) {
 	t.Parallel()
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.Models()
 
 	for i := 1; i < len(models); i++ {
@@ -127,7 +134,7 @@ func TestRegistry_CreateAllAPIs(t *testing.T) {
 		{"google", "gemini-2.5-pro", core.APIGoogle},
 	}
 
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -146,7 +153,7 @@ func TestRegistry_CreateAllAPIs(t *testing.T) {
 func TestRegistry_ResolveAnthropicModels(t *testing.T) {
 	t.Parallel()
 
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("anthropic")
 	require.NotEmpty(t, models, "anthropic provider should have models")
 
@@ -168,7 +175,7 @@ func TestRegistry_ResolveAnthropicModels(t *testing.T) {
 func TestRegistry_ResolveGoogleModels(t *testing.T) {
 	t.Parallel()
 
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 	models := r.ModelsByProvider("google")
 	require.NotEmpty(t, models, "google provider should have models")
 
@@ -190,7 +197,7 @@ func TestRegistry_ResolveGoogleModels(t *testing.T) {
 func TestRegistry_ResolveCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
-	r := provider.NewRegistry()
+	r := newTestRegistry(t)
 
 	tests := []struct {
 		query        string

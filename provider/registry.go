@@ -28,6 +28,15 @@ func NewRegistry() *Registry {
 	return r
 }
 
+// NewRegistryFromData creates a registry from raw YAML model data without reading from disk.
+func NewRegistryFromData(data []byte) (*Registry, error) {
+	r := &Registry{models: make(map[string]core.Model)}
+	if _, err := r.loadFromData(data); err != nil {
+		return nil, fmt.Errorf("load models from data: %w", err)
+	}
+	return r, nil
+}
+
 // Register adds a model to the registry.
 func (r *Registry) Register(m core.Model) {
 	r.mu.Lock()
@@ -145,13 +154,16 @@ func (r *Registry) loadModels() (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Fall back to embedded defaults
 			data = []byte(DefaultModelsYAML())
 		} else {
 			return 0, fmt.Errorf("read models: %w", err)
 		}
 	}
 
+	return r.loadFromData(data)
+}
+
+func (r *Registry) loadFromData(data []byte) (int, error) {
 	var file modelsFile
 	if err := yaml.Unmarshal(data, &file); err != nil {
 		return 0, fmt.Errorf("parse models.yaml: %w", err)
