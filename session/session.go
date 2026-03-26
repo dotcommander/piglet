@@ -9,7 +9,7 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -288,8 +288,8 @@ func List(dir string) ([]Summary, error) {
 		}
 	}
 
-	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].CreatedAt.After(summaries[j].CreatedAt)
+	slices.SortFunc(summaries, func(a, b Summary) int {
+		return b.CreatedAt.Compare(a.CreatedAt) // descending: newest first
 	})
 
 	return summaries, nil

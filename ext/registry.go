@@ -1,11 +1,11 @@
 package ext
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"slices"
-	"sort"
 
 	"github.com/dotcommander/piglet/core"
 )
@@ -40,9 +40,7 @@ func (a *App) RegisterInterceptor(i Interceptor) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.interceptors = append(a.interceptors, i)
-	sort.Slice(a.interceptors, func(x, y int) bool {
-		return a.interceptors[x].Priority > a.interceptors[y].Priority
-	})
+	slices.SortFunc(a.interceptors, func(x, y Interceptor) int { return cmp.Compare(y.Priority, x.Priority) })
 }
 
 // RegisterMessageHook adds a hook that runs before user messages reach the LLM.
@@ -51,9 +49,7 @@ func (a *App) RegisterMessageHook(h MessageHook) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.messageHooks = append(a.messageHooks, h)
-	sort.Slice(a.messageHooks, func(i, j int) bool {
-		return a.messageHooks[i].Priority < a.messageHooks[j].Priority
-	})
+	slices.SortFunc(a.messageHooks, func(x, y MessageHook) int { return cmp.Compare(x.Priority, y.Priority) })
 }
 
 // RunMessageHooks executes all message hooks in priority order.
@@ -92,9 +88,7 @@ func (a *App) RegisterPromptSection(s PromptSection) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.promptSections = append(a.promptSections, s)
-	sort.Slice(a.promptSections, func(i, j int) bool {
-		return a.promptSections[i].Order < a.promptSections[j].Order
-	})
+	slices.SortFunc(a.promptSections, func(x, y PromptSection) int { return cmp.Compare(x.Order, y.Order) })
 }
 
 // RegisterCompactor sets the conversation compactor.

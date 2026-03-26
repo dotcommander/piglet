@@ -1,9 +1,11 @@
 package ext
 
 import (
+	"cmp"
 	"context"
+	"slices"
+
 	"github.com/dotcommander/piglet/core"
-	"sort"
 )
 
 // ---------------------------------------------------------------------------
@@ -16,9 +18,7 @@ func (a *App) RegisterEventHandler(h EventHandler) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.eventHandlers = append(a.eventHandlers, h)
-	sort.Slice(a.eventHandlers, func(i, j int) bool {
-		return a.eventHandlers[i].Priority < a.eventHandlers[j].Priority
-	})
+	slices.SortFunc(a.eventHandlers, func(x, y EventHandler) int { return cmp.Compare(x.Priority, y.Priority) })
 }
 
 // DispatchEvent sends an agent event to all registered event handlers.

@@ -1,7 +1,8 @@
 package tui
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -32,11 +33,11 @@ func NewStatusBar(styles Styles) StatusBar {
 func (s *StatusBar) SetRegistry(sections []ext.StatusSection) {
 	s.registry = make([]ext.StatusSection, len(sections))
 	copy(s.registry, sections)
-	sort.Slice(s.registry, func(i, j int) bool {
-		if s.registry[i].Side != s.registry[j].Side {
-			return s.registry[i].Side < s.registry[j].Side
+	slices.SortFunc(s.registry, func(a, b ext.StatusSection) int {
+		if a.Side != b.Side {
+			return cmp.Compare(a.Side, b.Side)
 		}
-		return s.registry[i].Order < s.registry[j].Order
+		return cmp.Compare(a.Order, b.Order)
 	})
 }
 

@@ -1,9 +1,10 @@
 package provider
 
 import (
+	"cmp"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -81,11 +82,11 @@ func (r *Registry) Models() []core.Model {
 	for _, m := range r.models {
 		models = append(models, m)
 	}
-	sort.Slice(models, func(i, j int) bool {
-		if models[i].Provider != models[j].Provider {
-			return models[i].Provider < models[j].Provider
+	slices.SortFunc(models, func(a, b core.Model) int {
+		if a.Provider != b.Provider {
+			return cmp.Compare(a.Provider, b.Provider)
 		}
-		return models[i].ID < models[j].ID
+		return cmp.Compare(a.ID, b.ID)
 	})
 	return models
 }
@@ -102,9 +103,7 @@ func (r *Registry) ModelsByProvider(provider string) []core.Model {
 			models = append(models, m)
 		}
 	}
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].ID < models[j].ID
-	})
+	slices.SortFunc(models, func(a, b core.Model) int { return cmp.Compare(a.ID, b.ID) })
 	return models
 }
 
