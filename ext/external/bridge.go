@@ -597,7 +597,9 @@ func deltaToStreamEvent(d ProviderDeltaParams) core.StreamEvent {
 	}
 	if d.Tool != nil {
 		var args map[string]any
-		_ = json.Unmarshal([]byte(d.Tool.Arguments), &args)
+		if err := json.Unmarshal([]byte(d.Tool.Arguments), &args); err != nil {
+			slog.Warn("unmarshal tool arguments in stream delta", "tool", d.Tool.Name, "error", err)
+		}
 		evt.Tool = &core.ToolCall{
 			ID:        d.Tool.ID,
 			Name:      d.Tool.Name,
