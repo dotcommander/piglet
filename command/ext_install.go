@@ -45,15 +45,6 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		return nil
 	}
 
-	// Strip local replace directives that break builds outside the dev machine
-	dropReplace := exec.Command("go", "mod", "edit",
-		"-dropreplace=github.com/dotcommander/piglet/sdk",
-	)
-	dropReplace.Dir = tmpDir
-	if out, err := dropReplace.CombinedOutput(); err != nil {
-		fmt.Fprintf(w, "Warning: go mod edit failed: %s\n", strings.TrimSpace(string(out)))
-	}
-
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = tmpDir
 	if out, err := tidyCmd.CombinedOutput(); err != nil {

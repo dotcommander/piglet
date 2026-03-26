@@ -89,8 +89,11 @@ type SubAgentSettings struct {
 const defaultExtensionsRepoURL = "https://github.com/dotcommander/piglet-extensions.git"
 
 var defaultOfficialExtensions = []string{
-	"safeguard", "rtk", "autotitle", "clipboard", "skill",
-	"memory", "subagent", "lsp", "repomap", "plan", "bulk", "modelsdev",
+	"admin", "autotitle", "background", "behavior", "bulk", "clipboard",
+	"export", "extensions-list", "gitcontext", "inbox", "loop", "lsp",
+	"mcp", "memory", "modelsdev", "pipeline", "plan", "prompts",
+	"provider", "repomap", "rtk", "safeguard", "scaffold", "session-tools",
+	"sift", "skill", "subagent", "suggest", "undo", "usage", "webfetch",
 }
 
 // ExtensionSettings controls extension installation defaults.
