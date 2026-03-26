@@ -337,18 +337,31 @@ func actionResultToAction(ar *ActionResult) ext.Action {
 	if ar == nil {
 		return nil
 	}
+	unmarshal := func(dst any) bool {
+		if err := json.Unmarshal(ar.Payload, dst); err != nil {
+			slog.Debug("malformed action payload", "type", ar.Type, "err", err)
+			return false
+		}
+		return true
+	}
 	switch ar.Type {
 	case "notify":
 		var p struct{ Message string }
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionNotify{Message: p.Message}
 	case "showMessage":
 		var p struct{ Text string }
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionShowMessage{Text: p.Text}
 	case "setSessionTitle":
 		var p struct{ Title string }
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionSetSessionTitle{Title: p.Title}
 	case "quit":
 		return ext.ActionQuit{}
@@ -357,20 +370,26 @@ func actionResultToAction(ar *ActionResult) ext.Action {
 			Key  string
 			Text string
 		}
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionSetStatus{Key: p.Key, Text: p.Text}
 	case "attachImage":
 		var p struct {
 			Data     string `json:"data"`
 			MimeType string `json:"mimeType"`
 		}
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionAttachImage{Image: &core.ImageContent{Data: p.Data, MimeType: p.MimeType}}
 	case "detachImage":
 		return ext.ActionDetachImage{}
 	case "sendMessage":
 		var p struct{ Content string }
-		_ = json.Unmarshal(ar.Payload, &p)
+		if !unmarshal(&p) {
+			return nil
+		}
 		return ext.ActionSendMessage{Content: p.Content}
 	default:
 		slog.Debug("unknown action type from extension", "type", ar.Type)
