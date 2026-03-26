@@ -49,8 +49,8 @@ func RegisterSelfKnowledge(app *ext.App) {
 	shortcuts := app.Shortcuts()
 	if len(shortcuts) > 0 {
 		b.WriteString("Keyboard shortcuts:\n")
-		for key, sc := range shortcuts {
-			fmt.Fprintf(&b, "- %s — %s\n", key, sc.Description)
+		for _, key := range slices.Sorted(maps.Keys(shortcuts)) {
+			fmt.Fprintf(&b, "- %s — %s\n", key, shortcuts[key].Description)
 		}
 		b.WriteString("\n")
 	}

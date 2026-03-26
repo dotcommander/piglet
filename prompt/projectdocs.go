@@ -3,6 +3,7 @@ package prompt
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
@@ -21,7 +22,7 @@ var defaultProjectDocs = []config.ProjectDoc{
 // otherwise falls back to defaults. Silently skips files that don't exist.
 func RegisterProjectDocs(app *ext.App, docs []config.ProjectDoc) {
 	if len(docs) == 0 {
-		docs = defaultProjectDocs
+		docs = slices.Clone(defaultProjectDocs)
 	}
 
 	root := repoRoot(app.CWD())
@@ -29,8 +30,15 @@ func RegisterProjectDocs(app *ext.App, docs []config.ProjectDoc) {
 		root = app.CWD()
 	}
 
+	const maxProjectDocSize = 512 << 10 // 512 KB
+
 	for _, doc := range docs {
-		data, err := os.ReadFile(filepath.Join(root, doc.Name))
+		path := filepath.Join(root, doc.Name)
+		info, err := os.Stat(path)
+		if err != nil || info.Size() > maxProjectDocSize {
+			continue
+		}
+		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}

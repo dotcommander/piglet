@@ -3,6 +3,7 @@ package prompt
 
 import (
 	"cmp"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -26,12 +27,13 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 	// User prompt file overrides the base identity
 	if userPrompt := loadUserPrompt(); userPrompt != "" {
 		b.WriteString(userPrompt)
+		b.WriteString("\n\n")
 	} else if base != "" {
 		b.WriteString(base)
+		b.WriteString("\n\n")
 	}
-	b.WriteString("\n\n")
 
-	// Extension-registered prompt sections
+	// Extension-registered prompt sections (pre-sorted by Order; re-sorted only when overrides apply)
 	sections := app.PromptSections()
 	if len(opts) > 0 && len(opts[0].OrderOverrides) > 0 {
 		for i, s := range sections {
@@ -83,6 +85,9 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 // loadUserPrompt reads ~/.config/piglet/prompt.md if it exists.
 func loadUserPrompt() string {
-	s, _ := config.ReadExtensionConfig("prompt")
+	s, err := config.ReadExtensionConfig("prompt")
+	if err != nil {
+		slog.Warn("failed to load user prompt", "error", err)
+	}
 	return s
 }
