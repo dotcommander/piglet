@@ -113,6 +113,9 @@ type Model struct {
 
 	// Auto-scroll: follow new output unless user scrolled up
 	followOutput bool
+
+	// Rendered message cache — parallel to m.messages, invalidated on width change
+	msgCache []string
 }
 
 // New creates a TUI model.
@@ -370,6 +373,7 @@ func (m *Model) layout() {
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width - 2) // subtract App padding
 	m.msgView.SetWidth(m.width - 2)
+	m.msgCache = nil
 	m.modal.SetSize(m.width, m.height)
 }
 

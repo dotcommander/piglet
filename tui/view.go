@@ -80,12 +80,20 @@ func (m *Model) refreshAndFollow() {
 	}
 }
 
-func (m Model) renderMessages() string {
+func (m *Model) renderMessages() string {
 	var b strings.Builder
 
-	for _, msg := range m.messages {
-		b.WriteString(m.msgView.RenderMessage(msg))
-		b.WriteString("\n\n")
+	for i, msg := range m.messages {
+		if i < len(m.msgCache) && m.msgCache[i] != "" {
+			b.WriteString(m.msgCache[i])
+		} else {
+			rendered := m.msgView.RenderMessage(msg) + "\n\n"
+			if len(m.msgCache) <= i {
+				m.msgCache = append(m.msgCache, make([]string, i+1-len(m.msgCache))...)
+			}
+			m.msgCache[i] = rendered
+			b.WriteString(rendered)
+		}
 	}
 
 	// Streaming content

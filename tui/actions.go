@@ -194,6 +194,7 @@ func (m *Model) applyStateAction(action ext.Action) {
 			m.cfg.Session = s
 			msgs := s.Messages()
 			m.messages = msgs
+			m.msgCache = nil
 			m.cfg.Agent.SetMessages(msgs)
 		}
 	case ext.ActionSetSessionTitle:
@@ -277,6 +278,7 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 	// Special handling for /clear: clear messages before handler runs
 	if name == "clear" {
 		m.messages = nil
+		m.msgCache = nil
 		m.cfg.Agent.SetMessages(nil)
 	}
 
