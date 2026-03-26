@@ -1,6 +1,6 @@
 # Extensions
 
-Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks.
+Extensions add custom functionality to piglet: tools, slash commands, keyboard shortcuts, prompt sections, interceptors, event handlers, and message hooks. See [extensions-vs-mcp.md](extensions-vs-mcp.md) for guidance on when to use extensions vs MCP servers.
 
 Piglet ships with a small compiled-in set of core tools and commands. Additional extensions run as standalone binaries via JSON-RPC from [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions), adding tools, commands, shortcuts, interceptors, event handlers, message hooks, and dynamic MCP tools. Run `/extensions` to see what's loaded.
 

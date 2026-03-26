@@ -99,6 +99,8 @@ All extensions map to these primitives — no special access:
 
 **New features should use existing primitives, not add new ones.**
 
+For guidance on when to use native extensions vs MCP servers, see [docs/extensions-vs-mcp.md](docs/extensions-vs-mcp.md).
+
 ### Extension Registration Pattern
 
 Compiled-in packages follow the same `Register(app)` pattern:
