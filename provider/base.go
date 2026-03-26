@@ -14,6 +14,26 @@ import (
 	"github.com/dotcommander/piglet/core"
 )
 
+const debugResponseCap = 512 * 1024 // 512KB
+
+type limitedWriter struct {
+	buf bytes.Buffer
+	cap int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if w.buf.Len() >= w.cap {
+		return len(p), nil
+	}
+	if rem := w.cap - w.buf.Len(); len(p) > rem {
+		w.buf.Write(p[:rem])
+		return len(p), nil
+	}
+	return w.buf.Write(p)
+}
+
+func (w *limitedWriter) Truncated() bool { return w.buf.Len() >= w.cap }
+
 // baseProvider holds fields shared by all provider implementations.
 type baseProvider struct {
 	model      core.Model
@@ -285,16 +305,17 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 		}
 		defer reader.Close()
 
-		// Debug: tee response stream to logger
+		// Debug: tee response stream to logger (capped at debugResponseCap)
 		var parseReader io.Reader = reader
 		if logger != nil {
-			var buf bytes.Buffer
-			parseReader = io.TeeReader(reader, &buf)
+			lw := &limitedWriter{cap: debugResponseCap}
+			parseReader = io.TeeReader(reader, lw)
 			defer func() {
 				logger.Debug("response",
 					"provider", p.streamModel().Provider,
 					"model", p.streamModel().ID,
-					"body", buf.String(),
+					"body", lw.buf.String(),
+					"truncated", lw.Truncated(),
 				)
 			}()
 		}

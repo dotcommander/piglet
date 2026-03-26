@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/dotcommander/piglet/core"
@@ -177,11 +178,11 @@ func (p *Google) endpoint() string {
 }
 
 func (p *Google) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
-	url := p.endpoint()
-	if apiKey := p.apiKeyFn(); apiKey != "" {
-		url += "&key=" + apiKey
-	}
-	return p.doHTTPRequest(ctx, url, body, nil)
+	return p.doHTTPRequest(ctx, p.endpoint(), body, func(req *http.Request) {
+		if apiKey := p.apiKeyFn(); apiKey != "" {
+			req.Header.Set("x-goog-api-key", apiKey)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -41,7 +41,7 @@ func TestAnthropic_StreamText(t *testing.T) {
 			`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}`,
-			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"cache_creation_input_tokens":5,"cache_read_input_tokens":0}}`,
 		))
 	}))
 	defer server.Close()

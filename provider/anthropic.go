@@ -344,12 +344,8 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 			}
 			if evt.Usage != nil {
 				msg.Usage.OutputTokens = evt.Usage.OutputTokens
-				if evt.Usage.CacheCreationInputTokens > 0 {
-					msg.Usage.CacheWriteTokens = evt.Usage.CacheCreationInputTokens
-				}
-				if evt.Usage.CacheReadInputTokens > 0 {
-					msg.Usage.CacheReadTokens = evt.Usage.CacheReadInputTokens
-				}
+				msg.Usage.CacheWriteTokens = evt.Usage.CacheCreationInputTokens
+				msg.Usage.CacheReadTokens = evt.Usage.CacheReadInputTokens
 			}
 		}
 	})

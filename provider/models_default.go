@@ -18,8 +18,9 @@ type CuratedModel struct {
 	Provider      string
 	API           string // "openai", "anthropic", "google"
 	BaseURL       string
-	ContextWindow int // default when API data unavailable
-	MaxTokens     int // default when API data unavailable
+	ContextWindow       int  // default when API data unavailable
+	MaxTokens           int  // default when API data unavailable
+	MaxCompletionTokens bool // true: use max_completion_tokens instead of max_tokens (OpenAI newer models)
 }
 
 // CuratedModels returns the default model catalog.
@@ -32,13 +33,13 @@ var curatedModels = []CuratedModel{
 	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
 	{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
 	// OpenAI
-	{ID: "gpt-5.4", Name: "GPT-5.4", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1050000, MaxTokens: 128000},
-	{ID: "gpt-5", Name: "GPT-5", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 400000, MaxTokens: 128000},
-	{ID: "o4-mini", Name: "o4-mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000},
-	{ID: "gpt-4.1", Name: "GPT-4.1", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768},
-	{ID: "gpt-4.1-mini", Name: "GPT-4.1 mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768},
+	{ID: "gpt-5.4", Name: "GPT-5.4", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1050000, MaxTokens: 128000, MaxCompletionTokens: true},
+	{ID: "gpt-5", Name: "GPT-5", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 400000, MaxTokens: 128000, MaxCompletionTokens: true},
+	{ID: "o4-mini", Name: "o4-mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000, MaxCompletionTokens: true},
+	{ID: "gpt-4.1", Name: "GPT-4.1", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768, MaxCompletionTokens: true},
+	{ID: "gpt-4.1-mini", Name: "GPT-4.1 mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768, MaxCompletionTokens: true},
 	{ID: "gpt-4o", Name: "GPT-4o", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
-	{ID: "o3", Name: "o3", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000},
+	{ID: "o3", Name: "o3", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000, MaxCompletionTokens: true},
 	// Google
 	{ID: "gemini-3.1-pro-preview", Name: "Gemini 3.1 Pro Preview", Provider: "google", API: "google", BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
 	{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Provider: "google", API: "google", BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
@@ -59,14 +60,12 @@ var curatedModels = []CuratedModel{
 
 // DefaultModelsYAML returns the default models catalog as YAML.
 // The result is cached since the curated list is immutable.
-var defaultModelsOnce sync.Once
-var defaultModelsCache string
+var defaultModelsYAML = sync.OnceValue(func() string {
+	return GenerateModelsYAML(curatedModels, nil)
+})
 
 func DefaultModelsYAML() string {
-	defaultModelsOnce.Do(func() {
-		defaultModelsCache = GenerateModelsYAML(curatedModels, nil)
-	})
-	return defaultModelsCache
+	return defaultModelsYAML()
 }
 
 // GenerateModelsYAML builds a models.yaml string from a curated model list.

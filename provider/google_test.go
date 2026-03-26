@@ -31,7 +31,7 @@ func TestGoogle_StreamText(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Contains(t, r.URL.RawQuery, "alt=sse")
-		assert.Contains(t, r.URL.RawQuery, "key=goog-test")
+		assert.Equal(t, "goog-test", r.Header.Get("x-goog-api-key"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, gemSSELines(
@@ -253,9 +253,11 @@ func TestGoogle_StreamEndpointURL(t *testing.T) {
 
 	var gotPath string
 	var gotQuery string
+	var gotHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
+		gotHeader = r.Header.Get("x-goog-api-key")
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, gemSSELines(
 			`{"candidates":[{"content":{"role":"model","parts":[]},"finishReason":"STOP"}]}`,
@@ -277,7 +279,7 @@ func TestGoogle_StreamEndpointURL(t *testing.T) {
 
 	assert.Equal(t, "/v1beta/models/gemini-2.0-flash:streamGenerateContent", gotPath)
 	assert.Contains(t, gotQuery, "alt=sse")
-	assert.Contains(t, gotQuery, "key=mykey")
+	assert.Equal(t, "mykey", gotHeader)
 }
 
 func TestGoogle_BuildRequest_SystemInstruction(t *testing.T) {

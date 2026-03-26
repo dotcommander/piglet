@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/dotcommander/piglet/core"
 )
@@ -81,9 +82,14 @@ type oaiFunctionCall struct {
 func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
 	maxTokens := p.resolveMaxTokens(req)
 
+	msgs, err := p.convertMessages(req)
+	if err != nil {
+		return nil, err
+	}
+
 	oaiReq := oaiRequest{
 		Model:         p.model.ID,
-		Messages:      p.convertMessages(req),
+		Messages:      msgs,
 		Stream:        true,
 		StreamOptions: &oaiStreamOptions{IncludeUsage: true},
 	}
@@ -107,14 +113,21 @@ func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
 	return json.Marshal(oaiReq)
 }
 
-func (p *OpenAI) convertMessages(req core.StreamRequest) []oaiMessage {
+func (p *OpenAI) convertMessages(req core.StreamRequest) ([]oaiMessage, error) {
 	var msgs []oaiMessage
+	var convErr error
 	if req.System != "" {
 		msgs = append(msgs, oaiMessage{Role: "system", Content: req.System})
 	}
 	msgs = append(msgs, convertMessageList(req.Messages, messageConverters[oaiMessage]{
-		User:      p.convertUserMessage,
-		Assistant: p.convertAssistantMessage,
+		User: p.convertUserMessage,
+		Assistant: func(msg *core.AssistantMessage) oaiMessage {
+			m, err := p.convertAssistantMessage(msg)
+			if err != nil && convErr == nil {
+				convErr = err
+			}
+			return m
+		},
 		ToolResult: func(msg *core.ToolResultMessage) oaiMessage {
 			return oaiMessage{
 				Role:       "tool",
@@ -123,7 +136,7 @@ func (p *OpenAI) convertMessages(req core.StreamRequest) []oaiMessage {
 			}
 		},
 	})...)
-	return msgs
+	return msgs, convErr
 }
 
 func (p *OpenAI) convertUserMessage(msg *core.UserMessage) oaiMessage {
@@ -149,7 +162,7 @@ func (p *OpenAI) convertUserMessage(msg *core.UserMessage) oaiMessage {
 	return oaiMessage{Role: "user", Content: blocks}
 }
 
-func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) oaiMessage {
+func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) (oaiMessage, error) {
 	var text string
 	var toolCalls []oaiToolCall
 
@@ -158,7 +171,10 @@ func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) oaiMessage 
 		case core.TextContent:
 			text += block.Text
 		case core.ToolCall:
-			argsJSON, _ := json.Marshal(block.Arguments)
+			argsJSON, err := json.Marshal(block.Arguments)
+			if err != nil {
+				return oaiMessage{}, fmt.Errorf("marshal tool arguments for %q: %w", block.Name, err)
+			}
 			toolCalls = append(toolCalls, oaiToolCall{
 				ID:   block.ID,
 				Type: "function",
@@ -177,7 +193,7 @@ func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) oaiMessage 
 	if len(toolCalls) > 0 {
 		m.ToolCalls = toolCalls
 	}
-	return m
+	return m, nil
 }
 
 func (p *OpenAI) convertTools(tools []core.ToolSchema) []oaiTool {
@@ -393,16 +409,28 @@ func mapStopReason(reason string) core.StopReason {
 	return mapStopReasonFromTable(reason, oaiStopReasons)
 }
 
+var maxCompletionTokensSet = sync.OnceValue(func() map[string]bool {
+	set := make(map[string]bool)
+	for _, m := range CuratedModels() {
+		if m.MaxCompletionTokens {
+			set[m.ID] = true
+		}
+	}
+	return set
+})
+
 // useMaxCompletionTokens returns true for models that require
 // max_completion_tokens instead of max_tokens.
 func useMaxCompletionTokens(modelID string) bool {
-	// o-series reasoning models
+	if maxCompletionTokensSet()[modelID] {
+		return true
+	}
+	// Fallback heuristic for non-curated models (custom endpoints, OpenRouter)
 	for _, p := range []string{"o1", "o3", "o4"} {
 		if strings.HasPrefix(modelID, p) {
 			return true
 		}
 	}
-	// Newer generations: parse version number after "gpt-" prefix
 	const pfx = "gpt-"
 	if strings.HasPrefix(modelID, pfx) {
 		rest := modelID[len(pfx):]

@@ -157,9 +157,7 @@ func (r *Registry) loadModels() (int, error) {
 		return 0, fmt.Errorf("parse models.yaml: %w", err)
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+	built := make(map[string]core.Model, len(file.Models))
 	for _, e := range file.Models {
 		m := core.Model{
 			ID:            e.ID,
@@ -170,7 +168,13 @@ func (r *Registry) loadModels() (int, error) {
 			ContextWindow: e.ContextWindow,
 			MaxTokens:     e.MaxTokens,
 		}
-		r.models[modelKey(m.Provider, m.ID)] = m
+		built[modelKey(m.Provider, m.ID)] = m
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, m := range built {
+		r.models[k] = m
 	}
 
 	return len(file.Models), nil
