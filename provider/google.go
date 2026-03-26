@@ -207,10 +207,11 @@ type gemUsage struct {
 
 func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
+	textBuilders := make(map[int]*strings.Builder)
 
-	scanSSE(ctx, reader, ch, func(data string) {
+	scanSSE(ctx, reader, ch, func(data []byte) {
 		var resp gemResponse
-		if err := json.Unmarshal([]byte(data), &resp); err != nil {
+		if err := json.Unmarshal(data, &resp); err != nil {
 			return
 		}
 
@@ -232,7 +233,7 @@ func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		for _, part := range candidate.Content.Parts {
 			if part.Text != "" {
 				ch <- core.StreamEvent{Type: core.StreamTextDelta, Delta: part.Text}
-				appendText(&msg, part.Text)
+				appendTextBuilder(&msg, part.Text, textBuilders)
 			}
 
 			if part.FunctionCall != nil {
@@ -253,6 +254,8 @@ func (p *Google) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 			msg.StopReason = p.mapFinishReason(candidate.FinishReason)
 		}
 	}, withLargeBuffer(256*1024, 10*1024*1024))
+
+	finalizeTextBuilders(&msg, textBuilders)
 
 	return msg
 }

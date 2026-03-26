@@ -286,10 +286,11 @@ type antDelta struct {
 func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder)
+	textBuilders := make(map[int]*strings.Builder)
 
-	scanSSE(ctx, reader, ch, func(data string) {
+	scanSSE(ctx, reader, ch, func(data []byte) {
 		var evt antStreamEvent
-		if err := json.Unmarshal([]byte(data), &evt); err != nil {
+		if err := json.Unmarshal(data, &evt); err != nil {
 			return
 		}
 
@@ -306,6 +307,7 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 				switch evt.ContentBlock.Type {
 				case "text":
 					msg.Content = append(msg.Content, core.TextContent{})
+					textBuilders[evt.Index] = &strings.Builder{}
 				case "tool_use":
 					msg.Content = append(msg.Content, core.ToolCall{
 						ID:        evt.ContentBlock.ID,
@@ -326,7 +328,9 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 				switch delta.Type {
 				case "text_delta":
 					ch <- core.StreamEvent{Type: core.StreamTextDelta, Index: evt.Index, Delta: delta.Text}
-					p.appendTextAtIndex(&msg, evt.Index, delta.Text)
+					if b, ok := textBuilders[evt.Index]; ok {
+						b.WriteString(delta.Text)
+					}
 				case "input_json_delta":
 					ch <- core.StreamEvent{Type: core.StreamToolCallDelta, Index: evt.Index, Delta: delta.PartialJSON}
 					if builder, ok := toolArgs[evt.Index]; ok {
@@ -350,20 +354,15 @@ func (p *Anthropic) parseResponse(ctx context.Context, reader io.Reader, ch chan
 		}
 	})
 
+	// Finalize accumulated text
+	finalizeTextBuilders(&msg, textBuilders)
+
 	// Finalize tool arguments
 	for idx, builder := range toolArgs {
 		p.finalizeToolArgs(&msg, idx, builder.String())
 	}
 
 	return msg
-}
-
-func (p *Anthropic) appendTextAtIndex(msg *core.AssistantMessage, idx int, delta string) {
-	if idx < len(msg.Content) {
-		if tc, ok := msg.Content[idx].(core.TextContent); ok {
-			msg.Content[idx] = core.TextContent{Text: tc.Text + delta}
-		}
-	}
 }
 
 func (p *Anthropic) finalizeToolArgs(msg *core.AssistantMessage, idx int, argsJSON string) {

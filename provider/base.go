@@ -186,20 +186,28 @@ func mapStopReasonFromTable(reason string, table map[string]core.StopReason) cor
 	return core.StopReasonStop
 }
 
+var (
+	sseDataSpace  = []byte("data: ")
+	sseData       = []byte("data:")
+	sseDone       = []byte("[DONE]")
+	sseOpenBrace  = []byte("{")
+	sseCloseBrace = []byte("}")
+)
+
 // extractSSEData extracts the data payload from an SSE line.
-func extractSSEData(line string) string {
-	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "data: ") {
-		return strings.TrimPrefix(trimmed, "data: ")
+func extractSSEData(line []byte) []byte {
+	trimmed := bytes.TrimSpace(line)
+	if after, ok := bytes.CutPrefix(trimmed, sseDataSpace); ok {
+		return after
 	}
-	if strings.HasPrefix(trimmed, "data:") {
-		return strings.TrimPrefix(trimmed, "data:")
+	if after, ok := bytes.CutPrefix(trimmed, sseData); ok {
+		return after
 	}
 	// Some providers send raw JSON
-	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+	if bytes.HasPrefix(trimmed, sseOpenBrace) && bytes.HasSuffix(trimmed, sseCloseBrace) {
 		return trimmed
 	}
-	return ""
+	return nil
 }
 
 // toolResultText extracts joined text from a ToolResultMessage.
@@ -213,15 +221,34 @@ func toolResultText(msg *core.ToolResultMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-// appendText appends delta to the first TextContent in msg, or creates one.
-func appendText(msg *core.AssistantMessage, delta string) {
+// appendTextBuilder accumulates delta into a strings.Builder keyed by content index.
+// If no TextContent exists in msg, one is appended.
+func appendTextBuilder(msg *core.AssistantMessage, delta string, builders map[int]*strings.Builder) {
 	for i := range msg.Content {
-		if tc, ok := msg.Content[i].(core.TextContent); ok {
-			msg.Content[i] = core.TextContent{Text: tc.Text + delta}
+		if _, ok := msg.Content[i].(core.TextContent); ok {
+			b, exists := builders[i]
+			if !exists {
+				b = &strings.Builder{}
+				builders[i] = b
+			}
+			b.WriteString(delta)
 			return
 		}
 	}
-	msg.Content = append(msg.Content, core.TextContent{Text: delta})
+	idx := len(msg.Content)
+	msg.Content = append(msg.Content, core.TextContent{})
+	b := &strings.Builder{}
+	b.WriteString(delta)
+	builders[idx] = b
+}
+
+// finalizeTextBuilders writes accumulated text from builders into msg.Content.
+func finalizeTextBuilders(msg *core.AssistantMessage, builders map[int]*strings.Builder) {
+	for idx, b := range builders {
+		if idx < len(msg.Content) {
+			msg.Content[idx] = core.TextContent{Text: b.String()}
+		}
+	}
 }
 
 // decodeUserBlocks converts a UserMessage's Content and Blocks into
@@ -244,7 +271,7 @@ func decodeUserBlocks[T any](msg *core.UserMessage, text func(string) T, image f
 
 // scanSSE reads SSE lines from reader, calling handler for each non-empty
 // data payload. Respects context cancellation (sends StreamError on cancel).
-func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, handler func(data string), opts ...scanOption) {
+func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, handler func(data []byte), opts ...scanOption) {
 	scanner := bufio.NewScanner(reader)
 	for _, opt := range opts {
 		opt(scanner)
@@ -256,8 +283,8 @@ func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, 
 			return
 		default:
 		}
-		data := extractSSEData(scanner.Text())
-		if data == "" || data == "[DONE]" {
+		data := extractSSEData(scanner.Bytes())
+		if len(data) == 0 || bytes.Equal(data, sseDone) {
 			continue
 		}
 		handler(data)

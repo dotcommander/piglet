@@ -284,10 +284,11 @@ type oaiPromptTokensInfo struct {
 func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder)
+	textBuilders := make(map[int]*strings.Builder)
 
-	scanSSE(ctx, reader, ch, func(data string) {
+	scanSSE(ctx, reader, ch, func(data []byte) {
 		var evt oaiStreamEvent
-		if err := json.Unmarshal([]byte(data), &evt); err != nil {
+		if err := json.Unmarshal(data, &evt); err != nil {
 			return
 		}
 
@@ -311,7 +312,7 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		// Text delta
 		if choice.Delta != nil && choice.Delta.Content != "" {
 			ch <- core.StreamEvent{Type: core.StreamTextDelta, Delta: choice.Delta.Content}
-			appendText(&msg, choice.Delta.Content)
+			appendTextBuilder(&msg, choice.Delta.Content, textBuilders)
 		}
 
 		// Tool call deltas
@@ -344,6 +345,8 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 			msg.StopReason = mapStopReason(choice.FinishReason)
 		}
 	})
+
+	finalizeTextBuilders(&msg, textBuilders)
 
 	// Finalize tool call arguments
 	for idx, builder := range toolArgs {
