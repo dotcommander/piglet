@@ -46,6 +46,11 @@ var forbiddenImports = map[string][]string{
 		"github.com/dotcommander/piglet/session",
 		"github.com/dotcommander/piglet/provider",
 	},
+	// ext/external is a bridge/wiring layer that may use config/ and provider/,
+	// but must never import compiled-in extension packages.
+	"github.com/dotcommander/piglet/ext/external": {
+		"github.com/dotcommander/piglet/tool",
+	},
 }
 
 func TestDependencyBoundary(t *testing.T) {

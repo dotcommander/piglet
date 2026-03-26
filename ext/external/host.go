@@ -26,11 +26,15 @@ type Host struct {
 	cwd                string
 	app                *ext.App // nil until bridge wires it
 	resolveProviderFn  providerResolverFn
+	undoSnapshotsFn    func() (map[string][]byte, error)
 
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	rpcRead io.Closer // ext→host read end (for cleanup)
 	stdout  *bufio.Scanner
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	writeMu   sync.Mutex           // protects stdin writes
 	pendingMu sync.Mutex           // protects pending map
@@ -70,9 +74,14 @@ func (h *Host) SetApp(app *ext.App) { h.app = app }
 // SetProviderResolver sets the function used to resolve a model to a StreamProvider.
 func (h *Host) SetProviderResolver(fn providerResolverFn) { h.resolveProviderFn = fn }
 
+// SetUndoSnapshots sets the function used to retrieve undo snapshots.
+func (h *Host) SetUndoSnapshots(fn func() (map[string][]byte, error)) { h.undoSnapshotsFn = fn }
+
 // Start spawns the extension process, performs the initialize handshake,
 // and collects registrations. Returns after the extension sends initialize result.
 func (h *Host) Start(ctx context.Context) error {
+	h.ctx, h.cancel = context.WithCancel(ctx)
+
 	bin, args := h.manifest.RuntimeCommand()
 	h.cmd = exec.CommandContext(ctx, bin, args...)
 	h.cmd.Dir = h.manifest.Dir
@@ -141,6 +150,10 @@ func (h *Host) Start(ctx context.Context) error {
 // Stop sends shutdown and kills the process.
 func (h *Host) Stop() {
 	h.closeOnce.Do(func() {
+		if h.cancel != nil {
+			h.cancel()
+		}
+
 		// Best-effort shutdown notification
 		_ = h.send(&Message{
 			JSONRPC: "2.0",

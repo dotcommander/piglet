@@ -9,14 +9,18 @@ import (
 	"github.com/dotcommander/piglet/ext"
 )
 
+// UndoSnapshotsFn retrieves undo snapshots (injected to avoid importing tool/).
+type UndoSnapshotsFn func() (map[string][]byte, error)
+
 // Supervisor wraps a Host with crash detection and automatic restart.
 // When the extension process exits unexpectedly, the supervisor creates a new
 // Host from the same Manifest, re-runs the handshake, and re-bridges registrations.
 type Supervisor struct {
-	manifest   *Manifest
-	cwd        string
-	app        *ext.App
-	resolverFn providerResolverFn
+	manifest       *Manifest
+	cwd            string
+	app            *ext.App
+	resolverFn     providerResolverFn
+	undoSnapshotsFn UndoSnapshotsFn
 
 	mu   sync.Mutex
 	host *Host // current live host; nil between crash and restart
@@ -26,13 +30,14 @@ type Supervisor struct {
 }
 
 // NewSupervisor creates a supervisor for the given manifest.
-func NewSupervisor(m *Manifest, cwd string, app *ext.App, resolver providerResolverFn) *Supervisor {
+func NewSupervisor(m *Manifest, cwd string, app *ext.App, resolver providerResolverFn, undoFn UndoSnapshotsFn) *Supervisor {
 	return &Supervisor{
-		manifest:   m,
-		cwd:        cwd,
-		app:        app,
-		resolverFn: resolver,
-		stopped:    make(chan struct{}),
+		manifest:       m,
+		cwd:            cwd,
+		app:            app,
+		resolverFn:     resolver,
+		undoSnapshotsFn: undoFn,
+		stopped:        make(chan struct{}),
 	}
 }
 
@@ -45,6 +50,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	}
 	h.SetApp(s.app)
 	h.SetProviderResolver(s.resolverFn)
+	h.SetUndoSnapshots(s.undoSnapshotsFn)
 
 	s.mu.Lock()
 	s.host = h
@@ -161,6 +167,7 @@ func (s *Supervisor) watch(ctx context.Context) {
 		}
 		newHost.SetApp(s.app)
 		newHost.SetProviderResolver(s.resolverFn)
+		newHost.SetUndoSnapshots(s.undoSnapshotsFn)
 
 		s.mu.Lock()
 		s.host = newHost

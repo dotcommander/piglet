@@ -280,13 +280,13 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 
 	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
 
-	loaded, extCleanup, _ := external.LoadAll(ctx, app)
+	loaded, extCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots)
 
 	if interactive && loaded == 0 {
 		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
-		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app)
+		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots)
 		origCleanup := extCleanup
 		extCleanup = func() { reloadCleanup(); origCleanup() }
 		if reloaded > 0 {

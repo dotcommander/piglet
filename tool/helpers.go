@@ -176,8 +176,8 @@ func snapshotFile(path string) {
 	}
 
 	// Write snapshot: <hash>.snap (content) + <hash>.path (original path)
-	_ = os.WriteFile(snapPath, data, 0600)
-	_ = os.WriteFile(filepath.Join(dir, name+".path"), []byte(path), 0600)
+	_ = config.AtomicWrite(snapPath, data, 0600)
+	_ = config.AtomicWrite(filepath.Join(dir, name+".path"), []byte(path), 0600)
 }
 
 // undoDir returns ~/.config/piglet/undo/, creating it if needed.

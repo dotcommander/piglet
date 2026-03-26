@@ -18,7 +18,7 @@ import (
 // LoadAll discovers and starts all external extensions under supervisor management,
 // registering their tools, commands, and prompt sections with the given ext.App.
 // Returns the number of loaded extensions and a cleanup function that stops all.
-func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err error) {
+func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn) (loaded int, cleanup func(), err error) {
 	extDir, err := ExtensionsDir()
 	if err != nil {
 		return 0, func() {}, nil // non-fatal
@@ -46,7 +46,7 @@ func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err
 		wg.Add(1)
 		go func(i int, m *Manifest) {
 			defer wg.Done()
-			s := NewSupervisor(m, app.CWD(), app, resolverFn)
+			s := NewSupervisor(m, app.CWD(), app, resolverFn, undoFn)
 			if err := s.Start(ctx); err != nil {
 				results[i] = result{err: err}
 				return
@@ -202,7 +202,7 @@ func proxyToolExecute(h *Host, toolName string) core.ToolExecuteFn {
 // proxyCommandExecute returns a command handler that proxies to the extension.
 func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App) error {
 	return func(args string, app *ext.App) error {
-		return h.ExecuteCommand(context.Background(), cmdName, args)
+		return h.ExecuteCommand(h.ctx, cmdName, args)
 	}
 }
 
@@ -253,7 +253,7 @@ func proxyEventHandle(h *Host) func(ctx context.Context, evt core.Event) ext.Act
 // proxyShortcutHandle returns a Handler function that proxies to the extension.
 func proxyShortcutHandle(h *Host, key string) func(app *ext.App) (ext.Action, error) {
 	return func(app *ext.App) (ext.Action, error) {
-		ar, err := h.HandleShortcut(context.Background(), key)
+		ar, err := h.HandleShortcut(h.ctx, key)
 		if err != nil {
 			return nil, fmt.Errorf("ext %s shortcut %s: %w", h.Name(), key, err)
 		}

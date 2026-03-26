@@ -97,6 +97,10 @@ func (h *Host) readLoop() {
 
 		h.handleMessage(&msg)
 	}
+
+	if err := h.stdout.Err(); err != nil {
+		slog.Warn("extension read error", "name", h.manifest.Name, "err", err)
+	}
 }
 
 func (h *Host) handleMessage(msg *Message) {
@@ -204,7 +208,7 @@ func (h *Host) handleMessage(msg *Message) {
 				select {
 				case ch <- p:
 				default:
-					// delta channel full — drop to prevent blocking readLoop
+					slog.Debug("provider delta dropped (channel full)", "ext", h.manifest.Name, "requestID", p.RequestID)
 				}
 			}
 		}

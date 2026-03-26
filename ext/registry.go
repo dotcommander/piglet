@@ -3,6 +3,7 @@ package ext
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 
@@ -267,7 +268,7 @@ func (a *App) wrapWithInterceptors(toolName string, execute core.ToolExecuteFn) 
 			}
 			modified, afterErr := ic.After(ctx, toolName, details)
 			if afterErr != nil {
-				// Log but don't fail
+				slog.Debug("interceptor after error", "name", ic.Name, "tool", toolName, "err", afterErr)
 				continue
 			}
 			details = modified

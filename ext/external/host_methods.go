@@ -1,16 +1,13 @@
 package external
 
 import (
-	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"github.com/dotcommander/piglet/tool"
 )
 
 // decodeParams unmarshals msg.Params into dst, responding with error on failure.
@@ -26,6 +23,15 @@ func (h *Host) decodeParams(msg *Message, dst any) bool {
 func (h *Host) requireApp(msg *Message) bool {
 	if h.app == nil {
 		h.respondError(*msg.ID, -32603, "host app not available")
+		return false
+	}
+	return true
+}
+
+// requireUndoSnapshots checks h.undoSnapshotsFn is set, responding with error if nil.
+func (h *Host) requireUndoSnapshots(msg *Message) bool {
+	if h.undoSnapshotsFn == nil {
+		h.respondError(*msg.ID, -32603, "undo snapshots not available")
 		return false
 	}
 	return true
@@ -84,7 +90,7 @@ func (h *Host) handleHostExecuteTool(msg *Message) {
 	}
 
 	// Execute the tool
-	result, err := tool.Execute(context.Background(), "", params.Args)
+	result, err := tool.Execute(h.ctx, "", params.Args)
 	if err != nil {
 		h.respond(*msg.ID, HostExecuteToolResult{
 			Content: []ContentBlock{{Type: "text", Text: err.Error()}},
@@ -191,7 +197,7 @@ func (h *Host) handleHostChat(msg *Message) {
 		req.Options.MaxTokens = &params.MaxTokens
 	}
 
-	ch := prov.Stream(context.Background(), req)
+	ch := prov.Stream(h.ctx, req)
 
 	var text strings.Builder
 	var usage HostTokenUsage
@@ -253,7 +259,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 		MaxTurns: maxTurns,
 	})
 
-	ch := sub.Start(context.Background(), params.Task)
+	ch := sub.Start(h.ctx, params.Task)
 
 	var result string
 	var totalIn, totalOut, turns int
@@ -431,7 +437,10 @@ func (h *Host) handleHostExtensionsDir(msg *Message) {
 }
 
 func (h *Host) handleHostUndoSnapshots(msg *Message) {
-	snapshots, err := tool.UndoSnapshots()
+	if !h.requireUndoSnapshots(msg) {
+		return
+	}
+	snapshots, err := h.undoSnapshotsFn()
 	if err != nil {
 		h.respondError(*msg.ID, -32603, "undo snapshots: "+err.Error())
 		return
@@ -448,7 +457,10 @@ func (h *Host) handleHostUndoRestore(msg *Message) {
 	if !h.decodeParams(msg, &params) {
 		return
 	}
-	snapshots, err := tool.UndoSnapshots()
+	if !h.requireUndoSnapshots(msg) {
+		return
+	}
+	snapshots, err := h.undoSnapshotsFn()
 	if err != nil {
 		h.respondError(*msg.ID, -32603, "undo snapshots: "+err.Error())
 		return
@@ -458,8 +470,8 @@ func (h *Host) handleHostUndoRestore(msg *Message) {
 		h.respondError(*msg.ID, -32604, "no snapshot for path: "+params.Path)
 		return
 	}
-	if err := os.WriteFile(params.Path, data, 0600); err != nil {
-		h.respondError(*msg.ID, -32603, "write file: "+err.Error())
+	if err := config.AtomicWrite(params.Path, data, 0600); err != nil {
+		h.respondError(*msg.ID, -32603, "restore file: "+err.Error())
 		return
 	}
 	h.respond(*msg.ID, struct{}{})
