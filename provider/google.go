@@ -81,15 +81,10 @@ type gemGenConfig struct {
 }
 
 func (p *Google) buildRequest(req core.StreamRequest) ([]byte, error) {
-	maxTokens := p.model.MaxTokens
-	if req.Options.MaxTokens != nil {
-		maxTokens = *req.Options.MaxTokens
-	}
-
 	gemReq := gemRequest{
 		Contents: p.convertMessages(req),
 		GenerationConfig: &gemGenConfig{
-			MaxOutputTokens: maxTokens,
+			MaxOutputTokens: p.resolveMaxTokens(req),
 		},
 	}
 

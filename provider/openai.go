@@ -79,10 +79,7 @@ type oaiFunctionCall struct {
 }
 
 func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
-	maxTokens := p.model.MaxTokens
-	if req.Options.MaxTokens != nil {
-		maxTokens = *req.Options.MaxTokens
-	}
+	maxTokens := p.resolveMaxTokens(req)
 
 	oaiReq := oaiRequest{
 		Model:         p.model.ID,

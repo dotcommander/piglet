@@ -88,14 +88,9 @@ type antTool struct {
 }
 
 func (p *Anthropic) buildRequest(req core.StreamRequest) ([]byte, error) {
-	maxTokens := p.model.MaxTokens
-	if req.Options.MaxTokens != nil {
-		maxTokens = *req.Options.MaxTokens
-	}
-
 	antReq := antRequest{
 		Model:     p.model.ID,
-		MaxTokens: maxTokens,
+		MaxTokens: p.resolveMaxTokens(req),
 		Messages:  p.convertMessages(req),
 		Stream:    true,
 	}

@@ -43,6 +43,13 @@ func (b *baseProvider) debugLog() *slog.Logger {
 	return b.logger
 }
 
+func (b *baseProvider) resolveMaxTokens(req core.StreamRequest) int {
+	if req.Options.MaxTokens != nil {
+		return *req.Options.MaxTokens
+	}
+	return b.model.MaxTokens
+}
+
 // doHTTPRequest handles the shared HTTP POST + status check logic.
 func (b *baseProvider) doHTTPRequest(ctx context.Context, url string, body []byte, setHeaders func(*http.Request)) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
