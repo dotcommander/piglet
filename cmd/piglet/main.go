@@ -86,9 +86,11 @@ func writeModelsYAML(path string) error {
 func run() error {
 	// Handle flags before anything else
 	var debugFlag bool
+	var modelFlag, baseURLFlag string
 	var promptArgs []string
-	for _, arg := range os.Args[1:] {
-		switch arg {
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--help", "-h":
 			printHelp()
 			return nil
@@ -97,8 +99,20 @@ func run() error {
 			return nil
 		case "--debug":
 			debugFlag = true
+		case "--model":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--model requires a value")
+			}
+			i++
+			modelFlag = args[i]
+		case "--base-url":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--base-url requires a value")
+			}
+			i++
+			baseURLFlag = args[i]
 		default:
-			promptArgs = append(promptArgs, arg)
+			promptArgs = append(promptArgs, args[i])
 		}
 	}
 
@@ -118,7 +132,7 @@ func run() error {
 	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
 
-	rt, debugCleanup, err := loadRuntime(debugFlag)
+	rt, debugCleanup, err := loadRuntime(debugFlag, modelFlag, baseURLFlag)
 	if err != nil {
 		return err
 	}
@@ -173,7 +187,7 @@ func run() error {
 
 // loadRuntime performs first-run setup, loads config/auth, resolves the model,
 // creates the provider, and sets up debug logging.
-func loadRuntime(debugFlag bool) (*runtime, func(), error) {
+func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtime, func(), error) {
 	if config.NeedsSetup() {
 		if err := config.RunSetup(writeModelsYAML); err != nil {
 			return nil, nil, fmt.Errorf("setup: %w", err)
@@ -205,7 +219,10 @@ func loadRuntime(debugFlag bool) (*runtime, func(), error) {
 		fmt.Fprintf(os.Stderr, "%s\n", notice)
 	}
 
-	modelQuery := os.Getenv("PIGLET_DEFAULT_MODEL")
+	modelQuery := modelOverride
+	if modelQuery == "" {
+		modelQuery = os.Getenv("PIGLET_DEFAULT_MODEL")
+	}
 	if modelQuery == "" {
 		modelQuery = settings.DefaultModel
 	}
@@ -216,6 +233,9 @@ func loadRuntime(debugFlag bool) (*runtime, func(), error) {
 	model, ok := registry.Resolve(modelQuery)
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown model: %s", modelQuery)
+	}
+	if baseURLOverride != "" {
+		model.BaseURL = baseURLOverride
 	}
 
 	apiKeyFn := func() string {
@@ -445,6 +465,8 @@ Usage:
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads
+  piglet --model <id>     Override model (takes precedence over env/config)
+  piglet --base-url <url> Override model base URL
 
 Interactive commands:
   /help                   List all commands
@@ -466,7 +488,7 @@ Debug:
   ~/.config/piglet/debug.log      Payload log (--debug or debug: true)
 
 Environment:
-  PIGLET_DEFAULT_MODEL    Override default model
+  PIGLET_DEFAULT_MODEL    Override default model (--model flag takes precedence)
   PIGLET_SMALL_MODEL      Override small model (autotitle, compaction)
 `)
 }
