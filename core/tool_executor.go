@@ -33,6 +33,7 @@ func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResu
 	var steering []Message
 	received := 0
 
+drain:
 	for received < len(calls) {
 		select {
 		case res := <-resultCh:
@@ -44,11 +45,15 @@ func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResu
 				toolCancel()
 			}
 		case <-toolCtx.Done():
-			// Collect remaining
+			// Collect remaining — guard with parent ctx in case a worker is stuck
 			for received < len(calls) {
-				res := <-resultCh
-				results[res.index] = res.result
-				received++
+				select {
+				case res := <-resultCh:
+					results[res.index] = res.result
+					received++
+				case <-ctx.Done():
+					break drain
+				}
 			}
 		}
 	}

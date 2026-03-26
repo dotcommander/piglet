@@ -6,7 +6,7 @@ import (
 )
 
 // maybeCompact triggers background compaction if token usage exceeds the configured threshold.
-func (a *Agent) maybeCompact() {
+func (a *Agent) maybeCompact(ctx context.Context) {
 	a.mu.RLock()
 	// Use the most recent assistant message's InputTokens — that IS the current
 	// context window size (the API reports full context per turn, not incremental).
@@ -40,10 +40,10 @@ func (a *Agent) maybeCompact() {
 	a.compactMu.Unlock()
 
 	a.compactWg.Add(1)
-	go a.runCompaction(msgs, snapshotLen, total)
+	go a.runCompaction(ctx, msgs, snapshotLen, total)
 }
 
-func (a *Agent) runCompaction(msgs []Message, snapshotLen, tokenCount int) {
+func (a *Agent) runCompaction(ctx context.Context, msgs []Message, snapshotLen, tokenCount int) {
 	defer a.compactWg.Done()
 	defer func() {
 		a.compactMu.Lock()
@@ -51,7 +51,7 @@ func (a *Agent) runCompaction(msgs []Message, snapshotLen, tokenCount int) {
 		a.compactMu.Unlock()
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	compacted, err := a.cfg.OnCompact(ctx, msgs)
@@ -62,7 +62,9 @@ func (a *Agent) runCompaction(msgs []Message, snapshotLen, tokenCount int) {
 	// Preserve any messages appended while compaction was running.
 	a.mu.Lock()
 	if snapshotLen > len(a.messages) {
-		snapshotLen = len(a.messages)
+		// Messages were truncated while compacting — our snapshot is stale
+		a.mu.Unlock()
+		return
 	}
 	tail := a.messages[snapshotLen:]
 	if len(tail) == 0 {

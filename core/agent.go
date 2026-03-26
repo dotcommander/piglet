@@ -235,10 +235,10 @@ func (a *Agent) StepMode() bool {
 
 // StepRespond sends an approval action to the waiting tool.
 func (a *Agent) StepRespond(action StepAction) {
-	a.mu.RLock()
+	a.mu.Lock()
 	gate := a.stepGate
-	a.mu.RUnlock()
 	if gate == nil {
+		a.mu.Unlock()
 		return
 	}
 	// Drain stale value
@@ -247,6 +247,7 @@ func (a *Agent) StepRespond(action StepAction) {
 	default:
 	}
 	gate <- action
+	a.mu.Unlock()
 }
 
 // IsRunning returns whether the agent loop is active.
@@ -389,7 +390,7 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 
 		// Auto-compact if token usage exceeds threshold
 		if a.cfg.CompactAt > 0 && a.cfg.OnCompact != nil {
-			a.maybeCompact()
+			a.maybeCompact(ctx)
 		}
 
 		// Check max turns

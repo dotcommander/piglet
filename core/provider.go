@@ -8,6 +8,10 @@ import "context"
 
 // StreamProvider is the single interface all LLM providers implement.
 // Three implementations: OpenAI-compatible, Anthropic, Google.
+//
+// Stream returns a channel of StreamEvents. Implementations MUST close the
+// channel when ctx is cancelled or streaming completes. Failure to close the
+// channel leaks the consumer goroutine.
 type StreamProvider interface {
 	Stream(ctx context.Context, req StreamRequest) <-chan StreamEvent
 }
