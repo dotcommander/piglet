@@ -42,6 +42,7 @@ type Host struct {
 	pending   map[int]chan *Message // pending request ID → response channel
 	closed    chan struct{}
 	closeOnce sync.Once
+	readDone  chan struct{} // closed when readLoop exits
 
 	// Registrations collected during handshake
 	tools          []RegisterToolParams
@@ -64,6 +65,7 @@ func NewHost(m *Manifest, cwd string) *Host {
 		cwd:        cwd,
 		pending:    make(map[int]chan *Message),
 		closed:     make(chan struct{}),
+		readDone:   make(chan struct{}),
 		deltaChans: make(map[int]chan ProviderDeltaParams),
 	}
 }
@@ -148,9 +150,18 @@ func (h *Host) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop sends shutdown and kills the process.
+// Stop performs an ordered shutdown of the extension process:
+//  1. Send shutdown notification (best-effort)
+//  2. Close write pipe (host→ext) — extension gets EOF on FD 3
+//  3. Give extension a moment to exit cleanly
+//  4. Force-kill if it doesn't exit, then reap (cmd.Wait releases I/O goroutines)
+//  5. readLoop sees EOF from closed write end → exits → signals readDone
+//  6. Close read pipe after readLoop is done
 func (h *Host) Stop() {
 	h.closeOnce.Do(func() {
+		name := h.manifest.Name
+		slog.Debug("stop: begin", "ext", name)
+
 		if h.cancel != nil {
 			h.cancel()
 		}
@@ -161,16 +172,42 @@ func (h *Host) Stop() {
 			Method:  MethodShutdown,
 		})
 
+		// Close host→ext write pipe. Extension gets EOF on FD 3,
+		// its scanner loop exits, and the process terminates cleanly.
 		_ = h.stdin.Close()
+		slog.Debug("stop: stdin closed", "ext", name)
+
+		// Give the extension a moment to exit on its own.
+		exited := make(chan struct{})
+		go func() {
+			_ = h.cmd.Wait()
+			close(exited)
+		}()
+
+		select {
+		case <-exited:
+			slog.Debug("stop: clean exit", "ext", name)
+		case <-time.After(200 * time.Millisecond):
+			slog.Debug("stop: force kill", "ext", name)
+			if h.cmd.Process != nil {
+				_ = h.cmd.Process.Kill()
+			}
+			<-exited
+			slog.Debug("stop: killed and reaped", "ext", name)
+		}
+
+		// Process is dead, its FD 4 is closed. readLoop's scanner
+		// sees EOF and exits. Wait for it to finish.
+		slog.Debug("stop: waiting for readDone", "ext", name)
+		<-h.readDone
+		slog.Debug("stop: readDone received", "ext", name)
+
+		// readLoop is done — safe to close the read pipe.
 		if h.rpcRead != nil {
 			_ = h.rpcRead.Close()
 		}
 		close(h.closed)
-
-		if h.cmd.Process != nil {
-			_ = h.cmd.Process.Kill()
-		}
-		_ = h.cmd.Wait()
+		slog.Debug("stop: complete", "ext", name)
 	})
 }
 

@@ -67,9 +67,15 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn) (loaded 
 	}
 
 	return len(supervisors), func() {
+		var wg sync.WaitGroup
 		for _, s := range supervisors {
-			s.Stop()
+			wg.Add(1)
+			go func(s *Supervisor) {
+				defer wg.Done()
+				s.Stop()
+			}(s)
 		}
+		wg.Wait()
 	}, nil
 }
 

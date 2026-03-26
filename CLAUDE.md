@@ -63,7 +63,7 @@ tui/, cmd/  → anything (wiring layer)
 | `prompts` | dynamic commands |
 | `modelsdev` | 1 event handler (OnInit: syncs model metadata from models.dev API) |
 
-All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over stdin/stdout using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
+All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over FD 3/4 (with stdin/stdout fallback) using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
 
 ### Five Primitives
 
@@ -312,6 +312,7 @@ Before EVERY commit:
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
 7. **Extensions compatible**: clone `piglet-extensions`, run `go build ./...` — extensions must build against the tagged version
+8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must match every `*/cmd/` directory in `piglet-extensions`. Run: `cd ../piglet-extensions && ls -d */cmd/ | sed 's|/cmd/||' | sort` and compare. Missing extensions = silent stale binaries after update.
 
 ### Pre-Push Gate
 
@@ -331,3 +332,9 @@ repomix-output.md    # export artifacts
 ```
 
 Periodically verify: `git ls-files --others --ignored --exclude-standard | head -20` — nothing sensitive should appear.
+
+## Violation Log
+
+| Rule | Violations | Last |
+|------|-----------|------|
+| Extension list current: `defaultOfficialExtensions` had 12 of 31 extensions, stale binaries persisted after update | 1 | 2026-03-26 |

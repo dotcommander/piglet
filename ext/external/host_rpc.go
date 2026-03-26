@@ -77,7 +77,12 @@ func (h *Host) send(msg *Message) error {
 
 func (h *Host) readLoop() {
 	defer func() {
-		// Unblock any pending requests when the process exits
+		slog.Debug("readLoop: exiting", "ext", h.manifest.Name)
+		// Signal readLoop exit BEFORE closeOnce — Stop() waits on readDone
+		// inside its own closeOnce.Do, so reversing this order deadlocks.
+		close(h.readDone)
+		// Crash path: if Stop() was never called, close h.closed to
+		// unblock any pending requests.
 		h.closeOnce.Do(func() {
 			close(h.closed)
 		})
@@ -99,7 +104,9 @@ func (h *Host) readLoop() {
 	}
 
 	if err := h.stdout.Err(); err != nil {
-		slog.Warn("extension read error", "name", h.manifest.Name, "err", err)
+		slog.Debug("readLoop: scanner error", "ext", h.manifest.Name, "err", err)
+	} else {
+		slog.Debug("readLoop: scanner EOF", "ext", h.manifest.Name)
 	}
 }
 

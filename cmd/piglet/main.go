@@ -233,6 +233,7 @@ func loadRuntime(debugFlag bool) (*runtime, func(), error) {
 			return nil, nil, fmt.Errorf("debug log: %w", err)
 		}
 		cleanup = logCleanup
+		slog.SetDefault(logger)
 		if d, ok := prov.(provider.Debuggable); ok {
 			d.SetLogger(logger)
 		}
@@ -350,7 +351,6 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 	var agentErr error
 
 	for evt := range ch {
-		// Dispatch event to registered handlers (event bus)
 		app.DispatchEvent(ctx, evt)
 
 		switch e := evt.(type) {
