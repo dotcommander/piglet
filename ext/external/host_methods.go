@@ -13,11 +13,28 @@ import (
 	"github.com/dotcommander/piglet/tool"
 )
 
+// decodeParams unmarshals msg.Params into dst, responding with error on failure.
+func (h *Host) decodeParams(msg *Message, dst any) bool {
+	if err := json.Unmarshal(msg.Params, dst); err != nil {
+		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// requireApp checks h.app is bound, responding with error if nil.
+func (h *Host) requireApp(msg *Message) bool {
+	if h.app == nil {
+		h.respondError(*msg.ID, -32603, "host app not available")
+		return false
+	}
+	return true
+}
+
 // handleHostListTools returns the list of available host tools with their schemas.
 func (h *Host) handleHostListTools(msg *Message) {
 	var params HostListToolsParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
@@ -51,13 +68,11 @@ func (h *Host) handleHostListTools(msg *Message) {
 // handleHostExecuteTool executes a host-registered tool on behalf of the extension.
 func (h *Host) handleHostExecuteTool(msg *Message) {
 	var params HostExecuteToolParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 
@@ -83,8 +98,7 @@ func (h *Host) handleHostExecuteTool(msg *Message) {
 
 func (h *Host) handleHostConfigGet(msg *Message) {
 	var params HostConfigGetParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
@@ -112,8 +126,7 @@ func (h *Host) handleHostConfigGet(msg *Message) {
 
 func (h *Host) handleHostConfigReadExt(msg *Message) {
 	var params HostConfigReadExtParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
@@ -127,8 +140,7 @@ func (h *Host) handleHostConfigReadExt(msg *Message) {
 
 func (h *Host) handleHostAuthGetKey(msg *Message) {
 	var params HostAuthGetKeyParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
@@ -144,8 +156,7 @@ func (h *Host) handleHostAuthGetKey(msg *Message) {
 
 func (h *Host) handleHostChat(msg *Message) {
 	var params HostChatParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
@@ -204,13 +215,11 @@ func (h *Host) handleHostChat(msg *Message) {
 
 func (h *Host) handleHostAgentRun(msg *Message) {
 	var params HostAgentRunParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 
@@ -271,8 +280,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 }
 
 func (h *Host) handleHostConversationMessages(msg *Message) {
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	msgs := h.app.ConversationMessages()
@@ -285,8 +293,7 @@ func (h *Host) handleHostConversationMessages(msg *Message) {
 }
 
 func (h *Host) handleHostSessions(msg *Message) {
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	summaries, err := h.app.Sessions()
@@ -310,12 +317,10 @@ func (h *Host) handleHostSessions(msg *Message) {
 
 func (h *Host) handleHostLoadSession(msg *Message) {
 	var params HostLoadSessionParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	if err := h.app.LoadSession(params.Path); err != nil {
@@ -326,8 +331,7 @@ func (h *Host) handleHostLoadSession(msg *Message) {
 }
 
 func (h *Host) handleHostForkSession(msg *Message) {
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	parentID, count, err := h.app.ForkSession()
@@ -340,12 +344,10 @@ func (h *Host) handleHostForkSession(msg *Message) {
 
 func (h *Host) handleHostSetSessionTitle(msg *Message) {
 	var params HostSetSessionTitleParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	if err := h.app.SetSessionTitle(params.Title); err != nil {
@@ -356,8 +358,7 @@ func (h *Host) handleHostSetSessionTitle(msg *Message) {
 }
 
 func (h *Host) handleHostSyncModels(msg *Message) {
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	updated, err := h.app.SyncModels()
@@ -370,12 +371,10 @@ func (h *Host) handleHostSyncModels(msg *Message) {
 
 func (h *Host) handleHostRunBackground(msg *Message) {
 	var params HostRunBackgroundParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
-	if h.app == nil {
-		h.respondError(*msg.ID, -32603, "host app not available")
+	if !h.requireApp(msg) {
 		return
 	}
 	if err := h.app.RunBackground(params.Prompt); err != nil {
@@ -446,8 +445,7 @@ func (h *Host) handleHostUndoSnapshots(msg *Message) {
 
 func (h *Host) handleHostUndoRestore(msg *Message) {
 	var params HostUndoRestoreParams
-	if err := json.Unmarshal(msg.Params, &params); err != nil {
-		h.respondError(*msg.ID, -32602, "invalid params: "+err.Error())
+	if !h.decodeParams(msg, &params) {
 		return
 	}
 	snapshots, err := tool.UndoSnapshots()
