@@ -62,8 +62,6 @@ func withCacheDir(t *testing.T, dir string) {
 }
 
 func TestCacheRoundTrip(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	withCacheDir(t, dir)
 
@@ -85,8 +83,6 @@ func TestCacheRoundTrip(t *testing.T) {
 }
 
 func TestCacheStaleAfterExpiry(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	withCacheDir(t, dir)
 

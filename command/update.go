@@ -20,7 +20,11 @@ func registerUpdate(app *ext.App) {
 		Name:        "update",
 		Description: "Update extensions to latest",
 		Handler: func(args string, a *ext.App) error {
-			settings, _ := config.Load()
+			settings, err := config.Load()
+			if err != nil {
+				a.ShowMessage("Failed to load config: " + err.Error())
+				return nil
+			}
 			var b strings.Builder
 			b.WriteString("Updating extensions...\n")
 			if err := InstallOfficialExtensions(&b, settings); err != nil {

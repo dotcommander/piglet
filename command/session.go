@@ -74,7 +74,11 @@ func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	for i, s := range summaries {
 		label := s.Title
 		if label == "" {
+			if len(s.ID) > 8 {
 			label = s.ID[:8]
+		} else {
+			label = s.ID
+		}
 		}
 		desc := s.CreatedAt.Format("2006-01-02 15:04")
 		if s.CWD != "" {

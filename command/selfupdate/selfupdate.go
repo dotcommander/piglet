@@ -23,6 +23,8 @@ const (
 	cacheMaxAge = 24 * time.Hour
 )
 
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // ReleaseInfo holds the fields we care about from the GitHub releases API.
 type ReleaseInfo struct {
 	TagName     string    `json:"tag_name"`
@@ -60,7 +62,7 @@ func FetchLatestRelease(ctx context.Context) (ReleaseInfo, error) {
 	}
 	req.Header.Set("User-Agent", "piglet")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return ReleaseInfo{}, fmt.Errorf("fetch release: %w", err)
 	}

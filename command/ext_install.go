@@ -50,7 +50,9 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		"-dropreplace=github.com/dotcommander/piglet/sdk",
 	)
 	dropReplace.Dir = tmpDir
-	_ = dropReplace.Run()
+	if out, err := dropReplace.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "Warning: go mod edit failed: %s\n", strings.TrimSpace(string(out)))
+	}
 
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = tmpDir
@@ -62,7 +64,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	var failures []string
 
 	// Use \r for TTY (os.Stderr), newline for non-TTY (strings.Builder in TUI path)
-	isTTY := w == os.Stderr
+	isTTY := w == os.Stdout || w == os.Stderr
 	for i, name := range extensions {
 		if isTTY {
 			fmt.Fprintf(w, "\rBuilding extensions (%d/%d) %s...\033[K", i+1, total, name)
@@ -111,7 +113,10 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 }
 
 func installExtensions(a *ext.App) error {
-	settings, _ := config.Load()
+	settings, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 	var b strings.Builder
 	if err := InstallOfficialExtensions(&b, settings); err != nil {
 		return err
