@@ -203,10 +203,20 @@ func (s *Session) SetTitle(title string) error {
 }
 
 // SetModel updates the model in metadata.
-func (s *Session) SetModel(model string) {
+func (s *Session) SetModel(model string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.meta.Model = model
+	data, err := marshalJSON(s.meta)
+	if err != nil {
+		return err
+	}
+	return s.appendEntry(Entry{
+		Type:      "meta",
+		Timestamp: time.Now(),
+		Data:      data,
+	})
 }
 
 // Close closes the session file.

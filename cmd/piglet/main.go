@@ -141,7 +141,9 @@ func run() error {
 	}
 	if sess != nil {
 		defer sess.Close()
-		sess.SetModel(rt.model.ID)
+		if err := sess.SetModel(rt.model.ID); err != nil {
+			slog.Warn("persist model to session", "error", err)
+		}
 	}
 
 	ag := buildAgent(app, rt, system)
