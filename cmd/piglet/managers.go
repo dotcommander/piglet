@@ -81,6 +81,7 @@ func (m *sessionMgr) Title() string {
 type modelMgr struct {
 	registry *provider.Registry
 	auth     *config.Auth
+	app      *ext.App
 }
 
 func (m *modelMgr) Available() []core.Model {
@@ -91,6 +92,13 @@ func (m *modelMgr) Switch(id string) (core.Model, core.StreamProvider, error) {
 	models := m.registry.Models()
 	for _, mod := range models {
 		if mod.Provider+"/"+mod.ID == id {
+			// Check for external provider first
+			if m.app != nil {
+				if p, ok := m.app.StreamProvider(string(mod.API), mod); ok {
+					return mod, p, nil
+				}
+			}
+			// Fall back to compiled-in provider
 			apiKeyFn := func() string {
 				return m.auth.GetAPIKey(mod.Provider)
 			}

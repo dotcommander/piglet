@@ -196,7 +196,9 @@ type ExtInfo struct {
 	EventHandlers []string // event handler names
 	Shortcuts     []string // shortcut keys
 	MessageHooks  []string // message hook names
-	Compactor     string   // compactor name, empty if none
+	Compactor       string   // compactor name, empty if none
+	PromptSections  []string // prompt section titles
+	StreamProviders []string // stream provider API types (e.g. "openai")
 }
 
 // ProviderConfig registers a custom LLM provider from an extension.

@@ -207,3 +207,39 @@ type ExtInfo struct {
 	MessageHooks  []string `json:"messageHooks,omitempty"`
 	Compactor     string   `json:"compactor,omitempty"`
 }
+
+// ---------------------------------------------------------------------------
+// Provider streaming types
+// ---------------------------------------------------------------------------
+
+// ProviderStreamRequest is the SDK-side type for provider/stream requests.
+type ProviderStreamRequest struct {
+	RequestID int             `json:"requestId"`
+	Model     json.RawMessage `json:"model"`
+	System    string          `json:"system"`
+	Messages  json.RawMessage `json:"messages"`
+	Tools     json.RawMessage `json:"tools,omitempty"`
+	Options   json.RawMessage `json:"options,omitempty"`
+}
+
+// ProviderStreamResponse is the SDK-side result for provider/stream.
+type ProviderStreamResponse struct {
+	Message json.RawMessage `json:"message"`
+	Error   string          `json:"error,omitempty"`
+}
+
+// ProviderDelta is the SDK-side notification for provider/delta.
+type ProviderDelta struct {
+	RequestID int               `json:"requestId"`
+	Type      string            `json:"type"`
+	Index     int               `json:"index,omitempty"`
+	Delta     string            `json:"delta,omitempty"`
+	Tool      *ProviderToolCall `json:"tool,omitempty"`
+}
+
+// ProviderToolCall is a tool call in a provider delta.
+type ProviderToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}

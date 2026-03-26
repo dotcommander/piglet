@@ -3,8 +3,10 @@ package ext
 import (
 	"context"
 	"fmt"
-	"github.com/dotcommander/piglet/core"
+	"slices"
 	"sort"
+
+	"github.com/dotcommander/piglet/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -124,11 +126,91 @@ func (a *App) RegisterProvider(name string, cfg *ProviderConfig) {
 	a.providers[name] = cfg
 }
 
+// StreamProviderFactory creates a StreamProvider configured for a specific model.
+// Registered per API type; called each time the agent selects a model served by that API.
+type StreamProviderFactory func(model core.Model) core.StreamProvider
+
+// RegisterStreamProvider registers a factory that creates StreamProviders for the given API type.
+func (a *App) RegisterStreamProvider(api string, factory StreamProviderFactory) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streamProviders[api] = factory
+}
+
 // RegisterExtInfo records metadata about a loaded extension.
 func (a *App) RegisterExtInfo(info ExtInfo) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.extInfos = append(a.extInfos, info)
+}
+
+// UnregisterExtension removes all registrations associated with the named extension.
+// Used by the supervisor when restarting a crashed extension process.
+func (a *App) UnregisterExtension(name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Find the extension's info to know what was registered
+	var info *ExtInfo
+	for i := range a.extInfos {
+		if a.extInfos[i].Name == name {
+			info = &a.extInfos[i]
+			break
+		}
+	}
+	if info == nil {
+		return
+	}
+
+	// Remove tools
+	for _, t := range info.Tools {
+		delete(a.tools, t)
+	}
+
+	// Remove commands
+	for _, c := range info.Commands {
+		delete(a.commands, c)
+	}
+
+	// Remove shortcuts
+	for _, k := range info.Shortcuts {
+		delete(a.shortcuts, k)
+	}
+
+	// Remove interceptors by name
+	a.interceptors = slices.DeleteFunc(a.interceptors, func(ic Interceptor) bool {
+		return slices.Contains(info.Interceptors, ic.Name)
+	})
+
+	// Remove event handlers by name
+	a.eventHandlers = slices.DeleteFunc(a.eventHandlers, func(eh EventHandler) bool {
+		return slices.Contains(info.EventHandlers, eh.Name)
+	})
+
+	// Remove message hooks by name
+	a.messageHooks = slices.DeleteFunc(a.messageHooks, func(mh MessageHook) bool {
+		return slices.Contains(info.MessageHooks, mh.Name)
+	})
+
+	// Remove prompt sections by title
+	a.promptSections = slices.DeleteFunc(a.promptSections, func(ps PromptSection) bool {
+		return slices.Contains(info.PromptSections, ps.Title)
+	})
+
+	// Remove compactor if it belongs to this extension
+	if a.compactor != nil && info.Compactor != "" && a.compactor.Name == info.Compactor {
+		a.compactor = nil
+	}
+
+	// Remove stream providers
+	for _, api := range info.StreamProviders {
+		delete(a.streamProviders, api)
+	}
+
+	// Remove the ext info entry itself
+	a.extInfos = slices.DeleteFunc(a.extInfos, func(ei ExtInfo) bool {
+		return ei.Name == name
+	})
 }
 
 // ---------------------------------------------------------------------------

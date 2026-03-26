@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -26,9 +27,10 @@ type Host struct {
 	app                *ext.App // nil until bridge wires it
 	resolveProviderFn  providerResolverFn
 
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Scanner
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	rpcRead io.Closer // ext→host read end (for cleanup)
+	stdout  *bufio.Scanner
 
 	writeMu   sync.Mutex           // protects stdin writes
 	pendingMu sync.Mutex           // protects pending map
@@ -46,15 +48,19 @@ type Host struct {
 	shortcuts      []RegisterShortcutParams
 	messageHooks   []RegisterMessageHookParams
 	compactor      *RegisterCompactorParams
+	providers      []RegisterProviderParams // collected during handshake
+	deltaMu        sync.Mutex
+	deltaChans     map[int]chan ProviderDeltaParams // requestId → delta channel
 }
 
 // NewHost creates a host for the given manifest.
 func NewHost(m *Manifest, cwd string) *Host {
 	return &Host{
-		manifest: m,
-		cwd:      cwd,
-		pending:  make(map[int]chan *Message),
-		closed:   make(chan struct{}),
+		manifest:   m,
+		cwd:        cwd,
+		pending:    make(map[int]chan *Message),
+		closed:     make(chan struct{}),
+		deltaChans: make(map[int]chan ProviderDeltaParams),
 	}
 }
 
@@ -71,25 +77,41 @@ func (h *Host) Start(ctx context.Context) error {
 	h.cmd = exec.CommandContext(ctx, bin, args...)
 	h.cmd.Dir = h.manifest.Dir
 
-	var err error
-	h.stdin, err = h.cmd.StdinPipe()
+	// Create anonymous pipe pairs for JSON-RPC (FD 3/4 in child)
+	// Pair 1: host→ext (host writes, child reads on FD 3)
+	extRead, hostWrite, err := os.Pipe()
 	if err != nil {
-		return fmt.Errorf("stdin pipe: %w", err)
+		return fmt.Errorf("create host→ext pipe: %w", err)
+	}
+	// Pair 2: ext→host (child writes on FD 4, host reads)
+	hostRead, extWrite, err := os.Pipe()
+	if err != nil {
+		extRead.Close()
+		hostWrite.Close()
+		return fmt.Errorf("create ext→host pipe: %w", err)
 	}
 
-	stdoutPipe, err := h.cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
-	}
-	h.stdout = bufio.NewScanner(stdoutPipe)
-	h.stdout.Buffer(make([]byte, 0, 256*1024), 1024*1024) // 1MB max line
-
-	// Capture stderr for logging
+	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
+	h.cmd.Stdin = nil                                  // extensions don't read stdin
+	h.cmd.Stdout = &logWriter{name: h.manifest.Name + "/stdout"} // capture stray prints
 	h.cmd.Stderr = &logWriter{name: h.manifest.Name}
 
+	h.stdin = hostWrite
+	h.rpcRead = hostRead
+	h.stdout = bufio.NewScanner(hostRead)
+	h.stdout.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+
 	if err := h.cmd.Start(); err != nil {
+		hostWrite.Close()
+		hostRead.Close()
+		extRead.Close()
+		extWrite.Close()
 		return fmt.Errorf("start %s: %w", h.manifest.Name, err)
 	}
+
+	// Close child-side pipe ends after fork
+	extRead.Close()
+	extWrite.Close()
 
 	// Start reading messages in background
 	go h.readLoop()
@@ -126,6 +148,9 @@ func (h *Host) Stop() {
 		})
 
 		_ = h.stdin.Close()
+		if h.rpcRead != nil {
+			_ = h.rpcRead.Close()
+		}
 		close(h.closed)
 
 		if h.cmd.Process != nil {
@@ -137,6 +162,16 @@ func (h *Host) Stop() {
 
 // Name returns the extension name from the manifest.
 func (h *Host) Name() string { return h.manifest.Name }
+
+// Closed returns a channel that is closed when the host process exits.
+func (h *Host) Closed() <-chan struct{} { return h.closed }
+
+// releaseDeltaChan removes a delta channel from the map, stopping further sends.
+func (h *Host) releaseDeltaChan(id int) {
+	h.deltaMu.Lock()
+	delete(h.deltaChans, id)
+	h.deltaMu.Unlock()
+}
 
 // Tools returns the tools registered during handshake.
 func (h *Host) Tools() []RegisterToolParams { return h.tools }
@@ -161,6 +196,9 @@ func (h *Host) MessageHooks() []RegisterMessageHookParams { return h.messageHook
 
 // Compactor returns the compactor registered during handshake, or nil.
 func (h *Host) Compactor() *RegisterCompactorParams { return h.compactor }
+
+// Providers returns the providers registered during handshake.
+func (h *Host) Providers() []RegisterProviderParams { return h.providers }
 
 // ExecuteTool sends a tool/execute request and waits for the response.
 func (h *Host) ExecuteTool(ctx context.Context, callID, name string, args map[string]any) (*ToolExecuteResult, error) {

@@ -128,6 +128,17 @@ func (a *App) Providers() map[string]*ProviderConfig {
 	return out
 }
 
+// StreamProvider returns a provider for the given API type and model, if a factory is registered.
+func (a *App) StreamProvider(api string, model core.Model) (core.StreamProvider, bool) {
+	a.mu.RLock()
+	factory, ok := a.streamProviders[api]
+	a.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return factory(model), true
+}
+
 // StatusSections returns all registered status sections.
 func (a *App) StatusSections() []StatusSection {
 	a.mu.RLock()

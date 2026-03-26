@@ -1,0 +1,935 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dotcommander/piglet/sdk/protocol.schema.json",
+  "title": "Piglet Extension Protocol v4",
+  "description": "JSON-RPC 2.0 protocol for piglet external extensions. Transport: newline-delimited JSON over FD 3 (host→ext) and FD 4 (ext→host), with stdin/stdout fallback.",
+  "oneOf": [
+    { "$ref": "#/$defs/Request" },
+    { "$ref": "#/$defs/Response" },
+    { "$ref": "#/$defs/Notification" }
+  ],
+  "$defs": {
+    "Request": {
+      "description": "JSON-RPC 2.0 request. Has both method and id.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": { "type": "integer" },
+        "method": { "type": "string" },
+        "params": {}
+      }
+    },
+    "Response": {
+      "description": "JSON-RPC 2.0 response. Has id and either result or error.",
+      "type": "object",
+      "required": ["jsonrpc", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": { "type": "integer" },
+        "result": {},
+        "error": { "$ref": "#/$defs/RPCError" }
+      }
+    },
+    "Notification": {
+      "description": "JSON-RPC 2.0 notification. Has method but no id. No response expected.",
+      "type": "object",
+      "required": ["jsonrpc", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "method": { "type": "string" },
+        "params": {}
+      }
+    },
+    "RPCError": {
+      "description": "JSON-RPC 2.0 error object.",
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "integer" },
+        "message": { "type": "string" }
+      }
+    },
+
+    "ContentBlock": {
+      "description": "A content block in a tool result. Type 'text' uses the text field; type 'image' uses data (base64) and mime.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["text", "image"] },
+        "text": { "type": "string" },
+        "data": { "type": "string", "description": "Base64-encoded image data." },
+        "mime": { "type": "string", "description": "MIME type for image blocks, e.g. image/png." }
+      }
+    },
+    "ActionResult": {
+      "description": "A JSON-serializable action returned by extensions. The host converts it to the appropriate ext.Action type.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["notify", "showMessage", "setSessionTitle", "quit"],
+          "description": "Discriminator for the action kind."
+        },
+        "payload": {
+          "description": "Type-specific data for the action."
+        }
+      }
+    },
+    "ChatMessage": {
+      "description": "A single message in a chat request.",
+      "type": "object",
+      "required": ["role", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": { "type": "string" }
+      }
+    },
+    "CompactMessage": {
+      "description": "A conversation message serialized for compaction. The data field is raw JSON for the underlying message type.",
+      "type": "object",
+      "required": ["type", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["user", "assistant", "tool_result"],
+          "description": "Discriminator for the message kind."
+        },
+        "data": {
+          "description": "Raw JSON for the underlying message.",
+          "$comment": "json.RawMessage — any JSON value"
+        }
+      }
+    },
+    "HostToolInfo": {
+      "description": "Describes a single host-registered tool available to extensions.",
+      "type": "object",
+      "required": ["name", "description", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "parameters": {
+          "description": "JSON Schema describing the tool's input parameters."
+        }
+      }
+    },
+    "HostTokenUsage": {
+      "description": "Token consumption for a single LLM call.",
+      "type": "object",
+      "required": ["input", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "input": { "type": "integer" },
+        "output": { "type": "integer" }
+      }
+    },
+    "WireSessionInfo": {
+      "description": "Wire representation of a session summary.",
+      "type": "object",
+      "required": ["id", "title", "cwd", "createdAt", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "cwd": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "RFC3339 timestamp." },
+        "parentId": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "WireExtInfo": {
+      "description": "Wire representation of a loaded extension's metadata.",
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "kind": { "type": "string", "description": "Extension kind, e.g. 'external' or 'builtin'." },
+        "runtime": { "type": "string" },
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "commands": { "type": "array", "items": { "type": "string" } },
+        "interceptors": { "type": "array", "items": { "type": "string" } },
+        "eventHandlers": { "type": "array", "items": { "type": "string" } },
+        "shortcuts": { "type": "array", "items": { "type": "string" } },
+        "messageHooks": { "type": "array", "items": { "type": "string" } },
+        "compactor": { "type": "string" }
+      }
+    },
+
+    "InitializeParams": {
+      "description": "Sent by the host after spawning the extension process.",
+      "type": "object",
+      "required": ["protocolVersion", "cwd"],
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": { "type": "string", "description": "Current protocol version (e.g. '3')." },
+        "cwd": { "type": "string", "description": "Working directory of the host process." }
+      }
+    },
+    "InitializeResult": {
+      "description": "Extension's response to initialize, identifying itself to the host.",
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "ShutdownParams": {
+      "description": "Asks the extension to shut down gracefully. No fields.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "CancelParams": {
+      "description": "Tells the extension to abort the request with the given ID.",
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" }
+      }
+    },
+
+    "RegisterToolParams": {
+      "description": "Registers a tool the LLM can call. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name", "description", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "parameters": {
+          "description": "JSON Schema for the tool's input parameters."
+        },
+        "promptHint": { "type": "string", "description": "Optional additional text injected into the system prompt to guide tool use." }
+      }
+    },
+    "RegisterCommandParams": {
+      "description": "Registers a slash command. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "RegisterPromptSectionParams": {
+      "description": "Adds a named section to the system prompt. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["title", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "order": { "type": "integer", "description": "Insertion order. Lower values appear earlier. Default 0." }
+      }
+    },
+    "RegisterInterceptorParams": {
+      "description": "Registers a before/after tool interceptor. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "priority": { "type": "integer", "description": "Execution order. Higher values run first. Default 0." }
+      }
+    },
+    "RegisterEventHandlerParams": {
+      "description": "Registers an agent lifecycle event handler. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "priority": { "type": "integer", "description": "Execution order among handlers for the same event." },
+        "events": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Event names to subscribe to (e.g. 'EventTurnEnd'). Null or omitted means all events."
+        }
+      }
+    },
+    "RegisterShortcutParams": {
+      "description": "Registers a keyboard shortcut. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["key", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "description": "Key combo, e.g. 'ctrl+g'." },
+        "description": { "type": "string" }
+      }
+    },
+    "RegisterMessageHookParams": {
+      "description": "Registers a pre-message hook that fires before each user message reaches the LLM. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "priority": { "type": "integer", "description": "Execution order. Higher values run first." }
+      }
+    },
+    "RegisterCompactorParams": {
+      "description": "Registers a conversation compactor. Only one compactor can be active. Sent as a notification from extension to host.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "threshold": { "type": "integer", "description": "Message count at which compaction triggers. 0 = use config default." }
+      }
+    },
+
+    "RegisterProviderParams": {
+      "description": "Registers a streaming LLM provider. Sent as a notification from extension to host during handshake.",
+      "type": "object",
+      "required": ["api"],
+      "additionalProperties": false,
+      "properties": {
+        "api": { "type": "string", "description": "API type: openai, anthropic, google" }
+      }
+    },
+    "ProviderStreamParams": {
+      "description": "Sent by the host to the extension to initiate a streaming LLM call.",
+      "type": "object",
+      "required": ["requestId", "model", "system", "messages"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "integer", "description": "Correlation ID for delta notifications." },
+        "model": { "description": "Model configuration (core.Model as JSON)." },
+        "system": { "type": "string" },
+        "messages": { "description": "Conversation messages as ContentBlock array." },
+        "tools": { "description": "Tool schemas, optional." },
+        "options": { "description": "Stream options (temperature, maxTokens, thinking, headers)." }
+      }
+    },
+    "ProviderStreamResult": {
+      "description": "Extension's response to a provider/stream request.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "message": { "description": "AssistantMessage as JSON." },
+        "error": { "type": "string" }
+      }
+    },
+    "ProviderDeltaParams": {
+      "description": "Sent by the extension to the host as an incremental streaming event during a provider/stream call.",
+      "type": "object",
+      "required": ["requestId", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "integer" },
+        "type": { "type": "string", "description": "text_delta, thinking_delta, toolcall_delta, toolcall_end" },
+        "index": { "type": "integer" },
+        "delta": { "type": "string" },
+        "tool": { "$ref": "#/$defs/ProviderToolCall" }
+      }
+    },
+    "ProviderToolCall": {
+      "description": "A tool call emitted during provider streaming.",
+      "type": "object",
+      "required": ["id", "name", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "arguments": { "type": "string" }
+      }
+    },
+
+    "ToolExecuteParams": {
+      "description": "Sent by the host when the LLM calls a tool owned by this extension.",
+      "type": "object",
+      "required": ["callId", "name", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "callId": { "type": "string" },
+        "name": { "type": "string" },
+        "args": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ToolExecuteResult": {
+      "description": "Extension's response to a tool execution request.",
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
+        "isError": { "type": "boolean", "description": "True if the tool returned an error result." }
+      }
+    },
+
+    "CommandExecuteParams": {
+      "description": "Sent by the host when the user invokes a slash command owned by this extension.",
+      "type": "object",
+      "required": ["name", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "args": { "type": "string" }
+      }
+    },
+    "CommandExecuteResult": {
+      "description": "Extension's response to a command execution. Currently empty; errors use the RPC error field.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "InterceptorBeforeParams": {
+      "description": "Sent by the host just before a tool executes.",
+      "type": "object",
+      "required": ["toolName", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "toolName": { "type": "string" },
+        "args": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "InterceptorBeforeResult": {
+      "description": "Extension's response from an interceptor/before call.",
+      "type": "object",
+      "required": ["allow"],
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "boolean", "description": "If false the tool execution is blocked." },
+        "args": { "type": "object", "additionalProperties": true, "description": "Optionally modified args to pass to the tool." }
+      }
+    },
+    "InterceptorAfterParams": {
+      "description": "Sent by the host after a tool has executed.",
+      "type": "object",
+      "required": ["toolName"],
+      "additionalProperties": false,
+      "properties": {
+        "toolName": { "type": "string" },
+        "details": { "description": "Tool result details; schema depends on the tool." }
+      }
+    },
+    "InterceptorAfterResult": {
+      "description": "Extension's response from an interceptor/after call.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "details": { "description": "Optionally modified details to pass back." }
+      }
+    },
+
+    "EventDispatchParams": {
+      "description": "Sent by the host when an agent lifecycle event occurs.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Event name, e.g. 'EventAgentStart', 'EventTurnEnd', 'EventToolEnd'.",
+          "examples": [
+            "EventAgentStart", "EventSessionLoad", "EventAgentInit",
+            "EventPromptBuild", "EventMessagePre", "EventTurnStart",
+            "EventStreamDelta", "EventStreamDone", "EventToolStart",
+            "EventToolUpdate", "EventToolEnd", "EventTurnEnd",
+            "EventRetry", "EventMaxTurns", "EventStepWait", "EventCompact"
+          ]
+        },
+        "data": {
+          "description": "Event payload as raw JSON. Schema varies by event type."
+        }
+      }
+    },
+    "EventDispatchResult": {
+      "description": "Extension's response to an event dispatch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": { "$ref": "#/$defs/ActionResult" }
+      }
+    },
+
+    "ShortcutHandleParams": {
+      "description": "Sent by the host when the user presses a registered shortcut.",
+      "type": "object",
+      "required": ["key"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "description": "The shortcut key that was pressed, e.g. 'ctrl+g'." }
+      }
+    },
+    "ShortcutHandleResult": {
+      "description": "Extension's response to a shortcut press.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": { "$ref": "#/$defs/ActionResult" }
+      }
+    },
+
+    "MessageHookParams": {
+      "description": "Sent by the host before a user message reaches the LLM.",
+      "type": "object",
+      "required": ["message"],
+      "additionalProperties": false,
+      "properties": {
+        "message": { "type": "string" }
+      }
+    },
+    "MessageHookResult": {
+      "description": "Extension's response to a message hook invocation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "injection": { "type": "string", "description": "Ephemeral context to inject into this turn only. Empty string = no injection." }
+      }
+    },
+
+    "CompactExecuteParams": {
+      "description": "Sent by the host when the token threshold is exceeded and compaction is needed.",
+      "type": "object",
+      "required": ["messages"],
+      "additionalProperties": false,
+      "properties": {
+        "messages": { "type": "array", "items": { "$ref": "#/$defs/CompactMessage" } }
+      }
+    },
+    "CompactExecuteResult": {
+      "description": "Extension's response containing the compacted message history.",
+      "type": "object",
+      "required": ["messages"],
+      "additionalProperties": false,
+      "properties": {
+        "messages": { "type": "array", "items": { "$ref": "#/$defs/CompactMessage" } }
+      }
+    },
+
+    "NotifyParams": {
+      "description": "Sends a toast/status notification to the TUI. Extension → host notification.",
+      "type": "object",
+      "required": ["message"],
+      "additionalProperties": false,
+      "properties": {
+        "message": { "type": "string" }
+      }
+    },
+    "LogParams": {
+      "description": "Writes a log line to the host's log file. Extension → host notification.",
+      "type": "object",
+      "required": ["level", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
+        "message": { "type": "string" }
+      }
+    },
+    "ShowMessageParams": {
+      "description": "Displays a message in the conversation panel. Extension → host notification.",
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" }
+      }
+    },
+    "SendMessageParams": {
+      "description": "Submits a message as if the user typed it, starting a new agent turn. Extension → host notification.",
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "string" }
+      }
+    },
+    "SteerParams": {
+      "description": "Interrupts the current turn and injects a steering message. Extension → host notification.",
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "string" }
+      }
+    },
+
+    "HostListToolsParams": {
+      "description": "Extension → host request to list available host tools.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filter": {
+          "type": "string",
+          "enum": ["all", "background_safe"],
+          "description": "'all' returns every registered tool. 'background_safe' returns only tools safe for background agents. Default: 'all'."
+        }
+      }
+    },
+    "HostListToolsResult": {
+      "description": "Host's response to host/listTools.",
+      "type": "object",
+      "required": ["tools"],
+      "additionalProperties": false,
+      "properties": {
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/HostToolInfo" } }
+      }
+    },
+    "HostExecuteToolParams": {
+      "description": "Extension → host request to execute a host-registered tool.",
+      "type": "object",
+      "required": ["name", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "args": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "HostExecuteToolResult": {
+      "description": "Host's response to host/executeTool.",
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
+        "isError": { "type": "boolean" }
+      }
+    },
+
+    "HostConfigGetParams": {
+      "description": "Extension → host request to read host configuration values.",
+      "type": "object",
+      "required": ["keys"],
+      "additionalProperties": false,
+      "properties": {
+        "keys": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "HostConfigGetResult": {
+      "description": "Host's response to host/config.get.",
+      "type": "object",
+      "required": ["values"],
+      "additionalProperties": false,
+      "properties": {
+        "values": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "HostConfigReadExtParams": {
+      "description": "Extension → host request to read an extension's markdown config file.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Extension name — reads ~/.config/piglet/<name>.md." }
+      }
+    },
+    "HostConfigReadExtResult": {
+      "description": "Host's response to host/config.readExtension.",
+      "type": "object",
+      "required": ["content"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "string" }
+      }
+    },
+
+    "HostAuthGetKeyParams": {
+      "description": "Extension → host request to retrieve an API key for a provider.",
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "description": "Provider name, e.g. 'anthropic', 'openai', 'google'." }
+      }
+    },
+    "HostAuthGetKeyResult": {
+      "description": "Host's response to host/auth.getKey.",
+      "type": "object",
+      "required": ["key"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" }
+      }
+    },
+
+    "HostChatParams": {
+      "description": "Extension → host request to make a single-turn LLM call.",
+      "type": "object",
+      "required": ["messages"],
+      "additionalProperties": false,
+      "properties": {
+        "system": { "type": "string" },
+        "messages": { "type": "array", "items": { "$ref": "#/$defs/ChatMessage" } },
+        "model": { "type": "string", "description": "'small', 'default', or an explicit model ID." },
+        "maxTokens": { "type": "integer", "description": "Output token limit." }
+      }
+    },
+    "HostChatResult": {
+      "description": "Host's response to host/chat.",
+      "type": "object",
+      "required": ["text", "usage"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "usage": { "$ref": "#/$defs/HostTokenUsage" }
+      }
+    },
+
+    "HostAgentRunParams": {
+      "description": "Extension → host request to run a full agent loop in an isolated context.",
+      "type": "object",
+      "required": ["task"],
+      "additionalProperties": false,
+      "properties": {
+        "system": { "type": "string" },
+        "task": { "type": "string" },
+        "tools": { "type": "string", "enum": ["background_safe", "all"], "description": "Tool filter. Default: 'background_safe'." },
+        "model": { "type": "string", "description": "'small', 'default', or an explicit model ID." },
+        "maxTurns": { "type": "integer" }
+      }
+    },
+    "HostAgentRunResult": {
+      "description": "Host's response to host/agent.run.",
+      "type": "object",
+      "required": ["text", "turns", "usage"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "turns": { "type": "integer" },
+        "usage": { "$ref": "#/$defs/HostTokenUsage" }
+      }
+    },
+
+    "HostConversationMessagesResult": {
+      "description": "Host's response to host/conversationMessages — raw JSONL message array.",
+      "type": "object",
+      "required": ["messages"],
+      "additionalProperties": false,
+      "properties": {
+        "messages": {
+          "description": "Raw JSON array of conversation messages."
+        }
+      }
+    },
+    "HostSessionsResult": {
+      "description": "Host's response to host/sessions.",
+      "type": "object",
+      "required": ["sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/WireSessionInfo" } }
+      }
+    },
+    "HostLoadSessionParams": {
+      "description": "Extension → host request to load a session by file path.",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" }
+      }
+    },
+    "HostForkSessionResult": {
+      "description": "Host's response to host/forkSession.",
+      "type": "object",
+      "required": ["parentID", "messageCount"],
+      "additionalProperties": false,
+      "properties": {
+        "parentID": { "type": "string" },
+        "messageCount": { "type": "integer" }
+      }
+    },
+    "HostSetSessionTitleParams": {
+      "description": "Extension → host request to set the current session's title.",
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" }
+      }
+    },
+    "HostSyncModelsResult": {
+      "description": "Host's response to host/syncModels.",
+      "type": "object",
+      "required": ["updated"],
+      "additionalProperties": false,
+      "properties": {
+        "updated": { "type": "integer", "description": "Number of model entries updated." }
+      }
+    },
+    "HostRunBackgroundParams": {
+      "description": "Extension → host request to start a background agent.",
+      "type": "object",
+      "required": ["prompt"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": { "type": "string" }
+      }
+    },
+    "HostIsBackgroundRunningResult": {
+      "description": "Host's response to host/isBackgroundRunning.",
+      "type": "object",
+      "required": ["running"],
+      "additionalProperties": false,
+      "properties": {
+        "running": { "type": "boolean" }
+      }
+    },
+    "HostExtInfosResult": {
+      "description": "Host's response to host/extInfos — metadata for all loaded extensions.",
+      "type": "object",
+      "required": ["extensions"],
+      "additionalProperties": false,
+      "properties": {
+        "extensions": { "type": "array", "items": { "$ref": "#/$defs/WireExtInfo" } }
+      }
+    },
+    "HostExtensionsDirResult": {
+      "description": "Host's response to host/extensionsDir — path to the extensions directory.",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" }
+      }
+    },
+    "HostUndoSnapshotsResult": {
+      "description": "Host's response to host/undoSnapshots — file paths with snapshot sizes.",
+      "type": "object",
+      "required": ["snapshots"],
+      "additionalProperties": false,
+      "properties": {
+        "snapshots": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" },
+          "description": "Map of file path → snapshot size in bytes."
+        }
+      }
+    },
+    "HostUndoRestoreParams": {
+      "description": "Extension → host request to restore a file from its undo snapshot.",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" }
+      }
+    },
+
+    "Methods": {
+      "description": "All method name constants defined in the protocol.",
+      "type": "string",
+      "enum": [
+        "initialize",
+        "shutdown",
+        "$/cancelRequest",
+        "register/tool",
+        "register/command",
+        "register/promptSection",
+        "register/interceptor",
+        "register/eventHandler",
+        "register/shortcut",
+        "register/messageHook",
+        "register/compactor",
+        "register/provider",
+        "provider/stream",
+        "provider/delta",
+        "compact/execute",
+        "tool/execute",
+        "command/execute",
+        "interceptor/before",
+        "interceptor/after",
+        "event/dispatch",
+        "shortcut/handle",
+        "messageHook/onMessage",
+        "host/listTools",
+        "host/executeTool",
+        "host/config.get",
+        "host/config.readExtension",
+        "host/auth.getKey",
+        "host/chat",
+        "host/agent.run",
+        "host/conversationMessages",
+        "host/sessions",
+        "host/loadSession",
+        "host/forkSession",
+        "host/setSessionTitle",
+        "host/syncModels",
+        "host/runBackground",
+        "host/cancelBackground",
+        "host/isBackgroundRunning",
+        "host/extInfos",
+        "host/extensionsDir",
+        "host/undoSnapshots",
+        "host/undoRestore",
+        "notify",
+        "log",
+        "showMessage",
+        "sendMessage",
+        "steer"
+      ]
+    },
+
+    "MethodTable": {
+      "description": "Reference table: method → direction, kind (request|notification), params type, result type.",
+      "type": "object",
+      "properties": {
+        "initialize":                    { "description": "Host→Ext request. Params: InitializeParams. Result: InitializeResult." },
+        "shutdown":                      { "description": "Host→Ext request. Params: ShutdownParams (empty). Result: empty." },
+        "$/cancelRequest":               { "description": "Host→Ext notification. Params: CancelParams." },
+        "tool/execute":                  { "description": "Host→Ext request. Params: ToolExecuteParams. Result: ToolExecuteResult." },
+        "command/execute":               { "description": "Host→Ext request. Params: CommandExecuteParams. Result: CommandExecuteResult (empty)." },
+        "interceptor/before":            { "description": "Host→Ext request. Params: InterceptorBeforeParams. Result: InterceptorBeforeResult." },
+        "interceptor/after":             { "description": "Host→Ext request. Params: InterceptorAfterParams. Result: InterceptorAfterResult." },
+        "event/dispatch":                { "description": "Host→Ext request. Params: EventDispatchParams. Result: EventDispatchResult." },
+        "shortcut/handle":               { "description": "Host→Ext request. Params: ShortcutHandleParams. Result: ShortcutHandleResult." },
+        "messageHook/onMessage":         { "description": "Host→Ext request. Params: MessageHookParams. Result: MessageHookResult." },
+        "compact/execute":               { "description": "Host→Ext request. Params: CompactExecuteParams. Result: CompactExecuteResult." },
+        "register/tool":                 { "description": "Ext→Host notification. Params: RegisterToolParams." },
+        "register/command":              { "description": "Ext→Host notification. Params: RegisterCommandParams." },
+        "register/promptSection":        { "description": "Ext→Host notification. Params: RegisterPromptSectionParams." },
+        "register/interceptor":          { "description": "Ext→Host notification. Params: RegisterInterceptorParams." },
+        "register/eventHandler":         { "description": "Ext→Host notification. Params: RegisterEventHandlerParams." },
+        "register/shortcut":             { "description": "Ext→Host notification. Params: RegisterShortcutParams." },
+        "register/messageHook":          { "description": "Ext→Host notification. Params: RegisterMessageHookParams." },
+        "register/compactor":            { "description": "Ext→Host notification. Params: RegisterCompactorParams." },
+        "register/provider":             { "description": "Ext→Host notification. Params: RegisterProviderParams. Handshake: declares provider capability." },
+        "provider/stream":               { "description": "Host→Ext request. Params: ProviderStreamParams. Result: ProviderStreamResult." },
+        "provider/delta":                { "description": "Ext→Host notification. Params: ProviderDeltaParams. Incremental streaming event." },
+        "notify":                        { "description": "Ext→Host notification. Params: NotifyParams." },
+        "log":                           { "description": "Ext→Host notification. Params: LogParams." },
+        "showMessage":                   { "description": "Ext→Host notification. Params: ShowMessageParams." },
+        "sendMessage":                   { "description": "Ext→Host notification. Params: SendMessageParams." },
+        "steer":                         { "description": "Ext→Host notification. Params: SteerParams." },
+        "host/listTools":                { "description": "Ext→Host request. Params: HostListToolsParams. Result: HostListToolsResult." },
+        "host/executeTool":              { "description": "Ext→Host request. Params: HostExecuteToolParams. Result: HostExecuteToolResult." },
+        "host/config.get":               { "description": "Ext→Host request. Params: HostConfigGetParams. Result: HostConfigGetResult." },
+        "host/config.readExtension":     { "description": "Ext→Host request. Params: HostConfigReadExtParams. Result: HostConfigReadExtResult." },
+        "host/auth.getKey":              { "description": "Ext→Host request. Params: HostAuthGetKeyParams. Result: HostAuthGetKeyResult." },
+        "host/chat":                     { "description": "Ext→Host request. Params: HostChatParams. Result: HostChatResult." },
+        "host/agent.run":                { "description": "Ext→Host request. Params: HostAgentRunParams. Result: HostAgentRunResult." },
+        "host/conversationMessages":     { "description": "Ext→Host request. Params: empty. Result: HostConversationMessagesResult." },
+        "host/sessions":                 { "description": "Ext→Host request. Params: empty. Result: HostSessionsResult." },
+        "host/loadSession":              { "description": "Ext→Host request. Params: HostLoadSessionParams. Result: empty." },
+        "host/forkSession":              { "description": "Ext→Host request. Params: empty. Result: HostForkSessionResult." },
+        "host/setSessionTitle":          { "description": "Ext→Host request. Params: HostSetSessionTitleParams. Result: empty." },
+        "host/syncModels":               { "description": "Ext→Host request. Params: empty. Result: HostSyncModelsResult." },
+        "host/runBackground":            { "description": "Ext→Host request. Params: HostRunBackgroundParams. Result: empty." },
+        "host/cancelBackground":         { "description": "Ext→Host request. Params: empty. Result: empty." },
+        "host/isBackgroundRunning":      { "description": "Ext→Host request. Params: empty. Result: HostIsBackgroundRunningResult." },
+        "host/extInfos":                 { "description": "Ext→Host request. Params: empty. Result: HostExtInfosResult." },
+        "host/extensionsDir":            { "description": "Ext→Host request. Params: empty. Result: HostExtensionsDirResult." },
+        "host/undoSnapshots":            { "description": "Ext→Host request. Params: empty. Result: HostUndoSnapshotsResult." },
+        "host/undoRestore":              { "description": "Ext→Host request. Params: HostUndoRestoreParams. Result: empty." }
+      }
+    }
+  }
+}

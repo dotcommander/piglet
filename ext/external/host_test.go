@@ -26,45 +26,27 @@ func TestHostRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	extScript := `
+import { createReadStream, createWriteStream } from "fs";
 import { createInterface } from "readline";
 
-const rl = createInterface({ input: process.stdin });
-let tools = [];
-let commands = [];
+const rpcIn = createReadStream(null, { fd: 3 });
+const rpcOut = createWriteStream(null, { fd: 4 });
+const rl = createInterface({ input: rpcIn });
+
+function send(obj) {
+  rpcOut.write(JSON.stringify(obj) + "\n");
+}
 
 rl.on("line", (line) => {
   const msg = JSON.parse(line);
   if (msg.method === "initialize") {
-    // Register a tool
-    process.stdout.write(JSON.stringify({
-      jsonrpc: "2.0",
-      method: "register/tool",
-      params: { name: "test_tool", description: "A test tool", parameters: { type: "object" } },
-    }) + "\n");
-    // Register a command
-    process.stdout.write(JSON.stringify({
-      jsonrpc: "2.0",
-      method: "register/command",
-      params: { name: "test_cmd", description: "A test command" },
-    }) + "\n");
-    // Respond to initialize
-    process.stdout.write(JSON.stringify({
-      jsonrpc: "2.0",
-      id: msg.id,
-      result: { name: "test-ext", version: "1.0.0" },
-    }) + "\n");
+    send({ jsonrpc: "2.0", method: "register/tool", params: { name: "test_tool", description: "A test tool", parameters: { type: "object" } } });
+    send({ jsonrpc: "2.0", method: "register/command", params: { name: "test_cmd", description: "A test command" } });
+    send({ jsonrpc: "2.0", id: msg.id, result: { name: "test-ext", version: "1.0.0" } });
   } else if (msg.method === "tool/execute") {
-    process.stdout.write(JSON.stringify({
-      jsonrpc: "2.0",
-      id: msg.id,
-      result: { content: [{ type: "text", text: "executed:" + msg.params.name }] },
-    }) + "\n");
+    send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "executed:" + msg.params.name }] } });
   } else if (msg.method === "command/execute") {
-    process.stdout.write(JSON.stringify({
-      jsonrpc: "2.0",
-      id: msg.id,
-      result: {},
-    }) + "\n");
+    send({ jsonrpc: "2.0", id: msg.id, result: {} });
   } else if (msg.method === "shutdown") {
     process.exit(0);
   }

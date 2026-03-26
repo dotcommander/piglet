@@ -319,7 +319,7 @@ type HostExecuteToolResult struct {
 type ShutdownParams struct{}
 
 // Protocol version
-const ProtocolVersion = "3"
+const ProtocolVersion = "4"
 
 // CancelParams tells the extension to abort the request with the given ID.
 type CancelParams struct {
@@ -512,6 +512,47 @@ type HostUndoRestoreParams struct {
 	Path string `json:"path"`
 }
 
+// ---------------------------------------------------------------------------
+// Provider streaming
+// ---------------------------------------------------------------------------
+
+// RegisterProviderParams declares the extension can handle a provider API type.
+type RegisterProviderParams struct {
+	API string `json:"api"` // "openai", "anthropic", "google"
+}
+
+// ProviderStreamParams is the request to stream an LLM call.
+type ProviderStreamParams struct {
+	RequestID int             `json:"requestId"`
+	Model     json.RawMessage `json:"model"`
+	System    string          `json:"system"`
+	Messages  json.RawMessage `json:"messages"`
+	Tools     json.RawMessage `json:"tools,omitempty"`
+	Options   json.RawMessage `json:"options,omitempty"`
+}
+
+// ProviderStreamResult is the final response after streaming completes.
+type ProviderStreamResult struct {
+	Message json.RawMessage `json:"message"`
+	Error   string          `json:"error,omitempty"`
+}
+
+// ProviderDeltaParams is a streaming notification correlated by requestId.
+type ProviderDeltaParams struct {
+	RequestID int               `json:"requestId"`
+	Type      string            `json:"type"`
+	Index     int               `json:"index,omitempty"`
+	Delta     string            `json:"delta,omitempty"`
+	Tool      *ProviderToolCall `json:"tool,omitempty"`
+}
+
+// ProviderToolCall is a tool call in a provider delta (toolcall_end event).
+type ProviderToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
 // Method names
 const (
 	MethodInitialize            = "initialize"
@@ -525,6 +566,9 @@ const (
 	MethodRegisterShortcut      = "register/shortcut"
 	MethodRegisterMessageHook   = "register/messageHook"
 	MethodRegisterCompactor     = "register/compactor"
+	MethodRegisterProvider      = "register/provider"
+	MethodProviderStream        = "provider/stream"
+	MethodProviderDelta         = "provider/delta"
 	MethodCompactExecute        = "compact/execute"
 	MethodToolExecute           = "tool/execute"
 	MethodCommandExecute        = "command/execute"

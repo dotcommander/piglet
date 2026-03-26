@@ -128,6 +128,12 @@ func run() error {
 
 	app, system, extCleanup := setupApp(ctx, rt, interactive)
 	defer extCleanup()
+
+	// If an external extension registered a provider for this model's API type, use it.
+	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
+		rt.prov = p
+	}
+
 	// Session
 	sess, err := session.New(rt.sessDir, rt.cwd)
 	if err != nil {
@@ -144,7 +150,7 @@ func run() error {
 	sessPtr := &sess
 	app.Bind(ag,
 		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth}),
+		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
 	)
 
 	if interactive {

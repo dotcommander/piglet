@@ -162,6 +162,11 @@ func (h *Host) handleMessage(msg *Message) {
 		if json.Unmarshal(msg.Params, &p) == nil {
 			h.compactor = &p
 		}
+	case MethodRegisterProvider:
+		var p RegisterProviderParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.providers = append(h.providers, p)
+		}
 	case MethodNotify:
 		var p NotifyParams
 		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
@@ -188,6 +193,20 @@ func (h *Host) handleMessage(msg *Message) {
 			var level slog.Level
 			_ = level.UnmarshalText([]byte(p.Level))
 			slog.Log(context.Background(), level, p.Message, "ext", h.manifest.Name)
+		}
+	case MethodProviderDelta:
+		var p ProviderDeltaParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.deltaMu.Lock()
+			ch, ok := h.deltaChans[p.RequestID]
+			h.deltaMu.Unlock()
+			if ok {
+				select {
+				case ch <- p:
+				default:
+					// delta channel full — drop to prevent blocking readLoop
+				}
+			}
 		}
 	}
 }

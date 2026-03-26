@@ -14,12 +14,11 @@ import (
 // Test harness
 // ---------------------------------------------------------------------------
 
-// testHarness replaces os.Stdout with a pipe so we can capture SDK output.
-// Tests using this harness MUST NOT run in parallel — they mutate os.Stdout.
+// testHarness wires SDK output to a pipe for inspection.
+// Tests using this harness can safely run in parallel — no global mutation.
 type testHarness struct {
 	ext    *Extension
 	reader *bufio.Scanner
-	oldOut *os.File
 	pr     *os.File
 	pw     *os.File
 }
@@ -31,10 +30,8 @@ func newHarness(t *testing.T) *testHarness {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	oldOut := os.Stdout
-	os.Stdout = pw
+	ext.rpcOut = pw // Direct SDK output to our pipe — no os.Stdout mutation
 	t.Cleanup(func() {
-		os.Stdout = oldOut
 		pw.Close()
 		pr.Close()
 	})
@@ -43,7 +40,6 @@ func newHarness(t *testing.T) *testHarness {
 	return &testHarness{
 		ext:    ext,
 		reader: scanner,
-		oldOut: oldOut,
 		pr:     pr,
 		pw:     pw,
 	}

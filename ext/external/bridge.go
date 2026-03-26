@@ -15,10 +15,9 @@ import (
 	"github.com/dotcommander/piglet/provider"
 )
 
-// LoadAll discovers and starts all external extensions, registering their
-// tools, commands, and prompt sections with the given ext.App.
-// Returns the number of loaded extensions and a cleanup function that stops
-// all extension processes.
+// LoadAll discovers and starts all external extensions under supervisor management,
+// registering their tools, commands, and prompt sections with the given ext.App.
+// Returns the number of loaded extensions and a cleanup function that stops all.
 func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err error) {
 	extDir, err := ExtensionsDir()
 	if err != nil {
@@ -34,10 +33,12 @@ func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err
 		return 0, func() {}, nil
 	}
 
+	resolverFn := makeProviderResolver()
+
 	// Start all extensions concurrently (each blocks on handshake)
 	type result struct {
-		host *Host
-		err  error
+		sup *Supervisor
+		err error
 	}
 	results := make([]result, len(manifests))
 	var wg sync.WaitGroup
@@ -45,31 +46,28 @@ func LoadAll(ctx context.Context, app *ext.App) (loaded int, cleanup func(), err
 		wg.Add(1)
 		go func(i int, m *Manifest) {
 			defer wg.Done()
-			h := NewHost(m, app.CWD())
-			if err := h.Start(ctx); err != nil {
+			s := NewSupervisor(m, app.CWD(), app, resolverFn)
+			if err := s.Start(ctx); err != nil {
 				results[i] = result{err: err}
 				return
 			}
-			results[i] = result{host: h}
+			results[i] = result{sup: s}
 		}(i, m)
 	}
 	wg.Wait()
 
-	var hosts []*Host
+	var supervisors []*Supervisor
 	for i, r := range results {
 		if r.err != nil {
 			slog.Warn("failed to start extension", "name", manifests[i].Name, "err", r.err)
 			continue
 		}
-		r.host.SetApp(app)
-		r.host.SetProviderResolver(makeProviderResolver())
-		hosts = append(hosts, r.host)
-		bridge(app, r.host)
+		supervisors = append(supervisors, r.sup)
 	}
 
-	return len(hosts), func() {
-		for _, h := range hosts {
-			h.Stop()
+	return len(supervisors), func() {
+		for _, s := range supervisors {
+			s.Stop()
 		}
 	}, nil
 }
@@ -121,6 +119,7 @@ func bridge(app *ext.App, h *Host) {
 			Content: ps.Content,
 			Order:   ps.Order,
 		})
+		info.PromptSections = append(info.PromptSections, ps.Title)
 	}
 
 	// Register interceptors
@@ -173,6 +172,15 @@ func bridge(app *ext.App, h *Host) {
 			Compact:   proxyCompactExecute(h),
 		})
 		info.Compactor = cp.Name
+	}
+
+	// Register stream providers
+	for _, p := range h.Providers() {
+		api := p.API
+		app.RegisterStreamProvider(api, func(model core.Model) core.StreamProvider {
+			return &proxyStreamProvider{host: h, model: model}
+		})
+		info.StreamProviders = append(info.StreamProviders, api)
 	}
 
 	// Register extension metadata after all fields are populated
@@ -398,6 +406,180 @@ func coreToWire(blocks []core.ContentBlock) []ContentBlock {
 		}
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// proxyStreamProvider
+// ---------------------------------------------------------------------------
+
+// proxyStreamProvider implements core.StreamProvider by delegating LLM streaming
+// to an external extension process via JSON-RPC.
+type proxyStreamProvider struct {
+	host  *Host
+	model core.Model
+}
+
+func (p *proxyStreamProvider) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
+	ch := make(chan core.StreamEvent, 64)
+	go p.stream(ctx, req, ch)
+	return ch
+}
+
+func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest, ch chan core.StreamEvent) {
+	defer close(ch)
+
+	// Allocate a request ID for correlating provider/delta notifications.
+	requestID := int(p.host.nextID.Add(1))
+
+	// Register delta channel BEFORE sending the request so no deltas are lost.
+	deltaCh := make(chan ProviderDeltaParams, 256)
+	p.host.deltaMu.Lock()
+	p.host.deltaChans[requestID] = deltaCh
+	p.host.deltaMu.Unlock()
+
+	// Build params — marshal each field that goes over the wire.
+	// marshalOrFail marshals v and emits a StreamError on failure.
+	marshalOrFail := func(v any, label string) (json.RawMessage, bool) {
+		data, err := json.Marshal(v)
+		if err != nil {
+			p.host.releaseDeltaChan(requestID)
+			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("marshal %s: %w", label, err)}
+			return nil, false
+		}
+		return data, true
+	}
+
+	modelJSON, ok := marshalOrFail(p.model, "model")
+	if !ok {
+		return
+	}
+	messagesJSON, ok := marshalOrFail(req.Messages, "messages")
+	if !ok {
+		return
+	}
+
+	var toolsJSON json.RawMessage
+	if len(req.Tools) > 0 {
+		toolsJSON, ok = marshalOrFail(req.Tools, "tools")
+		if !ok {
+			return
+		}
+	}
+
+	// Strip APIKeyFunc (not serializable) before marshalling options.
+	type wireOptions struct {
+		Temperature *float64          `json:"temperature,omitempty"`
+		MaxTokens   *int              `json:"maxTokens,omitempty"`
+		Thinking    core.ThinkingLevel `json:"thinking,omitempty"`
+		Headers     map[string]string  `json:"headers,omitempty"`
+	}
+	optJSON, ok := marshalOrFail(wireOptions{
+		Temperature: req.Options.Temperature,
+		MaxTokens:   req.Options.MaxTokens,
+		Thinking:    req.Options.Thinking,
+		Headers:     req.Options.Headers,
+	}, "options")
+	if !ok {
+		return
+	}
+
+	params := ProviderStreamParams{
+		RequestID: requestID,
+		Model:     modelJSON,
+		System:    req.System,
+		Messages:  messagesJSON,
+		Tools:     toolsJSON,
+		Options:   optJSON,
+	}
+
+	// Send the request in a goroutine — it blocks until the extension responds.
+	type streamResponse struct {
+		msg *Message
+		err error
+	}
+	respCh := make(chan streamResponse, 1)
+	go func() {
+		resp, err := p.host.request(ctx, MethodProviderStream, params)
+		respCh <- streamResponse{resp, err}
+	}()
+
+	// Forward deltas while waiting for the final response.
+	for {
+		select {
+		case delta, ok := <-deltaCh:
+			if !ok {
+				return
+			}
+			ch <- deltaToStreamEvent(delta)
+
+		case resp := <-respCh:
+			p.host.releaseDeltaChan(requestID)
+
+			// Drain any deltas that arrived before we removed the channel.
+			for {
+				select {
+				case d := <-deltaCh:
+					ch <- deltaToStreamEvent(d)
+				default:
+					goto drained
+				}
+			}
+		drained:
+			if resp.err != nil {
+				ch <- core.StreamEvent{Type: core.StreamError, Error: resp.err}
+				return
+			}
+			if resp.msg.Error != nil {
+				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("%s", resp.msg.Error.Message)}
+				return
+			}
+			var result ProviderStreamResult
+			if err := json.Unmarshal(resp.msg.Result, &result); err != nil {
+				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("unmarshal provider/stream result: %w", err)}
+				return
+			}
+			if result.Error != "" {
+				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("%s", result.Error)}
+				return
+			}
+			var msg core.AssistantMessage
+			if err := json.Unmarshal(result.Message, &msg); err != nil {
+				ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("unmarshal assistant message: %w", err)}
+				return
+			}
+			ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
+			return
+
+		case <-ctx.Done():
+			p.host.releaseDeltaChan(requestID)
+			ch <- core.StreamEvent{Type: core.StreamError, Error: ctx.Err()}
+			return
+
+		case <-p.host.closed:
+			p.host.releaseDeltaChan(requestID)
+			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("extension %s crashed", p.host.manifest.Name)}
+			return
+		}
+	}
+}
+
+// deltaToStreamEvent converts a wire ProviderDeltaParams to a core.StreamEvent.
+func deltaToStreamEvent(d ProviderDeltaParams) core.StreamEvent {
+	evt := core.StreamEvent{
+		Type:  d.Type,
+		Index: d.Index,
+		Delta: d.Delta,
+	}
+	if d.Tool != nil {
+		var args map[string]any
+		_ = json.Unmarshal([]byte(d.Tool.Arguments), &args)
+		evt.Tool = &core.ToolCall{
+			ID:        d.Tool.ID,
+			Name:      d.Tool.Name,
+			Arguments: args,
+		}
+	}
+	return evt
 }
 
 // makeProviderResolver returns a providerResolverFn that loads config and auth at call time.

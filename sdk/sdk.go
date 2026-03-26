@@ -44,7 +44,9 @@ type Extension struct {
 	messageHooks   []MessageHookDef
 	compactor      *CompactorDef
 
-	onInit   func(e *Extension) // called after initialize, before responding
+	rpcOut               *os.File          // JSON-RPC output (FD 4 or os.Stdout fallback)
+	onInit               func(e *Extension) // called after initialize, before responding
+	providerStreamHandler func(ctx context.Context, x *Extension, req ProviderStreamRequest) (*ProviderStreamResponse, error)
 	writeMu  sync.Mutex
 	cancelMu sync.Mutex
 	cancels  map[int]context.CancelFunc // request ID → cancel
@@ -100,6 +102,27 @@ func (e *Extension) RegisterCompactor(c CompactorDef) {
 	e.compactor = &c
 }
 
+// RegisterProvider declares that this extension provides LLM streaming for the given API type.
+func (e *Extension) RegisterProvider(api string) {
+	e.sendNotification("register/provider", map[string]string{"api": api})
+}
+
+// OnProviderStream registers a handler for provider/stream requests from the host.
+func (e *Extension) OnProviderStream(handler func(ctx context.Context, x *Extension, req ProviderStreamRequest) (*ProviderStreamResponse, error)) {
+	e.providerStreamHandler = handler
+}
+
+// SendProviderDelta sends a streaming delta notification to the host.
+func (e *Extension) SendProviderDelta(requestID int, deltaType string, index int, delta string, tool *ProviderToolCall) {
+	e.sendNotification("provider/delta", ProviderDelta{
+		RequestID: requestID,
+		Type:      deltaType,
+		Index:     index,
+		Delta:     delta,
+		Tool:      tool,
+	})
+}
+
 // OnInit sets a callback that runs after the host sends initialize (CWD is available)
 // but before registrations are sent. Use this for lazy initialization that needs CWD.
 func (e *Extension) OnInit(fn func(e *Extension)) {
@@ -136,9 +159,21 @@ func (e *Extension) Log(level, msg string) {
 	e.sendNotification("log", map[string]string{"level": level, "message": msg})
 }
 
-// Run starts the JSON-RPC read loop. Blocks until stdin closes.
+// Run starts the JSON-RPC read loop. Blocks until the input pipe closes.
+// When launched by piglet, reads from FD 3 (host→ext) and writes to FD 4 (ext→host).
+// Falls back to stdin/stdout for manual debugging or non-piglet launch.
 func (e *Extension) Run() {
-	scanner := bufio.NewScanner(os.Stdin)
+	// Prefer FD 3/4 (set by piglet host via ExtraFiles)
+	rpcIn := os.NewFile(3, "piglet-rpc-in")
+	if _, err := rpcIn.Stat(); err == nil {
+		e.rpcOut = os.NewFile(4, "piglet-rpc-out")
+	} else {
+		// Fallback to stdin/stdout (manual debugging, non-piglet launch)
+		rpcIn = os.Stdin
+		e.rpcOut = os.Stdout
+	}
+
+	scanner := bufio.NewScanner(rpcIn)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
 	for scanner.Scan() {
@@ -235,6 +270,8 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 		go e.handleMessageHook(msg)
 	case "compact/execute":
 		go e.handleCompactExecute(msg)
+	case "provider/stream":
+		go e.handleProviderStream(msg)
 	case "shutdown":
 		e.sendResponse(*msg.ID, nil)
 		// Cancel all in-flight requests
@@ -543,6 +580,30 @@ func (e *Extension) handleCompactExecute(msg *rpcMessage) {
 	e.sendResponse(*msg.ID, result)
 }
 
+func (e *Extension) handleProviderStream(msg *rpcMessage) {
+	if e.providerStreamHandler == nil {
+		e.sendError(*msg.ID, -32603, "no provider stream handler registered")
+		return
+	}
+
+	var req ProviderStreamRequest
+	if err := json.Unmarshal(msg.Params, &req); err != nil {
+		e.sendError(*msg.ID, -32602, fmt.Sprintf("unmarshal provider/stream params: %s", err))
+		return
+	}
+
+	ctx, cleanup := e.requestCtx(*msg.ID)
+	defer cleanup()
+
+	resp, err := e.providerStreamHandler(ctx, e, req)
+	if err != nil {
+		e.sendError(*msg.ID, -32603, err.Error())
+		return
+	}
+
+	e.sendResponse(*msg.ID, resp)
+}
+
 // ---------------------------------------------------------------------------
 // Request context management
 // ---------------------------------------------------------------------------
@@ -601,5 +662,9 @@ func (e *Extension) write(msg *rpcMessage) {
 
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
-	_, _ = os.Stdout.Write(data)
+	out := e.rpcOut
+	if out == nil {
+		out = os.Stdout // fallback for direct handleMessage calls in tests
+	}
+	_, _ = out.Write(data)
 }

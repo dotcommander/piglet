@@ -36,6 +36,7 @@ type App struct {
 	messageHooks   []MessageHook
 	renderers      map[string]Renderer
 	providers      map[string]*ProviderConfig
+	streamProviders map[string]StreamProviderFactory // key = API type string ("openai", "anthropic", "google")
 	promptSections []PromptSection
 	compactor      *Compactor
 	statusSections []StatusSection
@@ -92,7 +93,8 @@ func NewApp(cwd string) *App {
 		commands:  make(map[string]*Command),
 		shortcuts: make(map[string]*Shortcut),
 		renderers: make(map[string]Renderer),
-		providers: make(map[string]*ProviderConfig),
+		providers:       make(map[string]*ProviderConfig),
+		streamProviders: make(map[string]StreamProviderFactory),
 	}
 }
 
