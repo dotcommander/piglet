@@ -58,6 +58,7 @@ tui/, cmd/  → anything (wiring layer)
 | `repomap` | 2 tools, 1 prompt section, 1 event handler |
 | `plan` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
 | `bulk` | 1 tool, 1 prompt section |
+| `cache` | Go library (no registered capabilities) — file-backed TTL cache importable by other extensions |
 | `mcp` | dynamic tools, 1 command, 1 prompt section |
 | `gitcontext` | 1 prompt section |
 | `prompts` | dynamic commands |
@@ -95,6 +96,7 @@ All extensions map to these primitives — no special access:
 | `repomap/` | Inject + React + Observe | Prompt section + tools + stale-check event handler | external |
 | `plan/` | Inject + Intercept + React | Prompt section + interceptor + tools + command | external |
 | `bulk/` | Inject + React | Prompt section + tool (parallel map over files/repos) | external |
+| `cache/` | — | Go library (`cache.Get`/`cache.Set`), no registered primitives — consumed by other extensions (webfetch) | external |
 | `mcp/` | Inject + React | Prompt section + dynamic tools bridged from MCP servers | external |
 
 **New features should use existing primitives, not add new ones.**
@@ -337,4 +339,4 @@ Periodically verify: `git ls-files --others --ignored --exclude-standard | head 
 
 | Rule | Violations | Last |
 |------|-----------|------|
-| Extension list current: `defaultOfficialExtensions` had 12 of 31 extensions, stale binaries persisted after update | 1 | 2026-03-26 |
+| Extension list current: `defaultOfficialExtensions` had 12 of 31 extensions, stale binaries persisted after update (fixed: now 32) | 1 | 2026-03-26 |
