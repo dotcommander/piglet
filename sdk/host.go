@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -281,6 +282,16 @@ func (e *Extension) request(ctx context.Context, method string, params any) (*rp
 		e.pendingMu.Lock()
 		delete(e.pending, id)
 		e.pendingMu.Unlock()
-		return nil, ctx.Err()
+		// Notify host to cancel work for this request
+		e.sendNotification("$/cancelRequest", map[string]int{"id": id})
+		// Drain any late-arriving response (50ms grace)
+		t := time.NewTimer(50 * time.Millisecond)
+		select {
+		case resp := <-ch:
+			t.Stop()
+			return resp, nil
+		case <-t.C:
+			return nil, ctx.Err()
+		}
 	}
 }

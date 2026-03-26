@@ -101,6 +101,7 @@ func (h *Host) Start(ctx context.Context) error {
 	}
 
 	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
+	h.cmd.Env = append(os.Environ(), "PIGLET_FD=1")
 	h.cmd.Stdin = nil                                  // extensions don't read stdin
 	h.cmd.Stdout = &logWriter{name: h.manifest.Name + "/stdout"} // capture stray prints
 	h.cmd.Stderr = &logWriter{name: h.manifest.Name}
@@ -108,7 +109,7 @@ func (h *Host) Start(ctx context.Context) error {
 	h.stdin = hostWrite
 	h.rpcRead = hostRead
 	h.stdout = bufio.NewScanner(hostRead)
-	h.stdout.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	h.stdout.Buffer(make([]byte, 0, 256*1024), 4*1024*1024)
 
 	if err := h.cmd.Start(); err != nil {
 		hostWrite.Close()

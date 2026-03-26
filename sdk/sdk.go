@@ -62,6 +62,7 @@ func New(name, version string) *Extension {
 	return &Extension{
 		name:      name,
 		version:   version,
+		rpcOut:    os.Stdout,
 		tools:     make(map[string]*ToolDef),
 		commands:  make(map[string]*CommandDef),
 		shortcuts: make(map[string]*ShortcutDef),
@@ -163,9 +164,10 @@ func (e *Extension) Log(level, msg string) {
 // When launched by piglet, reads from FD 3 (host→ext) and writes to FD 4 (ext→host).
 // Falls back to stdin/stdout for manual debugging or non-piglet launch.
 func (e *Extension) Run() {
-	// Prefer FD 3/4 (set by piglet host via ExtraFiles)
-	rpcIn := os.NewFile(3, "piglet-rpc-in")
-	if _, err := rpcIn.Stat(); err == nil {
+	// Prefer FD 3/4 when host signals via PIGLET_FD=1
+	var rpcIn *os.File
+	if os.Getenv("PIGLET_FD") == "1" {
+		rpcIn = os.NewFile(3, "piglet-rpc-in")
 		e.rpcOut = os.NewFile(4, "piglet-rpc-out")
 	} else {
 		// Fallback to stdin/stdout (manual debugging, non-piglet launch)
@@ -174,7 +176,7 @@ func (e *Extension) Run() {
 	}
 
 	scanner := bufio.NewScanner(rpcIn)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), 4*1024*1024)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -186,6 +188,10 @@ func (e *Extension) Run() {
 			continue
 		}
 		e.handleMessage(&msg)
+	}
+
+	if err := scanner.Err(); err != nil {
+		e.Log("error", fmt.Sprintf("read loop exited: %v", err))
 	}
 }
 
@@ -292,7 +298,9 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 		ProtocolVersion string `json:"protocolVersion"`
 		CWD             string `json:"cwd"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 	e.cwd = params.CWD
 
 	// Call OnInit hook (allows lazy registration that needs CWD)
@@ -367,7 +375,9 @@ func (e *Extension) handleToolExecute(msg *rpcMessage) {
 		Name   string         `json:"name"`
 		Args   map[string]any `json:"args"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	tool, ok := e.tools[params.Name]
 	if !ok {
@@ -394,7 +404,9 @@ func (e *Extension) handleCommandExecute(msg *rpcMessage) {
 		Name string `json:"name"`
 		Args string `json:"args"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	cmd, ok := e.commands[params.Name]
 	if !ok {
@@ -416,7 +428,9 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 		ToolName string         `json:"toolName"`
 		Args     map[string]any `json:"args"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
@@ -453,7 +467,9 @@ func (e *Extension) handleInterceptorAfter(msg *rpcMessage) {
 		ToolName string `json:"toolName"`
 		Details  any    `json:"details"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
@@ -465,7 +481,8 @@ func (e *Extension) handleInterceptorAfter(msg *rpcMessage) {
 		}
 		modified, err := ic.After(ctx, params.ToolName, details)
 		if err != nil {
-			continue // log but don't fail
+			e.Log("error", fmt.Sprintf("interceptor %q after hook: %v", ic.Name, err))
+			continue
 		}
 		details = modified
 	}
@@ -478,7 +495,9 @@ func (e *Extension) handleEventDispatch(msg *rpcMessage) {
 		Type string          `json:"type"`
 		Data json.RawMessage `json:"data"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
@@ -506,7 +525,9 @@ func (e *Extension) handleShortcutHandle(msg *rpcMessage) {
 	var params struct {
 		Key string `json:"key"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
@@ -536,7 +557,9 @@ func (e *Extension) handleMessageHook(msg *rpcMessage) {
 	var params struct {
 		Message string `json:"message"`
 	}
-	_ = json.Unmarshal(msg.Params, &params)
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
 
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
@@ -587,8 +610,7 @@ func (e *Extension) handleProviderStream(msg *rpcMessage) {
 	}
 
 	var req ProviderStreamRequest
-	if err := json.Unmarshal(msg.Params, &req); err != nil {
-		e.sendError(*msg.ID, -32602, fmt.Sprintf("unmarshal provider/stream params: %s", err))
+	if !e.unmarshalParams(msg, &req) {
 		return
 	}
 
@@ -621,6 +643,15 @@ func (e *Extension) requestCtx(id int) (context.Context, func()) {
 		e.cancelMu.Unlock()
 	}
 	return ctx, cleanup
+}
+
+// unmarshalParams unmarshals msg.Params into v, returning false on error.
+func (e *Extension) unmarshalParams(msg *rpcMessage, v any) bool {
+	if err := json.Unmarshal(msg.Params, v); err != nil {
+		e.sendError(*msg.ID, -32600, fmt.Sprintf("invalid params: %v", err))
+		return false
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -662,9 +693,5 @@ func (e *Extension) write(msg *rpcMessage) {
 
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
-	out := e.rpcOut
-	if out == nil {
-		out = os.Stdout // fallback for direct handleMessage calls in tests
-	}
-	_, _ = out.Write(data)
+	_, _ = e.rpcOut.Write(data)
 }
