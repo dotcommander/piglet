@@ -5,6 +5,10 @@
 piglet-export-*.md
 .work/
 
+# Go workspace (local multi-module dev)
+go.work
+go.work.sum
+
 # macOS
 .DS_Store
 
