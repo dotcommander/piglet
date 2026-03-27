@@ -112,6 +112,7 @@ type StatusSection struct {
 const (
 	StatusKeyApp    = "app"
 	StatusKeyModel  = "model"
+	StatusKeyMouse  = "mouse"
 	StatusKeyBg     = "bg"
 	StatusKeyTokens = "tokens"
 	StatusKeyCost   = "cost"

@@ -73,6 +73,7 @@ func registerStatusSections(app *ext.App) {
 	// Left side
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyApp, Side: ext.StatusLeft, Order: 0})
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyModel, Side: ext.StatusLeft, Order: 10})
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyMouse, Side: ext.StatusLeft, Order: 15})
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyBg, Side: ext.StatusLeft, Order: 20})
 
 	// Right side

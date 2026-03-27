@@ -40,7 +40,7 @@ tui/, cmd/  → anything (wiring layer)
 | Tools | 7 | `tool/` | `RegisterTool` |
 | Commands | 9 | `command/` | `RegisterCommand` |
 | Shortcuts | 1 | `command/` | `RegisterShortcut` |
-| Status sections | 5 | `command/` | `RegisterStatusSection` |
+| Status sections | 6 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
 
 **External** (standalone Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):

@@ -114,6 +114,10 @@ type Model struct {
 	// Auto-scroll: follow new output unless user scrolled up
 	followOutput bool
 
+	// Mouse mode: when true, bubbletea captures mouse (scroll via wheel);
+	// when false (default), native terminal text selection works.
+	mouseEnabled bool
+
 	// Rendered message cache — parallel to m.messages, invalidated on width change
 	msgCache []string
 }
@@ -304,6 +308,18 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
 		result, cmd := m.handleSubmit()
 		return result, cmd, true
+
+	case msg.Code == 'm' && msg.Mod.Contains(tea.ModCtrl):
+		m.mouseEnabled = !m.mouseEnabled
+		var cmd tea.Cmd
+		if m.mouseEnabled {
+			m.status.Set(ext.StatusKeyMouse, m.styles.Muted.Render("mouse"))
+			cmd = m.notifyAndTick("mouse mode ON — scroll with wheel, Ctrl+M to toggle off")
+		} else {
+			m.status.Set(ext.StatusKeyMouse, "")
+			cmd = m.notifyAndTick("mouse mode OFF — native text selection restored")
+		}
+		return m, cmd, true
 
 	case msg.Code == 'z' && msg.Mod.Contains(tea.ModCtrl):
 		return m, tea.Suspend, true
