@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
-	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
 )
 
@@ -99,21 +98,6 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
 	for _, f := range failures {
 		fmt.Fprintln(w, f)
-	}
-	return nil
-}
-
-func installExtensions(a *ext.App) error {
-	settings, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	var b strings.Builder
-	if err := InstallOfficialExtensions(&b, settings); err != nil {
-		return err
-	}
-	if msg := b.String(); msg != "" {
-		a.ShowMessage(msg)
 	}
 	return nil
 }

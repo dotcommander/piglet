@@ -24,7 +24,6 @@ func TestIntOr(t *testing.T) {
 		{-100, 42, 42},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tt.want, config.IntOr(tt.v, tt.fallback))
@@ -50,7 +49,6 @@ func TestAutoTitleEnabled(t *testing.T) {
 		{"explicit false", &falseVal, false},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := config.AgentSettings{AutoTitle: tt.autoTitle}

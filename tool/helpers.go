@@ -230,18 +230,6 @@ func UndoSnapshots() (map[string][]byte, error) {
 	return result, nil
 }
 
-// ClearUndoSnapshots removes all undo snapshots.
-func ClearUndoSnapshots() {
-	dir, err := undoDir()
-	if err != nil {
-		return
-	}
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		_ = os.Remove(filepath.Join(dir, e.Name()))
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Display formatting
 // ---------------------------------------------------------------------------
