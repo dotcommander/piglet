@@ -120,12 +120,9 @@ func run() error {
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
 		return config.RunSetup(writeModelsYAML)
 	}
-	if len(promptArgs) == 1 && promptArgs[0] == "update" {
+	if len(promptArgs) == 1 && (promptArgs[0] == "update" || promptArgs[0] == "upgrade") {
 		settings, _ := config.Load()
-		return command.RunUpdate(os.Stderr, settings)
-	}
-	if len(promptArgs) == 1 && promptArgs[0] == "upgrade" {
-		return command.RunUpgrade(os.Stderr, resolveVersion())
+		return command.RunUpdate(os.Stderr, settings, resolveVersion())
 	}
 
 	// Determine prompt: args after flags or stdin
@@ -460,8 +457,8 @@ Usage:
   piglet                  Interactive TUI mode (runs setup on first launch)
   piglet <prompt>         Single-shot mode (prints response and exits)
   piglet init             Run first-time setup (config, models, API key detection)
-  piglet update           Update extensions to latest
-  piglet upgrade          Upgrade piglet to latest release
+  piglet update           Upgrade piglet and rebuild extensions
+  piglet upgrade          Alias for update
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads

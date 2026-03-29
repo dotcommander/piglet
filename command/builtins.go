@@ -36,7 +36,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerBranch(app)
 	registerBg(app)
 	registerBgCancel(app)
-	registerUpdate(app)
+	registerUpdate(app, version)
 	registerUpgrade(app, version)
 	registerQuit(app)
 

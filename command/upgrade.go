@@ -1,37 +1,31 @@
 package command
 
 import (
-	"context"
+	"fmt"
 	"io"
-	"strings"
-	"time"
 
-	"github.com/dotcommander/piglet/command/selfupdate"
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 )
 
-// RunUpgrade checks for a new piglet version and installs it from the CLI.
+// RunUpgrade is an alias for RunUpdate — upgrades binary and rebuilds extensions.
 func RunUpgrade(w io.Writer, currentVersion string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	return selfupdate.CheckAndUpgrade(ctx, w, currentVersion)
+	settings, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	return RunUpdate(w, settings, currentVersion)
 }
 
 func registerUpgrade(app *ext.App, version string) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "upgrade",
-		Description: "Upgrade piglet to latest release",
+		Description: "Alias for /update",
 		Handler: func(args string, a *ext.App) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			var b strings.Builder
-			if err := selfupdate.CheckAndUpgrade(ctx, &b, version); err != nil {
-				a.ShowMessage("Upgrade failed: " + err.Error())
-				return nil
+			if cmd, ok := a.Commands()["update"]; ok {
+				return cmd.Handler(args, a)
 			}
-			a.ShowMessage(b.String())
+			a.ShowMessage("update command not found")
 			return nil
 		},
 	})

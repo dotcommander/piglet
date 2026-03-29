@@ -86,6 +86,10 @@ func CompareVersions(current, latest string) int {
 	current = strings.TrimPrefix(current, "v")
 	latest = strings.TrimPrefix(latest, "v")
 
+	// Strip build metadata per semver — +dirty, +build, etc. ignored for precedence.
+	current, _, _ = strings.Cut(current, "+")
+	latest, _, _ = strings.Cut(latest, "+")
+
 	if strings.HasPrefix(current, "dev") {
 		return -1
 	}
@@ -253,5 +257,5 @@ func UpdateNotice(currentVersion string) string {
 	}
 	cur := strings.TrimPrefix(currentVersion, "v")
 	latest := strings.TrimPrefix(r.TagName, "v")
-	return fmt.Sprintf("Update available: v%s (current: v%s) — run: piglet upgrade", latest, cur)
+	return fmt.Sprintf("Update available: v%s (current: v%s) — run: piglet update", latest, cur)
 }

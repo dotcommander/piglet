@@ -115,7 +115,7 @@ func TestUpdateNotice(t *testing.T) {
 		notice := UpdateNotice("v1.0.0")
 		assert.Contains(t, notice, "v1.2.0")
 		assert.Contains(t, notice, "v1.0.0")
-		assert.Contains(t, notice, "piglet upgrade")
+		assert.Contains(t, notice, "piglet update")
 	})
 
 	t.Run("up to date returns empty", func(t *testing.T) {
