@@ -19,7 +19,7 @@ import (
 // LoadAll discovers and starts all external extensions under supervisor management,
 // registering their tools, commands, and prompt sections with the given ext.App.
 // Returns the number of loaded extensions and a cleanup function that stops all.
-func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn) (loaded int, cleanup func(), err error) {
+func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled []string) (loaded int, cleanup func(), err error) {
 	extDir, err := ExtensionsDir()
 	if err != nil {
 		return 0, func() {}, nil // non-fatal
@@ -28,6 +28,19 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn) (loaded 
 	manifests, err := DiscoverExtensions(extDir)
 	if err != nil {
 		return 0, func() {}, nil // non-fatal
+	}
+
+	// Filter out disabled extensions
+	if len(disabled) > 0 {
+		filtered := make([]*Manifest, 0, len(manifests))
+		for _, m := range manifests {
+			if slices.Contains(disabled, m.Name) {
+				slog.Info("extension disabled by config", "name", m.Name)
+				continue
+			}
+			filtered = append(filtered, m)
+		}
+		manifests = filtered
 	}
 
 	if len(manifests) == 0 {
@@ -494,8 +507,8 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 
 	// Strip APIKeyFunc (not serializable) before marshalling options.
 	type wireOptions struct {
-		Temperature *float64          `json:"temperature,omitempty"`
-		MaxTokens   *int              `json:"maxTokens,omitempty"`
+		Temperature *float64           `json:"temperature,omitempty"`
+		MaxTokens   *int               `json:"maxTokens,omitempty"`
 		Thinking    core.ThinkingLevel `json:"thinking,omitempty"`
 		Headers     map[string]string  `json:"headers,omitempty"`
 	}

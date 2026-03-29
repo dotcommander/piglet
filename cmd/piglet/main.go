@@ -6,18 +6,18 @@ import (
 	"log/slog"
 	"maps"
 	"os"
-	"runtime/debug"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/dotcommander/piglet/command"
+	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
 	"github.com/dotcommander/piglet/prompt"
@@ -303,13 +303,13 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 
 	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
 
-	loaded, extCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots)
+	loaded, extCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
 
 	if interactive && loaded == 0 {
 		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
-		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots)
+		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
 		origCleanup := extCleanup
 		extCleanup = func() { reloadCleanup(); origCleanup() }
 		if reloaded > 0 {

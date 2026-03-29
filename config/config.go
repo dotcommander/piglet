@@ -4,32 +4,34 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Settings holds user configuration.
 type Settings struct {
-	DefaultProvider string            `yaml:"defaultProvider,omitempty"`
-	DefaultModel    string            `yaml:"defaultModel,omitempty"`
-	SmallModel      string            `yaml:"smallModel,omitempty"`
-	SystemPrompt    string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
-	Theme           string            `yaml:"theme,omitempty"`
-	ShellPath       string            `yaml:"shellPath,omitempty"`
-	Extensions      []string          `yaml:"extensions,omitempty"`
-	Providers       map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
-	Agent           AgentSettings     `yaml:"agent,omitempty"`
-	Git             GitSettings       `yaml:"git,omitempty"`
-	Tools           ToolSettings      `yaml:"tools,omitempty"`
-	Bash            BashSettings      `yaml:"bash,omitempty"`
-	Shortcuts       map[string]string `yaml:"shortcuts,omitempty"`  // action → keybind (e.g. "model": "ctrl+p")
-	PromptOrder     map[string]int    `yaml:"promptOrder,omitempty"` // section title → order override
-	ProjectDocs     []ProjectDoc      `yaml:"projectDocs,omitempty"` // files to auto-read for context
-	RTK             *bool             `yaml:"rtk,omitempty"`         // nil = auto-detect; true/false = explicit
-	Debug           bool              `yaml:"debug,omitempty"`       // log all request/response payloads
-	Safeguard       *bool             `yaml:"safeguard,omitempty"`   // nil/true = enabled; false = disabled
-	SubAgent        SubAgentSettings  `yaml:"subagent,omitempty"`
-	ExtInstall      ExtensionSettings `yaml:"extInstall,omitempty"`
+	DefaultProvider    string            `yaml:"defaultProvider,omitempty"`
+	DefaultModel       string            `yaml:"defaultModel,omitempty"`
+	SmallModel         string            `yaml:"smallModel,omitempty"`
+	SystemPrompt       string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
+	Theme              string            `yaml:"theme,omitempty"`
+	ShellPath          string            `yaml:"shellPath,omitempty"`
+	Extensions         []string          `yaml:"extensions,omitempty"`
+	Providers          map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
+	Agent              AgentSettings     `yaml:"agent,omitempty"`
+	Git                GitSettings       `yaml:"git,omitempty"`
+	Tools              ToolSettings      `yaml:"tools,omitempty"`
+	Bash               BashSettings      `yaml:"bash,omitempty"`
+	Shortcuts          map[string]string `yaml:"shortcuts,omitempty"`           // action → keybind (e.g. "model": "ctrl+p")
+	PromptOrder        map[string]int    `yaml:"promptOrder,omitempty"`         // section title → order override
+	ProjectDocs        []ProjectDoc      `yaml:"projectDocs,omitempty"`         // files to auto-read for context
+	RTK                *bool             `yaml:"rtk,omitempty"`                 // nil = auto-detect; true/false = explicit
+	Debug              bool              `yaml:"debug,omitempty"`               // log all request/response payloads
+	Safeguard          *bool             `yaml:"safeguard,omitempty"`           // nil/true = enabled; false = disabled
+	DisabledExtensions []string          `yaml:"disabled_extensions,omitempty"` // extensions to skip during loading
+	SubAgent           SubAgentSettings  `yaml:"subagent,omitempty"`
+	ExtInstall         ExtensionSettings `yaml:"extInstall,omitempty"`
 }
 
 // ProjectDoc maps a filename to a prompt section title.
@@ -42,7 +44,7 @@ type ProjectDoc struct {
 type AgentSettings struct {
 	MaxTurns          int   `yaml:"maxTurns,omitempty"`          // default 10
 	BgMaxTurns        int   `yaml:"bgMaxTurns,omitempty"`        // default 5
-	AutoTitle         *bool `yaml:"autoTitle,omitempty"`          // default true; pointer distinguishes false from unset
+	AutoTitle         *bool `yaml:"autoTitle,omitempty"`         // default true; pointer distinguishes false from unset
 	CompactKeepRecent int   `yaml:"compactKeepRecent,omitempty"` // default 6
 	CompactAt         int   `yaml:"compactAt,omitempty"`         // token threshold for auto-compact; 0 = disabled
 	MaxMessages       int   `yaml:"maxMessages,omitempty"`       // hard cap on messages; 0 = unlimited
@@ -263,4 +265,9 @@ func (s Settings) ResolveDefaultModel() string {
 		return v
 	}
 	return s.DefaultModel
+}
+
+// IsExtensionDisabled reports whether the named extension is in the disabled list.
+func (s Settings) IsExtensionDisabled(name string) bool {
+	return slices.Contains(s.DisabledExtensions, name)
 }
