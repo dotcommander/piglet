@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/dotcommander/piglet/command/selfupdate"
@@ -13,13 +16,28 @@ import (
 )
 
 // RunUpdate upgrades the piglet binary and rebuilds extensions from the CLI.
+// If the binary was upgraded, it re-execs the new binary so extension install
+// runs with updated code.
 func RunUpdate(w io.Writer, settings config.Settings, currentVersion string, opts ...InstallOption) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	if err := selfupdate.CheckAndUpgrade(ctx, w, currentVersion); err != nil {
+	upgraded, err := selfupdate.CheckAndUpgrade(ctx, w, currentVersion)
+	if err != nil {
 		fmt.Fprintf(w, "CLI upgrade failed: %v\n", err)
 	}
+
+	if upgraded {
+		// Re-exec the new binary so the extension install runs with updated code.
+		exe, err := exec.LookPath("piglet")
+		if err != nil {
+			fmt.Fprintf(w, "Cannot find upgraded binary, continuing with current process\n")
+		} else {
+			fmt.Fprintf(w, "Re-launching with updated binary...\n")
+			return syscall.Exec(exe, os.Args, os.Environ())
+		}
+	}
+
 	return InstallOfficialExtensions(w, settings, opts...)
 }
 

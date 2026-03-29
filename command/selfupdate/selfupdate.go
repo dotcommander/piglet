@@ -235,13 +235,13 @@ func RunUpgrade(ctx context.Context, w io.Writer, tag string) error {
 
 // CheckAndUpgrade fetches the latest release, compares against currentVersion,
 // clones the repo, and builds the binary. Progress is written to w.
-// Returns nil if already up to date.
-func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) error {
+// Returns (true, nil) if an upgrade was performed, (false, nil) if already up to date.
+func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) (bool, error) {
 	fmt.Fprintln(w, "Checking for updates...")
 
 	release, err := FetchLatestRelease(ctx)
 	if err != nil {
-		return fmt.Errorf("check latest version: %w", err)
+		return false, fmt.Errorf("check latest version: %w", err)
 	}
 	_ = WriteCache(release)
 
@@ -249,14 +249,14 @@ func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) er
 
 	if CompareVersions(currentVersion, release.TagName) >= 0 {
 		fmt.Fprintf(w, "CLI already up to date (v%s)\n", cleanVersion)
-		return nil
+		return false, nil
 	}
 
 	fmt.Fprintf(w, "CLI v%s → %s\n", cleanVersion, release.TagName)
 	if err := RunUpgrade(ctx, w, release.TagName); err != nil {
-		return fmt.Errorf("upgrade failed: %w", err)
+		return false, fmt.Errorf("upgrade failed: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 // UpdateNotice returns a human-readable notice if a newer version is cached,
