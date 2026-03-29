@@ -62,7 +62,20 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 			continue
 		}
 
-		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), "./"+name+"/cmd/")
+		// Resolve source paths based on pack vs individual extension.
+		var buildPkg, manifestDir, srcRoot string
+		if strings.HasPrefix(name, "pack-") {
+			packName := strings.TrimPrefix(name, "pack-")
+			buildPkg = "./packs/" + packName + "/"
+			manifestDir = filepath.Join(tmpDir, "packs", packName)
+			srcRoot = manifestDir
+		} else {
+			buildPkg = "./" + name + "/cmd/"
+			manifestDir = filepath.Join(tmpDir, name, "cmd")
+			srcRoot = filepath.Join(tmpDir, name)
+		}
+
+		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
 		buildCmd.Dir = tmpDir
 		if out, err := buildCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
@@ -70,7 +83,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 			continue
 		}
 
-		src := filepath.Join(tmpDir, name, "cmd", "manifest.yaml")
+		src := filepath.Join(manifestDir, "manifest.yaml")
 		dst := filepath.Join(destDir, "manifest.yaml")
 		data, err := os.ReadFile(src)
 		if err != nil {
@@ -96,7 +109,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 					if _, err := os.Stat(destPath); err == nil {
 						continue // already exists — preserve user edits
 					}
-					srcPath := filepath.Join(tmpDir, name, entry.Src)
+					srcPath := filepath.Join(srcRoot, entry.Src)
 					contents, rerr := os.ReadFile(srcPath)
 					if rerr != nil {
 						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, rerr)
@@ -118,6 +131,26 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	}
 
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
+
+	// Remove old individual extension directories now consolidated into packs.
+	packMembers := []string{
+		// pack-core
+		"admin", "export", "extensions-list", "undo", "scaffold", "background",
+		// pack-agent
+		"safeguard", "rtk", "autotitle", "clipboard", "subagent", "provider", "loop",
+		// pack-context
+		"memory", "skill", "gitcontext", "behavior", "prompts", "session-tools", "inbox",
+		// pack-code
+		"lsp", "repomap", "sift", "plan", "suggest",
+		// pack-workflow
+		"pipeline", "bulk", "webfetch", "cache", "usage", "modelsdev",
+	}
+	for _, old := range packMembers {
+		oldDir := filepath.Join(extDir, old)
+		if _, err := os.Stat(oldDir); err == nil {
+			_ = os.RemoveAll(oldDir)
+		}
+	}
 
 	// Build standalone CLIs from cmd/*/
 	cliBuilt, cliFailed := installCLIs(w, tmpDir)

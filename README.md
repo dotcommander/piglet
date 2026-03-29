@@ -173,24 +173,41 @@ Piglet's extension system is the same API used by its own built-in tools. Extens
 | **Hook** | Process user messages before the LLM | Skill trigger matching |
 | **Observe** | React to lifecycle events | Auto-title sessions after first exchange |
 
-### Official Extensions
+### Extension Packs
 
-Install with [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions):
+Piglet works without any extensions — the core agent has built-in tools, commands, and providers. Extensions add everything beyond the baseline.
 
-| Extension | What it adds |
-|-----------|-------------|
-| **memory** | Project-scoped facts that persist across sessions |
-| **skill** | Load markdown methodology files on demand |
-| **lsp** | Go-to-definition, references, hover, rename via LSP |
-| **repomap** | Ranked repository structure map |
-| **plan** | Structured task tracking with propose/execute modes |
-| **safeguard** | Block dangerous commands (configurable profiles) |
-| **rtk** | Rewrite bash commands for 60-90% token savings |
-| **subagent** | Delegate work to independent sub-agents |
-| **bulk** | Parallel shell commands across repos/dirs/files |
-| **clipboard** | Paste images from clipboard into conversation |
-| **autotitle** | Auto-generate session titles |
-| **mcp** | Bridge MCP servers (stdio/HTTP) as piglet tools |
+Official extensions ship as consolidated packs (fewer processes, faster startup). Install with [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions):
+
+| Pack | Extensions | Purpose |
+|------|-----------|---------|
+| **pack-context** | memory, skill, gitcontext, behavior, prompts, session-tools, inbox | Context injection — memory, skills, git status, behavior guidelines |
+| **pack-code** | lsp, repomap, sift, plan, suggest | Code intelligence — LSP, repo mapping, planning mode |
+| **pack-agent** | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | Agent lifecycle — safety, token optimization, delegation |
+| **pack-core** | admin, export, extensions-list, undo, scaffold, background | Convenience commands — export, undo, scaffolding |
+| **pack-workflow** | pipeline, bulk, webfetch, cache, usage, modelsdev | Workflow tools — pipelines, bulk ops, web fetch |
+| **mcp** | — | Bridge MCP servers as piglet tools (standalone) |
+
+### What You Need
+
+Not all packs are required. Here's what matters:
+
+| Pack | Verdict | What you lose without it |
+|------|---------|--------------------------|
+| **pack-context** | Essential | No session memory, no skills, no git context in prompt |
+| **pack-code** | Important | No repo map, no LSP, no planning mode |
+| **pack-agent** | Important | No command safety checks, no token optimization |
+| **pack-core** | Optional | No `/undo`, `/export`, `/ext-init` — convenience only |
+| **pack-workflow** | Optional | No `/pipe`, `/bulk`, web fetch — niche workflows |
+| **mcp** | Optional | No MCP server bridging |
+
+Skip optional packs by setting `disabled_extensions` in `config.yaml`:
+
+```yaml
+disabled_extensions:
+  - pack-core
+  - pack-workflow
+```
 
 ### Write Your Own
 
@@ -218,7 +235,7 @@ Everything lives in `~/.config/piglet/`:
 | `sessions/` | Conversation history (JSONL) |
 | `skills/` | Markdown methodology files |
 | `prompts/` | Templates that become slash commands |
-| `extensions/` | Extension binaries |
+| `extensions/` | Extension packs and binaries |
 
 ```yaml
 # config.yaml

@@ -43,26 +43,16 @@ tui/, cmd/  → anything (wiring layer)
 | Status sections | 6 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
 
-**External** (standalone Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
+**External** (consolidated packs — single Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
 
-| Extension | Registers |
-|-----------|-----------|
-| `safeguard` | 1 interceptor |
-| `rtk` | 1 interceptor, 1 prompt section |
-| `autotitle` | 1 event handler |
-| `clipboard` | 1 tool, 1 shortcut |
-| `skill` | 2 tools, 1 command, 1 prompt section, 1 message hook |
-| `memory` | 3 tools, 1 command, 1 prompt section, 1 compactor, 2 event handlers |
-| `subagent` | 1 tool |
-| `lsp` | 5 tools, 1 prompt section |
-| `repomap` | 2 tools, 1 prompt section, 1 event handler |
-| `plan` | 3 tools, 1 command, 1 prompt section, 1 interceptor |
-| `bulk` | 1 tool, 1 prompt section |
-| `cache` | Go library (no registered capabilities) — file-backed TTL cache importable by other extensions |
-| `mcp` | dynamic tools, 1 command, 1 prompt section |
-| `gitcontext` | 1 prompt section |
-| `prompts` | dynamic commands |
-| `modelsdev` | 1 event handler (OnInit: syncs model metadata from models.dev API) |
+| Pack | Contains | Registers |
+|------|----------|-----------|
+| `pack-context` | memory, skill, gitcontext, behavior, prompts, session-tools, inbox | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
+| `pack-code` | lsp, repomap, sift, plan, suggest | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
+| `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
+| `pack-core` | admin, export, extensions-list, undo, scaffold, background | 8 commands |
+| `pack-workflow` | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
+| `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over FD 3/4 (with stdin/stdout fallback) using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
 
@@ -85,19 +75,12 @@ All extensions map to these primitives — no special access:
 | `prompt/behavior.go` | Inject | Prompt section loads `behavior.md` | compiled-in |
 | `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts | compiled-in |
 | `command/` | React | Commands respond to user slash input | compiled-in |
-| `memory/` | Inject + React | Prompt section + tools | external |
-| `safeguard/` | Intercept | Before hook blocks dangerous commands (profiles: strict/balanced/off) | external |
-| `rtk/` | Inject + Intercept | Prompt section + bash rewriter | external |
-| `skill/` | Inject + React + Hook | Tools + message hook | external |
-| `subagent/` | React | Dispatch tool delegates to sub-agents | external |
-| `clipboard/` | React | Tool + shortcut for images | external |
-| `autotitle/` | Observe | Event handler for session titles | external |
-| `lsp/` | Inject + React | Prompt section + tools (code intelligence) | external |
-| `repomap/` | Inject + React + Observe | Prompt section + tools + stale-check event handler | external |
-| `plan/` | Inject + Intercept + React | Prompt section + interceptor + tools + command | external |
-| `bulk/` | Inject + React | Prompt section + tool (parallel map over files/repos) | external |
-| `cache/` | — | Go library (`cache.Get`/`cache.Set`), no registered primitives — consumed by other extensions (webfetch) | external |
-| `mcp/` | Inject + React | Prompt section + dynamic tools bridged from MCP servers | external |
+| `pack-context` | Inject + React + Hook + Observe | Memory, skills, git context, behavior, prompts, session tools | external pack |
+| `pack-code` | Inject + Intercept + React + Observe | LSP, repo map, sift, plan, suggest | external pack |
+| `pack-agent` | Inject + Intercept + React + Observe | Safeguard, RTK, autotitle, clipboard, subagent, provider, loop | external pack |
+| `pack-core` | React | Admin, export, extensions-list, undo, scaffold, background | external pack |
+| `pack-workflow` | Inject + React + Observe | Pipeline, bulk, webfetch, cache, usage, modelsdev | external pack |
+| `mcp` | Inject + React | Prompt section + dynamic tools bridged from MCP servers | external |
 
 **New features should use existing primitives, not add new ones.**
 
@@ -186,11 +169,11 @@ go build -o piglet ./cmd/piglet/
 
 ## Extensions
 
-Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://github.com/dotcommander/piglet-extensions).
+Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://github.com/dotcommander/piglet-extensions). Extensions are consolidated into packs — each pack is a single Go binary that bundles multiple related extensions.
 
 ```bash
-/extensions install          # From inside piglet — clones, builds, installs all
-/extensions update           # Rebuild from latest source
+/extensions install          # From inside piglet — clones, builds all packs, installs all
+/extensions update           # Rebuild packs from latest source
 ```
 
 Without extensions, piglet starts as a minimal agent with only compiled-in tools and commands. With extensions installed, full functionality is available (interceptors, shortcuts, event handlers, message hooks, additional tools/commands — plus dynamic MCP tools). Run `/extensions` for the live inventory.
@@ -314,7 +297,7 @@ Before EVERY commit:
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
 7. **Extensions compatible**: clone `piglet-extensions`, run `go build ./...` — extensions must build against the tagged version
-8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must match every `*/cmd/` directory in `piglet-extensions`. Run: `cd ../piglet-extensions && ls -d */cmd/ | sed 's|/cmd/||' | sort` and compare. Missing extensions = silent stale binaries after update.
+8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`) plus standalone extensions (`mcp`). Verify pack contents match `packs/*/main.go` imports.
 
 ### Pre-Push Gate
 
@@ -339,4 +322,4 @@ Periodically verify: `git ls-files --others --ignored --exclude-standard | head 
 
 | Rule | Violations | Last |
 |------|-----------|------|
-| Extension list current: `defaultOfficialExtensions` had 12 of 31 extensions, stale binaries persisted after update (fixed: now 32) | 1 | 2026-03-26 |
+| Extension list current: `defaultOfficialExtensions` had 12 of 31 extensions, stale binaries persisted after update (resolved: consolidated to 5 packs + 1 standalone) | 1 | 2026-03-26 |

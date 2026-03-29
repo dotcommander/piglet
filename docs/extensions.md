@@ -16,6 +16,42 @@ This creates `~/.config/piglet/extensions/my-extension/` with a ready-to-run sca
 
 To see what's loaded: `/extensions`
 
+## Extension Packs
+
+Official extensions are consolidated into packs — single binaries that register capabilities from multiple logical extensions. This reduces startup from ~3 seconds (32 processes) to under 1 second (6 processes).
+
+| Pack | Contains | Capabilities |
+|------|----------|-------------|
+| **pack-context** | memory, skill, gitcontext, behavior, prompts, session-tools, inbox | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
+| **pack-code** | lsp, repomap, sift, plan, suggest | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
+| **pack-agent** | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
+| **pack-core** | admin, export, extensions-list, undo, scaffold, background | 8 commands |
+| **pack-workflow** | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
+| **mcp** | mcp | Dynamic tools, 1 command, 1 prompt section (standalone) |
+
+Packs use the same `ext.App` API as individual extensions. Each constituent extension keeps its own package — only the binary entry points are merged. Individual extensions remain independently buildable for development and testing.
+
+### Pack Architecture
+
+Each pack binary:
+1. Creates one `sdk.Extension` named `pack-<name>`
+2. Calls `Register(e)` from each constituent extension package
+3. Wraps each `Register` in panic recovery — one extension's failure doesn't crash the pack
+4. Runs the JSON-RPC event loop
+
+```go
+// packs/core/main.go
+func main() {
+    e := sdk.New("pack-core", "0.1.0")
+    safety.Register(e, "admin", admin.Register)
+    safety.Register(e, "export", export.Register)
+    // ...
+    e.Run()
+}
+```
+
+To add a new extension to a pack, export `Register(e *sdk.Extension)` from the extension's library package and wire it in the pack's `main.go`.
+
 ## External Extensions (Go, TypeScript, Python, etc.)
 
 External extensions run as child processes and communicate via JSON-RPC v2 over **FD 3/4** (not stdin/stdout — those are free for the extension's own use). They can be written in any language — Go, TypeScript, Python, Ruby, etc. Piglet's own extensions are external Go binaries in the [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) repo.

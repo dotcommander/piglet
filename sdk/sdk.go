@@ -44,12 +44,12 @@ type Extension struct {
 	messageHooks   []MessageHookDef
 	compactor      *CompactorDef
 
-	rpcOut               *os.File          // JSON-RPC output (FD 4 or os.Stdout fallback)
-	onInit               func(e *Extension) // called after initialize, before responding
+	rpcOut                *os.File           // JSON-RPC output (FD 4 or os.Stdout fallback)
+	onInit                func(e *Extension) // called after initialize, before responding
 	providerStreamHandler func(ctx context.Context, x *Extension, req ProviderStreamRequest) (*ProviderStreamResponse, error)
-	writeMu  sync.Mutex
-	cancelMu sync.Mutex
-	cancels  map[int]context.CancelFunc // request ID → cancel
+	writeMu               sync.Mutex
+	cancelMu              sync.Mutex
+	cancels               map[int]context.CancelFunc // request ID → cancel
 
 	// Outgoing request tracking (extension → host)
 	nextID    atomic.Int64
@@ -128,6 +128,21 @@ func (e *Extension) SendProviderDelta(requestID int, deltaType string, index int
 // but before registrations are sent. Use this for lazy initialization that needs CWD.
 func (e *Extension) OnInit(fn func(e *Extension)) {
 	e.onInit = fn
+}
+
+// OnInitAppend chains an additional initialization function. Unlike OnInit which
+// replaces the callback, OnInitAppend appends to the existing chain. Used by
+// extension packs that compose multiple logical extensions into one binary.
+func (e *Extension) OnInitAppend(fn func(e *Extension)) {
+	prev := e.onInit
+	if prev == nil {
+		e.onInit = fn
+		return
+	}
+	e.onInit = func(e *Extension) {
+		prev(e)
+		fn(e)
+	}
 }
 
 // CWD returns the working directory provided by the host during initialization.
@@ -226,7 +241,9 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 	// Handle notifications (no ID) — currently only $/cancelRequest
 	if msg.ID == nil {
 		if msg.Method == "$/cancelRequest" {
-			var p struct{ ID int `json:"id"` }
+			var p struct {
+				ID int `json:"id"`
+			}
 			_ = json.Unmarshal(msg.Params, &p)
 			e.cancelMu.Lock()
 			if cancel, ok := e.cancels[p.ID]; ok {
