@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
@@ -74,6 +75,7 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled
 	}
 	results := make([]result, len(manifests))
 	var wg sync.WaitGroup
+	loadStart := time.Now()
 	for i, m := range manifests {
 		wg.Add(1)
 		go func(i int, m *Manifest) {
@@ -87,6 +89,7 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled
 		}(i, m)
 	}
 	wg.Wait()
+	slog.Debug("extensions loaded", "count", len(manifests), "elapsed", time.Since(loadStart).Round(time.Millisecond))
 
 	var supervisors []*Supervisor
 	for i, r := range results {

@@ -137,6 +137,7 @@ func (h *Host) Start(ctx context.Context) error {
 	initCtx, initCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer initCancel()
 
+	t0 := time.Now()
 	extCfgDir, _ := config.ExtensionConfigDir(h.manifest.Name)
 	result, err := h.request(initCtx, MethodInitialize, InitializeParams{
 		ProtocolVersion: ProtocolVersion,
@@ -144,6 +145,7 @@ func (h *Host) Start(ctx context.Context) error {
 		ConfigDir:       extCfgDir,
 	})
 	if err != nil {
+		slog.Warn("extension init failed", "name", h.manifest.Name, "elapsed", time.Since(t0).Round(time.Millisecond))
 		h.Stop()
 		return fmt.Errorf("initialize %s: %w", h.manifest.Name, err)
 	}
@@ -155,7 +157,7 @@ func (h *Host) Start(ctx context.Context) error {
 		}
 	}
 
-	slog.Debug("extension initialized", "name", h.manifest.Name, "ext_version", initResult.Version)
+	slog.Debug("extension initialized", "name", h.manifest.Name, "ext_version", initResult.Version, "elapsed", time.Since(t0).Round(time.Millisecond))
 	return nil
 }
 
