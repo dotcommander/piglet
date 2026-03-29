@@ -18,7 +18,7 @@ import (
 
 const (
 	releasesURL = "https://api.github.com/repos/dotcommander/piglet/releases/latest"
-	installPkg  = "github.com/dotcommander/piglet/cmd/piglet"
+	repoURL     = "https://github.com/dotcommander/piglet.git"
 	cacheFile   = ".update-check.json"
 	cacheMaxAge = 24 * time.Hour
 )
@@ -189,40 +189,54 @@ func WriteCache(r ReleaseInfo) error {
 	return nil
 }
 
-// RunUpgrade installs the given tag of piglet via go install.
-// Output is written to w. Returns an error if go is not in PATH or the
-// install fails.
+// RunUpgrade clones the piglet repo at the given tag, builds the binary,
+// and installs it to GOBIN.
 func RunUpgrade(ctx context.Context, w io.Writer, tag string) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git not found in PATH: %w", err)
+	}
 	goPath, err := exec.LookPath("go")
 	if err != nil {
 		return fmt.Errorf("go not found in PATH — install Go from https://go.dev/dl/: %w", err)
 	}
 
-	pkg := installPkg + "@" + tag
-	cmd := exec.CommandContext(ctx, goPath, "install", pkg)
-	cmd.Stdout = w
-	cmd.Stderr = w
-
-	env := os.Environ()
-	if os.Getenv("GOBIN") == "" {
+	gobin := os.Getenv("GOBIN")
+	if gobin == "" {
 		home, err := os.UserHomeDir()
-		if err == nil {
-			env = append(env, "GOBIN="+filepath.Join(home, "go", "bin"))
+		if err != nil {
+			return fmt.Errorf("determine home dir: %w", err)
 		}
+		gobin = filepath.Join(home, "go", "bin")
 	}
-	cmd.Env = env
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("go install %s: %w", pkg, err)
+	tmpDir, err := os.MkdirTemp("", "piglet-update-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
 	}
+	defer os.RemoveAll(tmpDir)
+
+	fmt.Fprintf(w, "Cloning piglet %s...\n", tag)
+	cloneCmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", tag, "--quiet", repoURL, tmpDir)
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("clone piglet: %s", strings.TrimSpace(string(out)))
+	}
+
+	fmt.Fprintf(w, "  %-20s ", "piglet")
+	buildCmd := exec.CommandContext(ctx, goPath, "build", "-o", filepath.Join(gobin, "piglet"), "./cmd/piglet/")
+	buildCmd.Dir = tmpDir
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		fmt.Fprintln(w, "FAIL")
+		return fmt.Errorf("build piglet: %s", strings.TrimSpace(string(out)))
+	}
+	fmt.Fprintln(w, "ok")
+
 	return nil
 }
 
 // CheckAndUpgrade fetches the latest release, compares against currentVersion,
-// and installs it via go install. Progress and results are written to w.
+// clones the repo, and builds the binary. Progress is written to w.
 // Returns nil if already up to date.
 func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) error {
-	fmt.Fprintf(w, "Current version: %s\n", currentVersion)
 	fmt.Fprintln(w, "Checking for updates...")
 
 	release, err := FetchLatestRelease(ctx)
@@ -231,17 +245,17 @@ func CheckAndUpgrade(ctx context.Context, w io.Writer, currentVersion string) er
 	}
 	_ = WriteCache(release)
 
+	cleanVersion, _, _ := strings.Cut(strings.TrimPrefix(currentVersion, "v"), "+")
+
 	if CompareVersions(currentVersion, release.TagName) >= 0 {
-		fmt.Fprintf(w, "Already up to date (%s)\n", currentVersion)
+		fmt.Fprintf(w, "CLI already up to date (v%s)\n", cleanVersion)
 		return nil
 	}
 
-	fmt.Fprintf(w, "Upgrading: %s → %s\n", currentVersion, release.TagName)
+	fmt.Fprintf(w, "CLI v%s → %s\n", cleanVersion, release.TagName)
 	if err := RunUpgrade(ctx, w, release.TagName); err != nil {
 		return fmt.Errorf("upgrade failed: %w", err)
 	}
-
-	fmt.Fprintf(w, "\nUpgraded to %s. Restart piglet to use the new version.\n", release.TagName)
 	return nil
 }
 

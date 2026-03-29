@@ -14,14 +14,12 @@ import (
 
 // RunUpdate upgrades the piglet binary and rebuilds extensions from the CLI.
 func RunUpdate(w io.Writer, settings config.Settings, currentVersion string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	if err := selfupdate.CheckAndUpgrade(ctx, w, currentVersion); err != nil {
-		fmt.Fprintf(w, "Binary upgrade failed: %v\n", err)
+		fmt.Fprintf(w, "CLI upgrade failed: %v\n", err)
 	}
-
-	fmt.Fprintln(w, "Updating extensions...")
 	return InstallOfficialExtensions(w, settings)
 }
 

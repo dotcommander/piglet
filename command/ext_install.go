@@ -88,5 +88,52 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	}
 
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
+
+	// Build standalone CLIs from cmd/*/
+	cliBuilt, cliFailed := installCLIs(w, tmpDir)
+	if cliBuilt+cliFailed > 0 {
+		fmt.Fprintf(w, "CLIs: %d built, %d failed\n", cliBuilt, cliFailed)
+	}
+
 	return nil
+}
+
+// installCLIs discovers and builds standalone CLI tools from cmd/*/ in the
+// cloned extensions repo, installing them to GOBIN.
+func installCLIs(w io.Writer, repoDir string) (built, failed int) {
+	cmdDir := filepath.Join(repoDir, "cmd")
+	entries, err := os.ReadDir(cmdDir)
+	if err != nil {
+		return 0, 0 // no cmd/ directory — nothing to build
+	}
+
+	gobin := os.Getenv("GOBIN")
+	if gobin == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(w, "Warning: cannot determine GOBIN: %v\n", err)
+			return 0, 0
+		}
+		gobin = filepath.Join(home, "go", "bin")
+	}
+
+	fmt.Fprintln(w, "Building CLIs...")
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		fmt.Fprintf(w, "  %-20s ", name)
+
+		buildCmd := exec.Command("go", "build", "-o", filepath.Join(gobin, name), "./cmd/"+name+"/")
+		buildCmd.Dir = repoDir
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
+			failed++
+			continue
+		}
+		fmt.Fprintln(w, "ok")
+		built++
+	}
+	return built, failed
 }
