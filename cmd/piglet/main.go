@@ -121,9 +121,30 @@ func run() error {
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
 		return config.RunSetup(writeModelsYAML)
 	}
-	if len(promptArgs) == 1 && (promptArgs[0] == "update" || promptArgs[0] == "upgrade") {
+	if len(promptArgs) >= 1 && (promptArgs[0] == "update" || promptArgs[0] == "upgrade") {
 		settings, _ := config.Load()
-		return command.RunUpdate(os.Stderr, settings, resolveVersion())
+		var installOpts []command.InstallOption
+		for i := 1; i < len(promptArgs); i++ {
+			switch promptArgs[i] {
+			case "--local":
+				localDir := ""
+				if i+1 < len(promptArgs) && !strings.HasPrefix(promptArgs[i+1], "-") {
+					i++
+					localDir = promptArgs[i]
+				}
+				if localDir == "" {
+					resolved, err := command.ResolveGoWorkExtPath()
+					if err != nil {
+						return fmt.Errorf("local source detection: %w", err)
+					}
+					localDir = resolved
+				}
+				installOpts = append(installOpts, command.WithLocalDir(localDir))
+			default:
+				return fmt.Errorf("unknown flag for update: %s", promptArgs[i])
+			}
+		}
+		return command.RunUpdate(os.Stderr, settings, resolveVersion(), installOpts...)
 	}
 
 	// Determine prompt: args after flags or stdin
@@ -560,6 +581,8 @@ Usage:
   piglet <prompt>         Single-shot mode (prints response and exits)
   piglet init             Run first-time setup (config, models, API key detection)
   piglet update           Upgrade piglet and rebuild extensions
+  piglet update --local           Build extensions from local go.work source
+  piglet update --local <path>    Build extensions from explicit local path
   piglet upgrade          Alias for update
   piglet --help           Show this help
   piglet --version        Show version

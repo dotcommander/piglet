@@ -9,12 +9,12 @@ import (
 )
 
 // RunUpgrade is an alias for RunUpdate — upgrades binary and rebuilds extensions.
-func RunUpgrade(w io.Writer, currentVersion string) error {
+func RunUpgrade(w io.Writer, currentVersion string, opts ...InstallOption) error {
 	settings, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	return RunUpdate(w, settings, currentVersion)
+	return RunUpdate(w, settings, currentVersion, opts...)
 }
 
 func registerUpgrade(app *ext.App, version string) {

@@ -178,6 +178,46 @@ Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://g
 
 Without extensions, piglet starts as a minimal agent with only compiled-in tools and commands. With extensions installed, full functionality is available (interceptors, shortcuts, event handlers, message hooks, additional tools/commands — plus dynamic MCP tools). Run `/extensions` for the live inventory.
 
+## Development Workflow (Two-Repo)
+
+Piglet spans two repos linked by `go.work` at `~/go/src/go.work`:
+- **piglet** — core, SDK (`sdk/`), TUI, compiled-in extensions
+- **piglet-extensions** — external extension packs, standalone CLIs
+
+### Day-to-day development (local only)
+
+`go.work` resolves `piglet/sdk` to the local checkout — changes to the SDK are immediately visible to piglet-extensions without tagging or pushing.
+
+```bash
+# Build and test locally (go.work handles cross-repo resolution)
+piglet update --local          # Builds packs from local piglet-extensions checkout
+                               # Auto-detects path from go.work — no args needed
+piglet update --local /path    # Explicit path override
+```
+
+**Local mode**: skips git clone, skips `go mod tidy`, builds directly from source. Use this during development — it's instant and doesn't touch GitHub.
+
+### Deploying to GitHub (when ready to publish)
+
+When changes span both repos and involve the SDK, the order matters:
+
+```
+1. Commit piglet (includes sdk/ changes)
+2. Tag the SDK:  git tag sdk/vX.Y.Z  (in piglet repo)
+3. Push piglet:  git push origin main sdk/vX.Y.Z
+4. Wait for Go module proxy (verify: go list -m github.com/dotcommander/piglet/sdk@vX.Y.Z)
+5. Update piglet-extensions go.mod:  GOWORK=off go get github.com/dotcommander/piglet/sdk@vX.Y.Z
+6. Commit and push piglet-extensions
+```
+
+**Why this order**: piglet-extensions' `go.mod` pins a specific SDK version. `go.work` masks this locally, but `piglet update` (remote mode) clones without `go.work` — so the pinned version must exist on the module proxy.
+
+When changes DON'T touch the SDK, just commit and push each repo independently.
+
+### Update caching
+
+`piglet update` (remote mode) caches the last successful build's commit hash in `~/.config/piglet/extensions/.last-build-hash`. If the remote HEAD matches, it prints "Extensions already up to date" and skips the clone+build cycle. Local mode always rebuilds (no caching).
+
 ## Config
 
 - Settings: `~/.config/piglet/config.yaml`

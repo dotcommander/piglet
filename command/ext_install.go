@@ -13,11 +13,90 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
-	if _, err := exec.LookPath("git"); err != nil {
-		fmt.Fprintln(w, "git not found in PATH — skipping extension install")
-		return nil
+// installConfig holds options for InstallOfficialExtensions.
+type installConfig struct {
+	localDir string
+}
+
+// InstallOption configures extension installation behavior.
+type InstallOption func(*installConfig)
+
+// WithLocalDir builds extensions from a local directory instead of cloning.
+func WithLocalDir(dir string) InstallOption {
+	return func(c *installConfig) { c.localDir = dir }
+}
+
+// ResolveGoWorkExtPath finds a piglet-extensions directory in the active Go workspace.
+func ResolveGoWorkExtPath() (string, error) {
+	out, err := exec.Command("go", "env", "GOWORK").Output()
+	if err != nil {
+		return "", fmt.Errorf("go env GOWORK: %w", err)
 	}
+	goworkPath := strings.TrimSpace(string(out))
+	if goworkPath == "" {
+		return "", fmt.Errorf("no active go.work workspace")
+	}
+	data, err := os.ReadFile(goworkPath)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", goworkPath, err)
+	}
+	workDir := filepath.Dir(goworkPath)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if idx := strings.Index(line, "//"); idx >= 0 {
+			line = line[:idx]
+		}
+		line = strings.TrimSpace(line)
+		cleaned := strings.TrimPrefix(line, "use ")
+		cleaned = strings.TrimSpace(cleaned)
+		cleaned = strings.TrimRight(cleaned, "/")
+		if strings.HasSuffix(cleaned, "piglet-extensions") {
+			abs := filepath.Join(workDir, cleaned)
+			if info, serr := os.Stat(abs); serr == nil && info.IsDir() {
+				return abs, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("piglet-extensions not found in %s", goworkPath)
+}
+
+// lastBuildHashPath returns the path to the cached commit hash file.
+func lastBuildHashPath() (string, error) {
+	dir, err := external.ExtensionsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, ".last-build-hash"), nil
+}
+
+// readLastBuildHash returns the cached commit hash from the last successful build.
+func readLastBuildHash() string {
+	p, err := lastBuildHashPath()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// writeLastBuildHash writes the commit hash after a successful build.
+func writeLastBuildHash(hash string) {
+	p, err := lastBuildHashPath()
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(p, []byte(hash+"\n"), 0644)
+}
+
+func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...InstallOption) error {
+	var cfg installConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	if _, err := exec.LookPath("go"); err != nil {
 		fmt.Fprintln(w, "go not found in PATH — skipping extension install")
 		return nil
@@ -29,25 +108,54 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	}
 
 	extensions := settings.ExtInstall.ResolveOfficial()
-	repoURL := settings.ExtInstall.ResolveRepoURL()
-	fmt.Fprintf(w, "Cloning piglet-extensions...\n")
 
-	tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	var srcDir string
+	var remoteHash string
+	if cfg.localDir != "" {
+		srcDir = cfg.localDir
+		fmt.Fprintf(w, "Building from local source: %s\n", srcDir)
+	} else {
+		if _, err := exec.LookPath("git"); err != nil {
+			fmt.Fprintln(w, "git not found in PATH — skipping extension install")
+			return nil
+		}
 
-	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", repoURL, tmpDir)
-	if out, err := cloneCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
-		return nil
-	}
+		repoURL := settings.ExtInstall.ResolveRepoURL()
 
-	tidyCmd := exec.Command("go", "mod", "tidy")
-	tidyCmd.Dir = tmpDir
-	if out, err := tidyCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
+		// Check remote HEAD and compare with cached hash.
+		if out, err := exec.Command("git", "ls-remote", repoURL, "HEAD").Output(); err == nil {
+			fields := strings.Fields(strings.TrimSpace(string(out)))
+			if len(fields) > 0 {
+				remoteHash = fields[0]
+				if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
+					fmt.Fprintln(w, "Extensions already up to date.")
+					installCLIsIfNeeded(w, settings, extDir)
+					return nil
+				}
+			}
+		}
+
+		fmt.Fprintf(w, "Cloning piglet-extensions...\n")
+
+		tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
+		if err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", repoURL, tmpDir)
+		if out, err := cloneCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
+			return nil
+		}
+
+		tidyCmd := exec.Command("go", "mod", "tidy")
+		tidyCmd.Dir = tmpDir
+		if out, err := tidyCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
+		}
+
+		srcDir = tmpDir
 	}
 
 	var built, failed int
@@ -62,21 +170,20 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 			continue
 		}
 
-		// Resolve source paths based on pack vs individual extension.
 		var buildPkg, manifestDir, srcRoot string
 		if strings.HasPrefix(name, "pack-") {
 			packName := strings.TrimPrefix(name, "pack-")
 			buildPkg = "./packs/" + packName + "/"
-			manifestDir = filepath.Join(tmpDir, "packs", packName)
+			manifestDir = filepath.Join(srcDir, "packs", packName)
 			srcRoot = manifestDir
 		} else {
 			buildPkg = "./" + name + "/cmd/"
-			manifestDir = filepath.Join(tmpDir, name, "cmd")
-			srcRoot = filepath.Join(tmpDir, name)
+			manifestDir = filepath.Join(srcDir, name, "cmd")
+			srcRoot = filepath.Join(srcDir, name)
 		}
 
 		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
-		buildCmd.Dir = tmpDir
+		buildCmd.Dir = srcDir
 		if out, err := buildCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
 			failed++
@@ -97,7 +204,6 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 			continue
 		}
 
-		// Seed default config files (skip if dest already exists — preserves user edits).
 		var mf external.Manifest
 		if err := yaml.Unmarshal(data, &mf); err == nil && len(mf.Defaults) > 0 {
 			configDir, cerr := config.ConfigDir()
@@ -107,7 +213,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 				for _, entry := range mf.Defaults {
 					destPath := filepath.Join(configDir, entry.Dest)
 					if _, err := os.Stat(destPath); err == nil {
-						continue // already exists — preserve user edits
+						continue
 					}
 					srcPath := filepath.Join(srcRoot, entry.Src)
 					contents, rerr := os.ReadFile(srcPath)
@@ -132,17 +238,16 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
 
-	// Remove old individual extension directories now consolidated into packs.
+	// Cache commit hash on successful remote build.
+	if remoteHash != "" && failed == 0 {
+		writeLastBuildHash(remoteHash)
+	}
+
 	packMembers := []string{
-		// pack-core
 		"admin", "export", "extensions-list", "undo", "scaffold", "background",
-		// pack-agent
 		"safeguard", "rtk", "autotitle", "clipboard", "subagent", "provider", "loop",
-		// pack-context
 		"memory", "skill", "gitcontext", "behavior", "prompts", "session-tools", "inbox",
-		// pack-code
 		"lsp", "repomap", "sift", "plan", "suggest",
-		// pack-workflow
 		"pipeline", "bulk", "webfetch", "cache", "usage", "modelsdev",
 	}
 	for _, old := range packMembers {
@@ -152,13 +257,19 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		}
 	}
 
-	// Build standalone CLIs from cmd/*/
-	cliBuilt, cliFailed := installCLIs(w, tmpDir)
+	cliBuilt, cliFailed := installCLIs(w, srcDir)
 	if cliBuilt+cliFailed > 0 {
 		fmt.Fprintf(w, "CLIs: %d built, %d failed\n", cliBuilt, cliFailed)
 	}
 
 	return nil
+}
+
+// installCLIsIfNeeded is a no-op placeholder used when extensions are up-to-date
+// but CLIs might need rebuilding. Currently skips — CLIs are tied to the same commit.
+func installCLIsIfNeeded(w io.Writer, settings config.Settings, extDir string) {
+	// CLIs ship from the same repo as extensions. If the commit hash hasn't
+	// changed, CLIs are also up to date. Nothing to do.
 }
 
 // installCLIs discovers and builds standalone CLI tools from cmd/*/ in the
