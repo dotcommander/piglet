@@ -9,14 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DefaultFile describes a config file to seed on first install.
+type DefaultFile struct {
+	Src  string `yaml:"src"`
+	Dest string `yaml:"dest"`
+}
+
 // Manifest describes an external extension.
 type Manifest struct {
-	Name         string   `yaml:"name"`
-	Version      string   `yaml:"version,omitempty"`
-	Runtime      string   `yaml:"runtime"`              // "bun", "node", "deno", "python", or absolute path
-	Entry        string   `yaml:"entry"`                // e.g. "index.ts", "main.py"
-	Capabilities []string `yaml:"capabilities,omitempty"` // "tools", "commands", "prompt"
-	Dir          string   `yaml:"-"`                     // populated at load time
+	Name         string        `yaml:"name"`
+	Version      string        `yaml:"version,omitempty"`
+	Runtime      string        `yaml:"runtime"`                // "bun", "node", "deno", "python", or absolute path
+	Entry        string        `yaml:"entry"`                  // e.g. "index.ts", "main.py"
+	Capabilities []string      `yaml:"capabilities,omitempty"` // "tools", "commands", "prompt"
+	Defaults     []DefaultFile `yaml:"defaults,omitempty"`
+	Dir          string        `yaml:"-"` // populated at load time
 }
 
 // LoadManifest reads a manifest.yaml from the given directory.

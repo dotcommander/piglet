@@ -10,6 +10,7 @@ import (
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext/external"
+	"gopkg.in/yaml.v3"
 )
 
 func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
@@ -81,6 +82,35 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 			fmt.Fprintf(w, "FAIL (write manifest: %v)\n", err)
 			failed++
 			continue
+		}
+
+		// Seed default config files (skip if dest already exists — preserves user edits).
+		var mf external.Manifest
+		if err := yaml.Unmarshal(data, &mf); err == nil && len(mf.Defaults) > 0 {
+			configDir, cerr := config.ConfigDir()
+			if cerr != nil {
+				fmt.Fprintf(w, "  warning: config dir: %v\n", cerr)
+			} else {
+				for _, entry := range mf.Defaults {
+					destPath := filepath.Join(configDir, entry.Dest)
+					if _, err := os.Stat(destPath); err == nil {
+						continue // already exists — preserve user edits
+					}
+					srcPath := filepath.Join(tmpDir, name, entry.Src)
+					contents, rerr := os.ReadFile(srcPath)
+					if rerr != nil {
+						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, rerr)
+						continue
+					}
+					if merr := os.MkdirAll(filepath.Dir(destPath), 0755); merr != nil {
+						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, merr)
+						continue
+					}
+					if werr := os.WriteFile(destPath, contents, 0644); werr != nil {
+						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, werr)
+					}
+				}
+			}
 		}
 
 		fmt.Fprintln(w, "ok")
