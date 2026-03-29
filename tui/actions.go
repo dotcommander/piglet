@@ -33,6 +33,11 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m.runCommand(cmd, args)
 	}
 
+	// Agent not ready yet?
+	if m.cfg.Agent == nil {
+		return m, m.notifyAndTick("Extensions loading, try again in a moment")
+	}
+
 	// Re-follow output when user sends a message
 	m.followOutput = true
 
@@ -55,6 +60,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 
 // startAgentLoop runs message hooks and starts the agent, returning the polling batch command.
 func (m *Model) startAgentLoop(content string) tea.Cmd {
+	if m.cfg.Agent == nil {
+		return nil
+	}
 	if m.cfg.App != nil {
 		if injections, err := m.cfg.App.RunMessageHooks(context.Background(), content); err == nil && len(injections) > 0 {
 			m.cfg.Agent.SetTurnContext(injections)
@@ -71,6 +79,9 @@ func (m *Model) startAgentLoop(content string) tea.Cmd {
 // Fire-and-forget intents (ShowMessage, Quit, etc.) use the action queue.
 func (m *Model) bindApp() {
 	if m.cfg.App == nil {
+		return
+	}
+	if m.cfg.Agent == nil {
 		return
 	}
 	m.pendingBgStart = nil
@@ -195,7 +206,9 @@ func (m *Model) applyStateAction(action ext.Action) {
 			msgs := s.Messages()
 			m.messages = msgs
 			m.msgCache = nil
-			m.cfg.Agent.SetMessages(msgs)
+			if m.cfg.Agent != nil {
+				m.cfg.Agent.SetMessages(msgs)
+			}
 		}
 	case ext.ActionSetSessionTitle:
 		if m.cfg.Session != nil && act.Title != "" {
@@ -279,7 +292,9 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 	if name == "clear" {
 		m.messages = nil
 		m.msgCache = nil
-		m.cfg.Agent.SetMessages(nil)
+		if m.cfg.Agent != nil {
+			m.cfg.Agent.SetMessages(nil)
+		}
 	}
 
 	if err := cmd.Handler(args, m.cfg.App); err != nil {

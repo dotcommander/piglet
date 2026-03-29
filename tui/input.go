@@ -98,6 +98,9 @@ func (m *InputModel) PushHistory(s string) {
 // SetAttachment sets the attachment indicator shown above the input.
 func (m *InputModel) SetAttachment(s string) { m.attachment = s }
 
+// SetCommands updates the registered command names for autocomplete.
+func (m *InputModel) SetCommands(cmds []string) { m.commands = cmds }
+
 // Update handles input events.
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 	switch msg := msg.(type) {

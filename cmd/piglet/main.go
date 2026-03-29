@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -137,7 +138,11 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	app, system, extCleanup := setupApp(ctx, rt, interactive)
+	if interactive {
+		return runInteractive(ctx, rt)
+	}
+
+	app, system, extCleanup := setupApp(ctx, rt, false)
 	defer extCleanup()
 
 	// If an external extension registered a provider for this model's API type, use it.
@@ -165,19 +170,6 @@ func run() error {
 		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
 		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
 	)
-
-	if interactive {
-		return tui.Run(tui.Config{
-			Agent:    ag,
-			Session:  sess,
-			Model:    rt.model,
-			Models:   rt.registry.Models(),
-			SessDir:  rt.sessDir,
-			Theme:    tui.DefaultTheme(),
-			App:      app,
-			Settings: &rt.settings,
-		})
-	}
 
 	return runPrint(ag, app, sess, userPrompt)
 }
@@ -349,6 +341,115 @@ func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
 	return core.NewAgent(agCfg)
 }
 
+// runInteractive starts the TUI immediately with compiled-in extensions only,
+// then loads external extensions in a background goroutine via SetupFn.
+func runInteractive(ctx context.Context, rt *runtime) error {
+	// --- Sync phase: register compiled-in extensions only (fast, <10ms) ---
+	app := ext.NewApp(rt.cwd)
+	tool.RegisterBuiltins(app, tool.BashConfig{
+		DefaultTimeout: rt.settings.Bash.DefaultTimeout,
+		MaxTimeout:     rt.settings.Bash.MaxTimeout,
+		MaxStdout:      rt.settings.Bash.MaxStdout,
+		MaxStderr:      rt.settings.Bash.MaxStderr,
+	}, tool.ToolConfig{
+		ReadLimit: rt.settings.Tools.ReadLimit,
+		GrepLimit: rt.settings.Tools.GrepLimit,
+	})
+	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
+	app.RegisterExtInfo(ext.ExtInfo{
+		Name:     "builtin",
+		Kind:     "builtin",
+		Runtime:  "go",
+		Tools:    app.Tools(),
+		Commands: slices.Sorted(maps.Keys(app.Commands())),
+	})
+	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
+
+	// Session can be created before extensions load.
+	sess, err := session.New(rt.sessDir, rt.cwd)
+	if err != nil {
+		sess = nil
+	}
+	if sess != nil {
+		if err := sess.SetModel(rt.model.ID); err != nil {
+			slog.Warn("persist model to session", "error", err)
+		}
+	}
+
+	// Protect extCleanup across the goroutine boundary.
+	var (
+		extCleanupMu sync.Mutex
+		extCleanup   = func() {}
+	)
+
+	sessPtr := &sess
+
+	setupFn := func() tui.AgentReadyMsg {
+		// --- Async phase: load external extensions (~1.3s) ---
+		loaded, cleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		extCleanupMu.Lock()
+		extCleanup = cleanup
+		extCleanupMu.Unlock()
+
+		if loaded == 0 {
+			if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
+				fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
+			}
+			reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+			extCleanupMu.Lock()
+			origCleanup := extCleanup
+			extCleanup = func() { reloadCleanup(); origCleanup() }
+			extCleanupMu.Unlock()
+			if reloaded > 0 {
+				fmt.Fprintf(os.Stderr, "Loaded %d extensions.\n\n", reloaded)
+			}
+		}
+
+		// If an external extension registered a provider for this model's API type, use it.
+		if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
+			rt.prov = p
+		}
+
+		prompt.RegisterSelfKnowledge(app)
+
+		basePrompt := rt.settings.SystemPrompt
+		system := prompt.Build(app, basePrompt, prompt.BuildOptions{
+			OrderOverrides: rt.settings.PromptOrder,
+		})
+
+		ag := buildAgent(app, rt, system)
+
+		// Bind domain managers so commands work through ext.App.
+		app.Bind(ag,
+			ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
+			ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
+		)
+
+		return tui.AgentReadyMsg{Agent: ag}
+	}
+
+	tuiErr := tui.Run(tui.Config{
+		Agent:    nil,
+		Session:  sess,
+		Model:    rt.model,
+		Models:   rt.registry.Models(),
+		SessDir:  rt.sessDir,
+		Theme:    tui.DefaultTheme(),
+		App:      app,
+		Settings: &rt.settings,
+		SetupFn:  setupFn,
+	})
+
+	if sess != nil {
+		_ = sess.Close()
+	}
+	extCleanupMu.Lock()
+	extCleanup()
+	extCleanupMu.Unlock()
+
+	return tuiErr
+}
+
 func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -407,11 +508,12 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 		if e, ok := evt.(core.EventTurnEnd); ok {
 			if e.Assistant != nil {
 				u := e.Assistant.Usage
-				fmt.Fprintf(os.Stderr, "[tokens: in=%d out=%d", u.InputTokens, u.OutputTokens)
-				if u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
-					fmt.Fprintf(os.Stderr, " cache_read=%d cache_write=%d", u.CacheReadTokens, u.CacheWriteTokens)
-				}
-				fmt.Fprintln(os.Stderr, "]")
+				slog.Debug("turn complete",
+					"input_tokens", u.InputTokens,
+					"output_tokens", u.OutputTokens,
+					"cache_read_tokens", u.CacheReadTokens,
+					"cache_write_tokens", u.CacheWriteTokens,
+				)
 
 				if e.Assistant.StopReason == core.StopReasonError || e.Assistant.StopReason == core.StopReasonAborted {
 					msg := e.Assistant.Error

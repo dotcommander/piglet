@@ -26,6 +26,10 @@ type Config struct {
 	Theme    Theme
 	App      *ext.App         // extension API surface
 	Settings *config.Settings // user settings (nil-safe)
+
+	// SetupFn runs as a background Cmd from Init(). It performs heavy startup
+	// work (loading extensions, building agent) and returns an AgentReadyMsg.
+	SetupFn func() AgentReadyMsg
 }
 
 // eventMsg wraps agent events for the Bubble Tea message loop.
@@ -42,6 +46,11 @@ type asyncActionMsg struct{ action ext.Action }
 
 // execDoneMsg signals that an external process (e.g., $EDITOR) has finished.
 type execDoneMsg struct{ err error }
+
+// AgentReadyMsg signals background setup is complete and the agent is ready.
+type AgentReadyMsg struct {
+	Agent *core.Agent
+}
 
 // notifyTickMsg decrements the notification timer.
 type notifyTickMsg struct{}
@@ -131,7 +140,11 @@ func New(cfg Config) Model {
 	if cfg.App != nil {
 		status.SetRegistry(cfg.App.StatusSections())
 	}
-	status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet"))
+	if cfg.SetupFn != nil {
+		status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet (loading...)"))
+	} else {
+		status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet"))
+	}
 	status.Set(ext.StatusKeyModel, styles.Muted.Render(cfg.Model.DisplayName()))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
@@ -159,7 +172,12 @@ func New(cfg Config) Model {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return m.input.textarea.Focus()
+	cmds := []tea.Cmd{m.input.textarea.Focus()}
+	if m.cfg.SetupFn != nil {
+		fn := m.cfg.SetupFn
+		cmds = append(cmds, func() tea.Msg { return fn() })
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update implements tea.Model.
@@ -264,6 +282,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case AgentReadyMsg:
+		m.cfg.Agent = msg.Agent
+		m.cfg.SetupFn = nil
+		m.status.Set(ext.StatusKeyApp, m.styles.Muted.Render("piglet"))
+		if m.cfg.App != nil {
+			m.status.SetRegistry(m.cfg.App.StatusSections())
+			m.input.SetCommands(commandNames(m.cfg.App))
+		}
+		return m, m.notifyAndTick("Extensions loaded")
+
 	}
 
 	// Update input
@@ -288,7 +316,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 
 	switch {
 	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
-		if m.streaming {
+		if m.streaming && m.cfg.Agent != nil {
 			m.cfg.Agent.Stop()
 			m.streaming = false
 			m.spinnerVerb = ""
@@ -417,4 +445,3 @@ func notifyTick() tea.Cmd {
 		return notifyTickMsg{}
 	})
 }
-
