@@ -86,6 +86,11 @@ func (a *Agent) enforceMessageCap() {
 	defer a.mu.Unlock()
 
 	maxMsg := a.cfg.MaxMessages
+	// Floor at 4: first message (system) + at least 3 conversation turns.
+	// Below 2 the slice arithmetic is undefined.
+	if maxMsg < 4 {
+		maxMsg = 4
+	}
 	if len(a.messages) <= maxMsg {
 		return
 	}
@@ -96,4 +101,3 @@ func (a *Agent) enforceMessageCap() {
 	trimmed = append(trimmed, a.messages[len(a.messages)-maxMsg+1:]...)
 	a.messages = trimmed
 }
-
