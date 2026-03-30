@@ -208,11 +208,16 @@ When changes span both repos and involve the SDK, the order matters:
 4. Wait for Go module proxy (verify: go list -m github.com/dotcommander/piglet/sdk@vX.Y.Z)
 5. Update piglet-extensions go.mod:  GOWORK=off go get github.com/dotcommander/piglet/sdk@vX.Y.Z
 6. Commit and push piglet-extensions
+7. Tag piglet:   git tag vX.Y.Z
+8. Push tag:     git push origin vX.Y.Z
+9. Create GitHub Release:  gh release create vX.Y.Z --title "vX.Y.Z" --notes "..."
 ```
 
 **Why this order**: piglet-extensions' `go.mod` pins a specific SDK version. `go.work` masks this locally, but `piglet update` (remote mode) clones without `go.work` — so the pinned version must exist on the module proxy.
 
-When changes DON'T touch the SDK, just commit and push each repo independently.
+**GitHub Release is mandatory**: `piglet update` self-update uses the GitHub Releases API (`/releases/latest`), NOT git tags. A tag without a release is invisible to self-update.
+
+When changes DON'T touch the SDK, skip steps 2-6 — just commit, push, tag, and create the release.
 
 ### Update caching
 
