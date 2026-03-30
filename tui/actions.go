@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -64,11 +63,11 @@ func (m *Model) startAgentLoop(content string) tea.Cmd {
 		return nil
 	}
 	if m.cfg.App != nil {
-		if injections, err := m.cfg.App.RunMessageHooks(context.Background(), content); err == nil && len(injections) > 0 {
+		if injections, err := m.cfg.App.RunMessageHooks(m.ctx, content); err == nil && len(injections) > 0 {
 			m.cfg.Agent.SetTurnContext(injections)
 		}
 	}
-	ch := m.cfg.Agent.Start(context.Background(), content)
+	ch := m.cfg.Agent.Start(m.ctx, content)
 	m.eventCh = ch
 	m.streaming = true
 	m.spinnerVerb = "thinking..."
@@ -102,7 +101,7 @@ func (m *Model) bindApp() {
 				Tools:    tools,
 				MaxTurns: bgMax,
 			})
-			ch := m.bgAgent.Start(context.Background(), prompt)
+			ch := m.bgAgent.Start(m.ctx, prompt)
 			m.bgEventCh = ch
 			m.bgTask = prompt
 			m.bgResult.Reset()

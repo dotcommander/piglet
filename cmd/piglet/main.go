@@ -463,7 +463,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 		return tui.AgentReadyMsg{Agent: ag}
 	}
 
-	tuiErr := tui.Run(tui.Config{
+	tuiErr := tui.Run(ctx, tui.Config{
 		Agent:    nil,
 		Session:  sess,
 		Model:    rt.model,

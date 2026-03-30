@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -66,6 +67,7 @@ type bgStartResult struct {
 // Model is the Bubble Tea model for the TUI.
 type Model struct {
 	cfg Config
+	ctx context.Context
 
 	// Layout
 	width  int
@@ -132,7 +134,7 @@ type Model struct {
 }
 
 // New creates a TUI model.
-func New(cfg Config) Model {
+func New(ctx context.Context, cfg Config) Model {
 	styles := NewStyles(cfg.Theme)
 	commands := commandNames(cfg.App)
 
@@ -154,8 +156,9 @@ func New(cfg Config) Model {
 	vp.MouseWheelDelta = 1
 	vp.Style = lipgloss.NewStyle()
 
-	return Model{
+	m := Model{
 		cfg:          cfg,
+		ctx:          ctx,
 		styles:       styles,
 		input:        NewInputModel(styles, commands),
 		viewport:     vp,
@@ -168,6 +171,10 @@ func New(cfg Config) Model {
 		focused:      true,
 		followOutput: true,
 	}
+	if hp, err := config.HistoryPath(); err == nil {
+		m.input.LoadHistory(hp)
+	}
+	return m
 }
 
 // Init implements tea.Model.
@@ -362,8 +369,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 }
 
 // Run starts the TUI.
-func Run(cfg Config) error {
-	m := New(cfg)
+func Run(ctx context.Context, cfg Config) error {
+	m := New(ctx, cfg)
 	p := tea.NewProgram(m,
 		tea.WithColorProfile(colorprofile.TrueColor),
 		tea.WithFilter(messageFilter),

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -16,7 +15,7 @@ import (
 func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 	// Dispatch event to registered handlers (event bus)
 	if m.cfg.App != nil {
-		m.cfg.App.DispatchEvent(context.Background(), evt)
+		m.cfg.App.DispatchEvent(m.ctx, evt)
 	}
 
 	switch e := evt.(type) {
