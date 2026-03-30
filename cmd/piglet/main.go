@@ -146,6 +146,20 @@ func run() error {
 		}
 		return command.RunUpdate(os.Stderr, settings, resolveVersion(), installOpts...)
 	}
+	if len(promptArgs) >= 1 && promptArgs[0] == "deploy" {
+		var dryRun, skipSDK bool
+		for i := 1; i < len(promptArgs); i++ {
+			switch promptArgs[i] {
+			case "--dry-run":
+				dryRun = true
+			case "--skip-sdk":
+				skipSDK = true
+			default:
+				return fmt.Errorf("unknown flag for deploy: %s", promptArgs[i])
+			}
+		}
+		return command.RunDeploy(os.Stderr, dryRun, skipSDK)
+	}
 
 	// Determine prompt: args after flags or stdin
 	userPrompt := strings.Join(promptArgs, " ")
@@ -584,6 +598,9 @@ Usage:
   piglet update --local           Build extensions from local go.work source
   piglet update --local <path>    Build extensions from explicit local path
   piglet upgrade          Alias for update
+  piglet deploy           Deploy piglet + extensions (tag, push, release)
+  piglet deploy --dry-run           Show deployment plan without executing
+  piglet deploy --skip-sdk          Skip SDK tag even if SDK changed
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads

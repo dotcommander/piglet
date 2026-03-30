@@ -54,8 +54,56 @@ func resolveCachePath() (string, error) {
 	return filepath.Join(dir, cacheFile), nil
 }
 
-// FetchLatestRelease fetches the latest release info from the GitHub API.
+// FetchLatestRelease returns the latest piglet version using git ls-remote
+// (immune to GitHub release creation-order bugs). Falls back to the GitHub
+// releases API if git is not available.
 func FetchLatestRelease(ctx context.Context) (ReleaseInfo, error) {
+	// Prefer git ls-remote (uses tags, not releases — immune to creation-order bugs).
+	if _, err := exec.LookPath("git"); err == nil {
+		out, err := exec.CommandContext(ctx, "git", "ls-remote", "--tags", repoURL).Output()
+		if err == nil {
+			var best string
+			for _, line := range strings.Split(string(out), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					continue
+				}
+				ref := parts[1]
+				// Skip dereferenced tags and non-version tags.
+				if strings.HasSuffix(ref, "^{}") {
+					continue
+				}
+				tag := strings.TrimPrefix(ref, "refs/tags/")
+				if !strings.HasPrefix(tag, "v") {
+					continue
+				}
+				// Skip tags with slashes (e.g., sdk/v1.0.0).
+				if strings.Contains(tag, "/") {
+					continue
+				}
+				if best == "" || CompareVersions(tag, best) > 0 {
+					best = tag
+				}
+			}
+			if best != "" {
+				return ReleaseInfo{
+					TagName: best,
+					HTMLURL: "https://github.com/dotcommander/piglet/releases/tag/" + best,
+				}, nil
+			}
+		}
+	}
+
+	// Fallback: GitHub releases API.
+	return fetchLatestFromAPI(ctx)
+}
+
+// fetchLatestFromAPI fetches the latest release info from the GitHub releases API.
+func fetchLatestFromAPI(ctx context.Context) (ReleaseInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
 	if err != nil {
 		return ReleaseInfo{}, fmt.Errorf("build request: %w", err)
