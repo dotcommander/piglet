@@ -72,8 +72,11 @@ func registerUpdate(app *ext.App, version string) {
 				installOpts = append(installOpts, WithLocalDir(localDir))
 			}
 
+			// Call InstallOfficialExtensions directly — skips the self-upgrade
+			// step which may syscall.Exec and corrupt the terminal's raw mode.
+			// Users who want a full binary upgrade run `piglet update` from the CLI.
 			var b strings.Builder
-			if err := RunUpdate(&b, settings, version, installOpts...); err != nil {
+			if err := InstallOfficialExtensions(&b, settings, installOpts...); err != nil {
 				a.ShowMessage("Update failed: " + err.Error())
 				return nil
 			}

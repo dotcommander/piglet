@@ -264,8 +264,8 @@ The memory extension injects a **compact index** (not full content) as a static 
 | Package | Version |
 |---------|---------|
 | bubbletea | `charm.land/bubbletea/v2` v2.0.2 |
-| bubbles | `charm.land/bubbles/v2` v2.0.0 |
-| lipgloss | `charm.land/lipgloss/v2` v2.0.0 |
+| bubbles | `charm.land/bubbles/v2` v2.1.0 |
+| lipgloss | `charm.land/lipgloss/v2` v2.0.2 |
 | glamour | `github.com/charmbracelet/glamour` v1.0.0 |
 
 ## Core Freeze (BLOCKING)

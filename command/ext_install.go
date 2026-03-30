@@ -129,7 +129,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 				remoteHash = fields[0]
 				if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
 					fmt.Fprintln(w, "Extensions already up to date.")
-					installCLIsIfNeeded(w, settings, extDir)
+					installCLIsIfNeeded(w, extDir)
 					return nil
 				}
 			}
@@ -243,6 +243,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 		writeLastBuildHash(remoteHash)
 	}
 
+	// Update this list when pack contents change.
 	packMembers := []string{
 		"admin", "export", "extensions-list", "undo", "scaffold", "background",
 		"safeguard", "rtk", "autotitle", "clipboard", "subagent", "provider", "loop",
@@ -267,7 +268,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 
 // installCLIsIfNeeded is a no-op placeholder used when extensions are up-to-date
 // but CLIs might need rebuilding. Currently skips — CLIs are tied to the same commit.
-func installCLIsIfNeeded(w io.Writer, settings config.Settings, extDir string) {
+func installCLIsIfNeeded(w io.Writer, extDir string) {
 	// CLIs ship from the same repo as extensions. If the commit hash hasn't
 	// changed, CLIs are also up to date. Nothing to do.
 }

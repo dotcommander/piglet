@@ -62,7 +62,7 @@ piglet
 
 First launch automatically builds and installs the [official extensions](https://github.com/dotcommander/piglet-extensions) (memory, skills, LSP, safeguard, and more). You'll see per-extension progress on stderr — it takes a minute or two, then you're fully loaded.
 
-To rebuild extensions later (e.g. after an update), run `/extensions update` inside piglet.
+To rebuild extensions later (e.g. after an update), run `/update` inside piglet.
 
 ### Build from Source
 
@@ -103,8 +103,8 @@ Piglet is an agent loop: you send a message, the LLM responds with text or tool 
 core/       Agent loop, streaming, types. Imports nothing from piglet.
 ext/        Registration surface (ext.App) — the central API.
 tool/       7 built-in tools (read, write, edit, bash, grep, find, ls).
-command/    18 slash commands, 2 keyboard shortcuts, 5 status sections.
-prompt/     System prompt builder + 4 prompt sections.
+command/    14 slash commands, 2 keyboard shortcuts, 6 status sections.
+prompt/     System prompt builder + 2 prompt sections.
 provider/   OpenAI, Anthropic, Google streaming providers.
 tui/        Bubble Tea v2 terminal UI.
 sdk/        Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk).
