@@ -1,11 +1,17 @@
 package tui
 
 import (
+	"bufio"
+	"log/slog"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"github.com/dotcommander/piglet/config"
 )
+
+const maxHistory = 500
 
 // InputModel manages the composer textarea with slash command autocomplete.
 type InputModel struct {
@@ -21,10 +27,11 @@ type InputModel struct {
 
 	attachment string // shown above the input border when non-empty
 
-	// Input history (up/down arrow cycles like bash)
-	history []string
-	histIdx int    // current position; len(history) = "new input"
-	draft   string // saves in-progress text when entering history
+	// Input history (up/down arrow cycles like bash, persisted to disk)
+	history     []string
+	histIdx     int    // current position; len(history) = "new input"
+	draft       string // saves in-progress text when entering history
+	historyPath string // file path for persistent history
 }
 
 // NewInputModel creates a new composer input.
@@ -49,6 +56,38 @@ func NewInputModel(styles Styles, commands []string) InputModel {
 		styles:   styles,
 		commands: commands,
 	}
+}
+
+// LoadHistory reads persistent history from disk and sets the path for
+// future saves. Missing file is a no-op.
+func (m *InputModel) LoadHistory(path string) {
+	m.historyPath = path
+	f, err := os.Open(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("load input history", "error", err)
+		}
+		return
+	}
+	defer f.Close()
+
+	var lines []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		slog.Warn("read input history", "error", err)
+		return
+	}
+	if len(lines) > maxHistory {
+		lines = lines[len(lines)-maxHistory:]
+	}
+	m.history = lines
+	m.histIdx = len(lines)
 }
 
 // SetWidth updates the input width.
@@ -76,7 +115,8 @@ func (m *InputModel) SetValue(s string) { m.textarea.SetValue(s) }
 // Reset clears the textarea.
 func (m *InputModel) Reset() { m.textarea.Reset() }
 
-// PushHistory adds an entry to the input history and resets the cursor.
+// PushHistory adds an entry to the input history, resets the cursor,
+// and persists the history to disk.
 func (m *InputModel) PushHistory(s string) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -87,12 +127,22 @@ func (m *InputModel) PushHistory(s string) {
 		m.histIdx = len(m.history)
 		return
 	}
-	const maxHistory = 500
 	if len(m.history) >= maxHistory {
 		m.history = m.history[1:]
 	}
 	m.history = append(m.history, s)
 	m.histIdx = len(m.history)
+	m.saveHistory()
+}
+
+func (m *InputModel) saveHistory() {
+	if m.historyPath == "" {
+		return
+	}
+	data := strings.Join(m.history, "\n") + "\n"
+	if err := config.AtomicWrite(m.historyPath, []byte(data), 0o600); err != nil {
+		slog.Warn("save input history", "error", err)
+	}
 }
 
 // SetAttachment sets the attachment indicator shown above the input.

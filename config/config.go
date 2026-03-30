@@ -157,6 +157,15 @@ func SettingsPath() (string, error) {
 	return filepath.Join(dir, "config.yaml"), nil
 }
 
+// HistoryPath returns ~/.config/piglet/history.
+func HistoryPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "history"), nil
+}
+
 // Load reads settings from the config file. Returns zero Settings if file
 // doesn't exist.
 func Load() (Settings, error) {

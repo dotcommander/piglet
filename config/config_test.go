@@ -1,9 +1,9 @@
 package config_test
 
 import (
+	"github.com/dotcommander/piglet/config"
 	"os"
 	"path/filepath"
-	"github.com/dotcommander/piglet/config"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -122,3 +122,9 @@ func TestSettingsPath_DeriveFromConfigDir(t *testing.T) {
 	assert.Equal(t, "/custom/config/piglet/config.yaml", path)
 }
 
+func TestHistoryPath_DeriveFromConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	path, err := config.HistoryPath()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/piglet/history", path)
+}
