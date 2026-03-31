@@ -32,6 +32,19 @@ type ToolDef struct {
 
 	// BackgroundSafe marks this tool as safe for background agent use (read-only).
 	BackgroundSafe bool
+
+	// ConcurrencySafe returns true if this tool call is safe to run concurrently
+	// with other tool calls. Return false for destructive/mutating operations.
+	// nil means always safe (default: parallel execution).
+	ConcurrencySafe func(args map[string]any) bool
+
+	// InterruptBehavior controls how this tool reacts to steering.
+	// InterruptBlock keeps the tool running; InterruptCancel (default) cancels it.
+	InterruptBehavior core.InterruptBehavior
+
+	// Deferred marks this tool as rarely used. Only name+description sent in API schemas.
+	// Full schema available via tool_search.
+	Deferred bool
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +57,7 @@ type Command struct {
 	Description string
 	Handler     func(args string, app *App) error
 	Complete    func(prefix string) []string // tab completion; nil = no completion
+	Immediate   bool                         // if true, executes during streaming without queuing
 }
 
 // Shortcut is a keyboard shortcut registered by an extension.
@@ -95,7 +109,7 @@ type Compactor struct {
 type StatusSide int
 
 const (
-	StatusLeft  StatusSide = iota
+	StatusLeft StatusSide = iota
 	StatusRight
 )
 
@@ -116,6 +130,7 @@ const (
 	StatusKeyBg     = "bg"
 	StatusKeyTokens = "tokens"
 	StatusKeyCost   = "cost"
+	StatusKeyQueue  = "queue"
 )
 
 // ---------------------------------------------------------------------------
@@ -187,16 +202,16 @@ type PromptSection struct {
 
 // ExtInfo describes a loaded extension for /extensions listing.
 type ExtInfo struct {
-	Name          string   // human-readable name
-	Version       string   // semver or empty
-	Kind          string   // "builtin" or "external"
-	Runtime       string   // "go", "bun", "node", "python", etc.
-	Tools         []string // tool names registered by this extension
-	Commands      []string // command names registered by this extension
-	Interceptors  []string // interceptor names
-	EventHandlers []string // event handler names
-	Shortcuts     []string // shortcut keys
-	MessageHooks  []string // message hook names
+	Name            string   // human-readable name
+	Version         string   // semver or empty
+	Kind            string   // "builtin" or "external"
+	Runtime         string   // "go", "bun", "node", "python", etc.
+	Tools           []string // tool names registered by this extension
+	Commands        []string // command names registered by this extension
+	Interceptors    []string // interceptor names
+	EventHandlers   []string // event handler names
+	Shortcuts       []string // shortcut keys
+	MessageHooks    []string // message hook names
 	Compactor       string   // compactor name, empty if none
 	PromptSections  []string // prompt section titles
 	StreamProviders []string // stream provider API types (e.g. "openai")

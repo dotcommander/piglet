@@ -112,13 +112,18 @@ func bridge(app *ext.App, h *Host) {
 	}
 	// Register tools
 	for _, t := range tools {
+		schema := core.ToolSchema{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  t.Parameters,
+		}
+		if t.InterruptBehavior == InterruptBehaviorBlock {
+			schema.InterruptBehavior = core.InterruptBlock
+		}
 		app.RegisterTool(&ext.ToolDef{
-			ToolSchema: core.ToolSchema{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.Parameters,
-			},
+			ToolSchema: schema,
 			PromptHint: t.PromptHint,
+			Deferred:   t.Deferred,
 			Execute:    proxyToolExecute(h, t.Name),
 		})
 	}
@@ -128,6 +133,7 @@ func bridge(app *ext.App, h *Host) {
 		app.RegisterCommand(&ext.Command{
 			Name:        c.Name,
 			Description: c.Description,
+			Immediate:   c.Immediate,
 			Handler:     proxyCommandExecute(h, c.Name),
 		})
 	}
@@ -318,28 +324,33 @@ func proxyCompactExecute(h *Host) func(ctx context.Context, msgs []core.Message)
 		}
 
 		// Deserialize back to core.Message
-		out := make([]core.Message, 0, len(result))
-		for _, cm := range result {
-			switch cm.Type {
-			case "user":
-				var msg core.UserMessage
-				if json.Unmarshal(cm.Data, &msg) == nil {
-					out = append(out, &msg)
-				}
-			case "assistant":
-				var msg core.AssistantMessage
-				if json.Unmarshal(cm.Data, &msg) == nil {
-					out = append(out, &msg)
-				}
-			case "tool_result":
-				var msg core.ToolResultMessage
-				if json.Unmarshal(cm.Data, &msg) == nil {
-					out = append(out, &msg)
-				}
+		return compactWireToCore(result), nil
+	}
+}
+
+// compactWireToCore deserializes wire CompactMessages back to core.Message slice.
+func compactWireToCore(wire []CompactMessage) []core.Message {
+	out := make([]core.Message, 0, len(wire))
+	for _, cm := range wire {
+		switch cm.Type {
+		case "user":
+			var msg core.UserMessage
+			if json.Unmarshal(cm.Data, &msg) == nil {
+				out = append(out, &msg)
+			}
+		case "assistant":
+			var msg core.AssistantMessage
+			if json.Unmarshal(cm.Data, &msg) == nil {
+				out = append(out, &msg)
+			}
+		case "tool_result":
+			var msg core.ToolResultMessage
+			if json.Unmarshal(cm.Data, &msg) == nil {
+				out = append(out, &msg)
 			}
 		}
-		return out, nil
 	}
+	return out
 }
 
 // eventTypeName returns the Go type name of a core.Event (e.g. "EventAgentEnd").

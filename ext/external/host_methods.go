@@ -66,6 +66,7 @@ func (h *Host) handleHostListTools(msg *Message) {
 			Name:        td.Name,
 			Description: td.Description,
 			Parameters:  td.Parameters,
+			Deferred:    td.Deferred,
 		}
 	}
 	h.respond(*msg.ID, HostListToolsResult{Tools: infos})
@@ -299,6 +300,20 @@ func (h *Host) handleHostConversationMessages(msg *Message) {
 		return
 	}
 	h.respond(*msg.ID, HostConversationMessagesResult{Messages: data})
+}
+
+func (h *Host) handleHostSetConversationMessages(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	var params HostSetConversationMessagesParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		h.respondError(*msg.ID, -32600, "invalid params: "+err.Error())
+		return
+	}
+	coreMsgs := compactWireToCore(params.Messages)
+	h.app.SetConversationMessages(coreMsgs)
+	h.respond(*msg.ID, map[string]string{})
 }
 
 func (h *Host) handleHostSessions(msg *Message) {

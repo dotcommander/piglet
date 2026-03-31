@@ -5,6 +5,9 @@ package external
 
 import "encoding/json"
 
+// InterruptBehaviorBlock is the wire value for InterruptBlock on external tools.
+const InterruptBehaviorBlock = "block"
+
 // ---------------------------------------------------------------------------
 // Wire format
 // ---------------------------------------------------------------------------
@@ -35,6 +38,7 @@ type RPCError struct {
 type InitializeParams struct {
 	ProtocolVersion string `json:"protocolVersion"`
 	CWD             string `json:"cwd"`
+	ConfigDir       string `json:"configDir,omitempty"`
 }
 
 // InitializeResult is the extension's response to initialize.
@@ -49,16 +53,19 @@ type InitializeResult struct {
 
 // RegisterToolParams registers a tool the LLM can call.
 type RegisterToolParams struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"` // JSON Schema
-	PromptHint  string `json:"promptHint,omitempty"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Parameters        any    `json:"parameters"` // JSON Schema
+	PromptHint        string `json:"promptHint,omitempty"`
+	Deferred          bool   `json:"deferred,omitempty"`
+	InterruptBehavior string `json:"interruptBehavior,omitempty"` // "cancel" (default) or "block"
 }
 
 // RegisterCommandParams registers a slash command.
 type RegisterCommandParams struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Immediate   bool   `json:"immediate,omitempty"`
 }
 
 // RegisterPromptSectionParams adds a section to the system prompt.
@@ -83,7 +90,7 @@ type RegisterEventHandlerParams struct {
 
 // RegisterShortcutParams registers a keyboard shortcut.
 type RegisterShortcutParams struct {
-	Key         string `json:"key"`         // e.g. "ctrl+g"
+	Key         string `json:"key"` // e.g. "ctrl+g"
 	Description string `json:"description"`
 }
 
@@ -297,6 +304,7 @@ type HostToolInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Parameters  any    `json:"parameters"` // JSON Schema
+	Deferred    bool   `json:"deferred,omitempty"`
 }
 
 // HostExecuteToolParams is sent by the extension to execute a host-registered tool.
@@ -370,7 +378,7 @@ type HostAuthGetKeyResult struct {
 
 // ChatMessage is a single message in a chat request.
 type ChatMessage struct {
-	Role    string `json:"role"`    // "user" or "assistant"
+	Role    string `json:"role"` // "user" or "assistant"
 	Content string `json:"content"`
 }
 
@@ -378,7 +386,7 @@ type ChatMessage struct {
 type HostChatParams struct {
 	System    string        `json:"system,omitempty"`
 	Messages  []ChatMessage `json:"messages"`
-	Model     string        `json:"model,omitempty"`     // "small", "default", or explicit model ID
+	Model     string        `json:"model,omitempty"` // "small", "default", or explicit model ID
 	MaxTokens int           `json:"maxTokens,omitempty"`
 }
 
@@ -402,8 +410,8 @@ type HostTokenUsage struct {
 type HostAgentRunParams struct {
 	System   string `json:"system,omitempty"`
 	Task     string `json:"task"`
-	Tools    string `json:"tools,omitempty"`    // "background_safe" (default) or "all"
-	Model    string `json:"model,omitempty"`    // "small", "default", or explicit model ID
+	Tools    string `json:"tools,omitempty"` // "background_safe" (default) or "all"
+	Model    string `json:"model,omitempty"` // "small", "default", or explicit model ID
 	MaxTurns int    `json:"maxTurns,omitempty"`
 }
 
@@ -421,6 +429,11 @@ type HostAgentRunResult struct {
 // HostConversationMessagesResult is the host's response with raw message JSON.
 type HostConversationMessagesResult struct {
 	Messages json.RawMessage `json:"messages"`
+}
+
+// HostSetConversationMessagesParams is the extension's request to replace messages.
+type HostSetConversationMessagesParams struct {
+	Messages []CompactMessage `json:"messages"`
 }
 
 // HostSessionsResult is the host's response with session summaries.
@@ -555,51 +568,52 @@ type ProviderToolCall struct {
 
 // Method names
 const (
-	MethodInitialize            = "initialize"
-	MethodShutdown              = "shutdown"
-	MethodCancelRequest         = "$/cancelRequest"
-	MethodRegisterTool          = "register/tool"
-	MethodRegisterCommand       = "register/command"
-	MethodRegisterPromptSection = "register/promptSection"
-	MethodRegisterInterceptor   = "register/interceptor"
-	MethodRegisterEventHandler  = "register/eventHandler"
-	MethodRegisterShortcut      = "register/shortcut"
-	MethodRegisterMessageHook   = "register/messageHook"
-	MethodRegisterCompactor     = "register/compactor"
-	MethodRegisterProvider      = "register/provider"
-	MethodProviderStream        = "provider/stream"
-	MethodProviderDelta         = "provider/delta"
-	MethodCompactExecute        = "compact/execute"
-	MethodToolExecute           = "tool/execute"
-	MethodCommandExecute        = "command/execute"
-	MethodInterceptorBefore     = "interceptor/before"
-	MethodInterceptorAfter      = "interceptor/after"
-	MethodEventDispatch         = "event/dispatch"
-	MethodShortcutHandle        = "shortcut/handle"
-	MethodMessageHookOnMessage  = "messageHook/onMessage"
-	MethodHostListTools              = "host/listTools"
-	MethodHostExecuteTool            = "host/executeTool"
-	MethodHostConfigGet              = "host/config.get"
-	MethodHostConfigReadExt          = "host/config.readExtension"
-	MethodHostAuthGetKey             = "host/auth.getKey"
-	MethodHostChat                   = "host/chat"
-	MethodHostAgentRun               = "host/agent.run"
-	MethodHostConversationMessages   = "host/conversationMessages"
-	MethodHostSessions               = "host/sessions"
-	MethodHostLoadSession            = "host/loadSession"
-	MethodHostForkSession            = "host/forkSession"
-	MethodHostSetSessionTitle        = "host/setSessionTitle"
-	MethodHostSyncModels             = "host/syncModels"
-	MethodHostRunBackground          = "host/runBackground"
-	MethodHostCancelBackground       = "host/cancelBackground"
-	MethodHostIsBackgroundRunning    = "host/isBackgroundRunning"
-	MethodHostExtInfos               = "host/extInfos"
-	MethodHostExtensionsDir          = "host/extensionsDir"
-	MethodHostUndoSnapshots          = "host/undoSnapshots"
-	MethodHostUndoRestore            = "host/undoRestore"
-	MethodNotify                     = "notify"
-	MethodLog                   = "log"
-	MethodShowMessage           = "showMessage"
-	MethodSendMessage           = "sendMessage"
-	MethodSteer                 = "steer"
+	MethodInitialize                  = "initialize"
+	MethodShutdown                    = "shutdown"
+	MethodCancelRequest               = "$/cancelRequest"
+	MethodRegisterTool                = "register/tool"
+	MethodRegisterCommand             = "register/command"
+	MethodRegisterPromptSection       = "register/promptSection"
+	MethodRegisterInterceptor         = "register/interceptor"
+	MethodRegisterEventHandler        = "register/eventHandler"
+	MethodRegisterShortcut            = "register/shortcut"
+	MethodRegisterMessageHook         = "register/messageHook"
+	MethodRegisterCompactor           = "register/compactor"
+	MethodRegisterProvider            = "register/provider"
+	MethodProviderStream              = "provider/stream"
+	MethodProviderDelta               = "provider/delta"
+	MethodCompactExecute              = "compact/execute"
+	MethodToolExecute                 = "tool/execute"
+	MethodCommandExecute              = "command/execute"
+	MethodInterceptorBefore           = "interceptor/before"
+	MethodInterceptorAfter            = "interceptor/after"
+	MethodEventDispatch               = "event/dispatch"
+	MethodShortcutHandle              = "shortcut/handle"
+	MethodMessageHookOnMessage        = "messageHook/onMessage"
+	MethodHostListTools               = "host/listTools"
+	MethodHostExecuteTool             = "host/executeTool"
+	MethodHostConfigGet               = "host/config.get"
+	MethodHostConfigReadExt           = "host/config.readExtension"
+	MethodHostAuthGetKey              = "host/auth.getKey"
+	MethodHostChat                    = "host/chat"
+	MethodHostAgentRun                = "host/agent.run"
+	MethodHostConversationMessages    = "host/conversationMessages"
+	MethodHostSetConversationMessages = "host/setConversationMessages"
+	MethodHostSessions                = "host/sessions"
+	MethodHostLoadSession             = "host/loadSession"
+	MethodHostForkSession             = "host/forkSession"
+	MethodHostSetSessionTitle         = "host/setSessionTitle"
+	MethodHostSyncModels              = "host/syncModels"
+	MethodHostRunBackground           = "host/runBackground"
+	MethodHostCancelBackground        = "host/cancelBackground"
+	MethodHostIsBackgroundRunning     = "host/isBackgroundRunning"
+	MethodHostExtInfos                = "host/extInfos"
+	MethodHostExtensionsDir           = "host/extensionsDir"
+	MethodHostUndoSnapshots           = "host/undoSnapshots"
+	MethodHostUndoRestore             = "host/undoRestore"
+	MethodNotify                      = "notify"
+	MethodLog                         = "log"
+	MethodShowMessage                 = "showMessage"
+	MethodSendMessage                 = "sendMessage"
+	MethodSteer                       = "steer"
 )

@@ -57,7 +57,11 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 	// Tool hints and guidelines (descriptions already sent via API tool schemas)
 	var toolNotes strings.Builder
+	hasDeferred := false
 	for _, td := range app.ToolDefs() {
+		if td.Deferred {
+			hasDeferred = true
+		}
 		if td.PromptHint == "" && len(td.PromptGuides) == 0 {
 			continue
 		}
@@ -78,6 +82,12 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 	if toolNotes.Len() > 0 {
 		b.WriteString("# Tool Usage Notes\n\n")
 		b.WriteString(toolNotes.String())
+	}
+
+	// Deferred tools note
+	if hasDeferred {
+		b.WriteString("## Deferred Tools\n\n")
+		b.WriteString("Some tools are listed by name only — their full parameter schemas are omitted to save context. Use the `tool_search` tool to look up a deferred tool's complete schema before calling it.\n\n")
 	}
 
 	return b.String()

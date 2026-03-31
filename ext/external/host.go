@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
@@ -22,11 +23,11 @@ type providerResolverFn func(model string) (core.StreamProvider, error)
 
 // Host manages a single external extension process.
 type Host struct {
-	manifest           *Manifest
-	cwd                string
-	app                *ext.App // nil until bridge wires it
-	resolveProviderFn  providerResolverFn
-	undoSnapshotsFn    func() (map[string][]byte, error)
+	manifest          *Manifest
+	cwd               string
+	app               *ext.App // nil until bridge wires it
+	resolveProviderFn providerResolverFn
+	undoSnapshotsFn   func() (map[string][]byte, error)
 
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
@@ -36,8 +37,8 @@ type Host struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	writeMu   sync.Mutex           // protects stdin writes
-	pendingMu sync.Mutex           // protects pending map
+	writeMu   sync.Mutex // protects stdin writes
+	pendingMu sync.Mutex // protects pending map
 	nextID    atomic.Int64
 	pending   map[int]chan *Message // pending request ID → response channel
 	closed    chan struct{}
@@ -104,7 +105,7 @@ func (h *Host) Start(ctx context.Context) error {
 
 	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
 	h.cmd.Env = append(os.Environ(), "PIGLET_FD=1")
-	h.cmd.Stdin = nil                                  // extensions don't read stdin
+	h.cmd.Stdin = nil                                            // extensions don't read stdin
 	h.cmd.Stdout = &logWriter{name: h.manifest.Name + "/stdout"} // capture stray prints
 	h.cmd.Stderr = &logWriter{name: h.manifest.Name}
 
@@ -132,9 +133,11 @@ func (h *Host) Start(ctx context.Context) error {
 	initCtx, initCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer initCancel()
 
+	extCfgDir, _ := config.ExtensionConfigDir(h.manifest.Name)
 	result, err := h.request(initCtx, MethodInitialize, InitializeParams{
 		ProtocolVersion: ProtocolVersion,
 		CWD:             h.cwd,
+		ConfigDir:       extCfgDir,
 	})
 	if err != nil {
 		h.Stop()

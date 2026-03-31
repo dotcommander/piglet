@@ -67,8 +67,13 @@ func (a *App) filterTools(pred func(*ToolDef) bool) []core.Tool {
 		if pred != nil && !pred(td) {
 			continue
 		}
+		schema := td.ToolSchema
+		if td.Deferred {
+			// Send name+description only; parameters are nil → minimal schema in API.
+			schema.Parameters = nil
+		}
 		tools = append(tools, core.Tool{
-			ToolSchema: td.ToolSchema,
+			ToolSchema: schema,
 			Execute:    a.wrapWithInterceptors(td.Name, td.Execute),
 		})
 	}
