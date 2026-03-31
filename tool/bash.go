@@ -39,8 +39,9 @@ func (c BashConfig) withDefaults() BashConfig {
 func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
-			Name:        "bash",
-			Description: "Execute a shell command. Returns stdout, stderr, and exit code.",
+			Name:              "bash",
+			Description:       "Execute a shell command. Returns stdout, stderr, and exit code.",
+			InterruptBehavior: core.InterruptBlock,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
