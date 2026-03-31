@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -220,6 +221,18 @@ func run() error {
 	return runPrint(ag, app, sess, userPrompt)
 }
 
+// resolveModelURL detects if the model query is a URL or :port shorthand.
+// Returns (baseURL, true) if it looks like a URL, ("", false) otherwise.
+func resolveModelURL(query string) (string, bool) {
+	if strings.HasPrefix(query, "http://") || strings.HasPrefix(query, "https://") {
+		return query, true
+	}
+	if strings.HasPrefix(query, ":") {
+		return "http://localhost" + query, true
+	}
+	return "", false
+}
+
 // resolveBaseURL converts the raw --base-url / --port flags into a single
 // base URL string, enforcing mutual exclusion.
 func resolveBaseURL(baseURL, port string) (string, error) {
@@ -281,10 +294,34 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 		return nil, nil, fmt.Errorf("no default model configured\nSet defaultModel in ~/.config/piglet/config.yaml or PIGLET_DEFAULT_MODEL env var\nRun: piglet init")
 	}
 
+	// URL-as-model: if modelQuery looks like a URL, extract it and probe for model name
+	if modelURL, isURL := resolveModelURL(modelQuery); isURL {
+		if baseURLOverride != "" {
+			return nil, nil, fmt.Errorf("cannot use both URL-as-model (%s) and --port/--base-url", modelQuery)
+		}
+		baseURLOverride = modelURL
+
+		// Probe the server to discover the model ID
+		result, err := provider.ProbeServer(modelURL)
+		if err != nil {
+			// Probe failed — use hostname as model name, continue anyway
+			u, _ := url.Parse(modelURL)
+			modelQuery = u.Hostname()
+			if modelQuery == "" {
+				modelQuery = "local"
+			}
+		} else {
+			modelQuery = result.ModelID
+			if modelQuery == "" {
+				modelQuery = "local"
+			}
+		}
+	}
+
 	model, ok := registry.Resolve(modelQuery)
 	if !ok {
 		if baseURLOverride == "" {
-			return nil, nil, fmt.Errorf("unknown model: %s", modelQuery)
+			return nil, nil, fmt.Errorf("unknown model: %s\nUse /model to list available models, or specify a URL: piglet --model http://localhost:8080", modelQuery)
 		}
 		// Ad-hoc model for local server — no models.yaml entry needed
 		model = core.Model{
@@ -296,6 +333,7 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 			ContextWindow: 32768,
 			MaxTokens:     8192,
 		}
+		registry.Register(model)
 	}
 	if baseURLOverride != "" {
 		model.BaseURL = baseURLOverride

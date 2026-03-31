@@ -246,6 +246,8 @@ func (p *OpenAI) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, e
 		req.Header.Set("Accept", "text/event-stream")
 		if apiKey := p.apiKeyFn(); apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+apiKey)
+		} else if isLoopbackURL(p.model.BaseURL) {
+			req.Header.Set("Authorization", "Bearer local")
 		}
 	})
 }
@@ -260,9 +262,9 @@ type oaiStreamEvent struct {
 }
 
 type oaiChoice struct {
-	Index        int              `json:"index"`
-	Delta        *oaiChoiceDelta  `json:"delta"`
-	FinishReason string           `json:"finish_reason"`
+	Index        int             `json:"index"`
+	Delta        *oaiChoiceDelta `json:"delta"`
+	FinishReason string          `json:"finish_reason"`
 }
 
 type oaiChoiceDelta struct {
