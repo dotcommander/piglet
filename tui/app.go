@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -41,6 +42,9 @@ type tickMsg struct{}
 
 // bgEventMsg wraps background agent events for the Bubble Tea message loop.
 type bgEventMsg struct{ event core.Event }
+
+// eventsBatchMsg carries a batch of agent events for efficient processing.
+type eventsBatchMsg struct{ events []core.Event }
 
 // asyncActionMsg carries the result of an ActionRunAsync completion.
 type asyncActionMsg struct{ action ext.Action }
@@ -85,6 +89,7 @@ type Model struct {
 	// State
 	messages        []core.Message
 	streaming       bool
+	inputQueue      []queuedItem
 	streamText      *strings.Builder
 	streamThink     *strings.Builder
 	activeTool      string
@@ -104,10 +109,11 @@ type Model struct {
 	eventCh <-chan core.Event
 
 	// Background agent state
-	bgAgent   *core.Agent
-	bgEventCh <-chan core.Event
-	bgTask    string
-	bgResult  *strings.Builder
+	bgAgent     *core.Agent
+	bgEventCh   <-chan core.Event
+	bgTask      string
+	bgResult    *strings.Builder
+	heldBackEnd bool // main agent ended but bg agent still running
 
 	// Streaming glamour cache
 	streamCache StreamCache
@@ -228,7 +234,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case eventMsg:
-		return m.handleEvent(msg.event)
+		return m.handleEvent(msg.event, false)
+
+	case eventsBatchMsg:
+		var cmds []tea.Cmd
+		var model tea.Model = m
+		for _, evt := range msg.events {
+			var cmd tea.Cmd
+			model, cmd = m.handleEvent(evt, true)
+			m = model.(Model)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		// Single pollEvents for the entire batch
+		if m.eventCh != nil && m.streaming {
+			cmds = append(cmds, pollEvents(m.eventCh))
+		}
+		if len(cmds) > 0 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
 
 	case tickMsg:
 		if m.streaming {
@@ -325,10 +351,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
 		if m.streaming && m.cfg.Agent != nil {
 			m.cfg.Agent.Stop()
-			m.streaming = false
-			m.spinnerVerb = ""
-			m.status.SetSpinnerView("")
-			m.streamCache = StreamCache{}
+			m.stopStreaming()
 			return m, nil, true
 		}
 		m.stopBgAgent()
@@ -405,6 +428,16 @@ func messageFilter(m tea.Model, msg tea.Msg) tea.Msg {
 // Internal
 // ---------------------------------------------------------------------------
 
+// stopStreaming resets all streaming-related state and transitions to idle.
+func (m *Model) stopStreaming() {
+	m.streaming = false
+	m.activeTool = ""
+	m.spinnerVerb = ""
+	m.status.SetSpinnerView("")
+	m.streamCache = StreamCache{}
+	m.refreshAndFollow()
+}
+
 func (m *Model) layout() {
 	statusH := 1
 	inputH := 5 // border + 3 lines + border
@@ -451,4 +484,53 @@ func notifyTick() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return notifyTickMsg{}
 	})
+}
+
+const maxQueueSize = 50
+
+// enqueueInput appends a message to the input queue and updates the status bar.
+func (m *Model) enqueueInput(content string, lowPriority bool) {
+	if len(m.inputQueue) >= maxQueueSize {
+		return
+	}
+	priority := priorityNext
+	if lowPriority {
+		priority = priorityLater
+	}
+	enqueueItem(&m.inputQueue, queuedItem{
+		content:  content,
+		priority: priority,
+	})
+	m.updateQueueStatus()
+}
+
+func (m *Model) updateQueueStatus() {
+	if count := len(m.inputQueue); count > 0 {
+		m.status.Set(ext.StatusKeyQueue, fmt.Sprintf("queued: %d", count))
+	} else {
+		m.status.Set(ext.StatusKeyQueue, "")
+	}
+}
+
+// drainInputQueue returns all queued items and clears the queue.
+func (m *Model) drainInputQueue() []queuedItem {
+	m.status.Set(ext.StatusKeyQueue, "")
+	return drainQueue(&m.inputQueue)
+}
+
+// drainPromptQueue returns only non-command items from the queue.
+func (m *Model) drainPromptQueue() []queuedItem {
+	var prompts []queuedItem
+	j := 0
+	for _, it := range m.inputQueue {
+		if it.priority == priorityLater {
+			m.inputQueue[j] = it
+			j++
+		} else {
+			prompts = append(prompts, it)
+		}
+	}
+	m.inputQueue = m.inputQueue[:j]
+	m.updateQueueStatus()
+	return prompts
 }

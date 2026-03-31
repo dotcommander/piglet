@@ -21,15 +21,21 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.input.PushHistory(text)
 	m.input.Reset()
 
+	if m.streaming {
+		if strings.HasPrefix(text, "/") {
+			name, args := parseSlashCommand(text)
+			if cmd := m.lookupCommand(name); cmd != nil && cmd.Immediate {
+				return m.runCommand(name, args)
+			}
+		}
+		m.enqueueInput(text, strings.HasPrefix(text, "/")) // lowPriority: defer slash commands until agent is idle
+		return m, m.notifyAndTick("Queued")
+	}
+
 	// Slash command?
 	if strings.HasPrefix(text, "/") {
-		parts := strings.Fields(text)
-		cmd := strings.TrimPrefix(parts[0], "/")
-		args := ""
-		if len(parts) > 1 {
-			args = strings.Join(parts[1:], " ")
-		}
-		return m.runCommand(cmd, args)
+		name, args := parseSlashCommand(text)
+		return m.runCommand(name, args)
 	}
 
 	// Agent not ready yet?
@@ -239,7 +245,8 @@ func (m *Model) applyAsyncAction(action ext.Action) tea.Cmd {
 		m.quitting = true
 	case ext.ActionSendMessage:
 		if m.streaming {
-			return nil // ignore if already streaming
+			m.enqueueInput(act.Content, false) // lowPriority: false — this is a direct message, send ASAP
+			return m.notifyAndTick("Queued")
 		}
 		content := act.Content
 		m.followOutput = true
@@ -264,6 +271,19 @@ func (m *Model) stopBgAgent() {
 	m.bgTask = ""
 	m.bgResult.Reset()
 	m.status.Set(ext.StatusKeyBg, "")
+}
+
+// lookupCommand finds a registered command by name. Returns nil if not found.
+func (m Model) lookupCommand(name string) *ext.Command {
+	if m.cfg.App == nil {
+		return nil
+	}
+	cmds := m.cfg.App.Commands()
+	cmd, ok := cmds[name]
+	if !ok {
+		return nil
+	}
+	return cmd
 }
 
 // runCommand dispatches a slash command to the registered handler.
@@ -358,4 +378,18 @@ func keyString(msg tea.KeyPressMsg) string {
 		return ""
 	}
 	return strings.Join(parts, "+")
+}
+
+// parseSlashCommand splits "/name arg1 arg2" into ("name", "arg1 arg2").
+func parseSlashCommand(text string) (name, args string) {
+	text = strings.TrimPrefix(text, "/")
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return "", ""
+	}
+	name = parts[0]
+	if len(parts) > 1 {
+		args = strings.Join(parts[1:], " ")
+	}
+	return
 }

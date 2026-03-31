@@ -12,7 +12,9 @@ import (
 	"github.com/dotcommander/piglet/ext"
 )
 
-func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
+// handleEvent processes a single agent event. When batch is true, the caller
+// is responsible for returning pollEvents — this function will not include it.
+func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 	// Dispatch event to registered handlers (event bus)
 	if m.cfg.App != nil {
 		m.cfg.App.DispatchEvent(m.ctx, evt)
@@ -44,6 +46,17 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.activeTool = ""
 		m.spinnerVerb = "thinking..."
 
+		if m.streaming && len(m.inputQueue) > 0 {
+			prompts := m.drainPromptQueue()
+			if len(prompts) > 0 {
+				content := mergePrompts(prompts)
+				m.cfg.Agent.Steer(&core.UserMessage{
+					Content:   content,
+					Timestamp: time.Now(),
+				})
+			}
+		}
+
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
 			m.appendMessage(e.Assistant)
@@ -61,12 +74,17 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		}
 
 	case core.EventAgentEnd:
-		m.streaming = false
-		m.activeTool = ""
-		m.spinnerVerb = ""
-		m.status.SetSpinnerView("")
-		m.streamCache = StreamCache{}
-		m.refreshAndFollow()
+		// If background agent is still running, hold back the idle transition
+		if m.bgAgent != nil && m.bgAgent.IsRunning() {
+			m.heldBackEnd = true
+			m.activeTool = ""
+			m.spinnerVerb = "waiting for background..."
+			m.refreshAndFollow()
+			break
+		}
+		m.stopStreaming()
+
+		return m.drainAndSubmitQueued()
 
 	case core.EventMaxTurns:
 		m.messages = append(m.messages, systemNote(fmt.Sprintf("Stopped: max turns reached (%d)", e.Max)))
@@ -83,15 +101,16 @@ func (m Model) handleEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Apply actions only after events that can produce them (not stream deltas)
+	// Apply actions after event types that may produce them
 	var actionCmd tea.Cmd
 	switch evt.(type) {
 	case core.EventAgentEnd, core.EventTurnEnd, core.EventToolEnd, core.EventCompact:
 		actionCmd = m.applyActions()
 	}
 
-	// Continue polling
-	if m.eventCh != nil && m.streaming {
+	// When called from a batch loop, the caller handles pollEvents.
+	// For non-batch calls (single eventMsg), return pollEvents here.
+	if !batch && m.eventCh != nil && m.streaming {
 		if actionCmd != nil {
 			return m, tea.Batch(pollEvents(m.eventCh), actionCmd)
 		}
@@ -113,14 +132,29 @@ func (m *Model) updateTokenStatus() {
 	m.status.Set(ext.StatusKeyTokens, m.styles.Muted.Render(formatTokens(m.totalIn, m.totalOut, m.totalCacheRead)))
 }
 
-// pollEvents reads the next event from the agent channel.
+// pollEvents reads the next event from the agent channel, then non-blocking
+// drains up to 9 more for batched processing.
 func pollEvents(ch <-chan core.Event) tea.Cmd {
 	return func() tea.Msg {
-		evt, ok := <-ch
+		// Blocking wait for first event
+		first, ok := <-ch
 		if !ok {
-			return eventMsg{event: core.EventAgentEnd{}}
+			return eventsBatchMsg{events: nil}
 		}
-		return eventMsg{event: evt}
+		events := []core.Event{first}
+		// Non-blocking drain of up to 9 more
+		for i := 0; i < 9; i++ {
+			select {
+			case evt, ok := <-ch:
+				if !ok {
+					return eventsBatchMsg{events: events}
+				}
+				events = append(events, evt)
+			default:
+				return eventsBatchMsg{events: events}
+			}
+		}
+		return eventsBatchMsg{events: events}
 	}
 }
 
@@ -128,6 +162,43 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
 	})
+}
+
+// drainAndSubmitQueued drains the input queue, executes queued slash commands,
+// merges queued prompts into one turn, and starts the agent loop.
+// Returns (model, cmd) — cmd is non-nil if a new agent loop was started.
+func (m *Model) drainAndSubmitQueued() (Model, tea.Cmd) {
+	if items := m.drainInputQueue(); len(items) > 0 {
+		cmds := drainCommands(slices.Clone(items))
+		prompts := drainPrompts(items)
+
+		// Execute queued slash commands (collect all, don't early-return)
+		var batchCmds []tea.Cmd
+		for _, c := range cmds {
+			name, args := parseSlashCommand(c.content)
+			model, cmd := m.runCommand(name, args)
+			*m = model.(Model)
+			if cmd != nil {
+				batchCmds = append(batchCmds, cmd)
+			}
+		}
+
+		// Merge and submit queued prompts as one turn
+		if len(prompts) > 0 {
+			content := mergePrompts(prompts)
+			userMsg := &core.UserMessage{Content: content, Timestamp: time.Now()}
+			m.appendMessage(userMsg)
+			m.refreshAndFollow()
+			actionCmd := m.applyActions()
+			return *m, tea.Batch(append(batchCmds, actionCmd, m.startAgentLoop(content))...)
+		}
+
+		// Commands only, no prompts — return batched commands
+		if len(batchCmds) > 0 {
+			return *m, tea.Batch(batchCmds...)
+		}
+	}
+	return *m, nil
 }
 
 func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
@@ -148,10 +219,18 @@ func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		m.bgTask = ""
 		m.bgResult.Reset()
 		m.status.Set(ext.StatusKeyBg, "")
+
+		// Complete held-back main agent end if needed
+		if m.heldBackEnd {
+			m.heldBackEnd = false
+			m.stopStreaming()
+
+			return m.drainAndSubmitQueued()
+		}
+
 		return m, nil
 	}
 
-	// Continue polling
 	if m.bgEventCh != nil {
 		return m, pollBgEvents(m.bgEventCh)
 	}
