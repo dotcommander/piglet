@@ -11,11 +11,13 @@ import (
 
 // ToolDef defines a tool the LLM can call.
 type ToolDef struct {
-	Name        string
-	Description string
-	Parameters  any // JSON Schema
-	PromptHint  string
-	Execute     func(ctx context.Context, args map[string]any) (*ToolResult, error)
+	Name              string
+	Description       string
+	Parameters        any // JSON Schema
+	PromptHint        string
+	Deferred          bool
+	InterruptBehavior string // "cancel" (default) or "block"
+	Execute           func(ctx context.Context, args map[string]any) (*ToolResult, error)
 }
 
 // ToolResult is the return value from a tool execution.
@@ -46,6 +48,7 @@ func ErrorResult(text string) *ToolResult {
 type CommandDef struct {
 	Name        string
 	Description string
+	Immediate   bool
 	Handler     func(ctx context.Context, args string) error
 }
 
@@ -130,7 +133,7 @@ func ActionSendMessage(content string) *Action {
 
 // ChatMessage is a single message in a chat request.
 type ChatMessage struct {
-	Role    string `json:"role"`    // "user" or "assistant"
+	Role    string `json:"role"` // "user" or "assistant"
 	Content string `json:"content"`
 }
 
@@ -175,6 +178,7 @@ type HostToolInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Parameters  any    `json:"parameters"`
+	Deferred    bool   `json:"deferred,omitempty"`
 }
 
 // HostTool is a thin tool wrapper that proxies execution to a host-registered tool.

@@ -72,6 +72,7 @@ interface ContentBlock {
 interface CommandDef {
   name: string;
   description: string;
+  immediate?: boolean;
   handler: (args: string) => Promise<void>;
 }
 
@@ -136,10 +137,14 @@ class PigletSDK {
   registerCommand(cmd: CommandDef): void {
     this.commands.set(cmd.name, cmd);
     if (this.ready) {
-      this.sendNotification(Method.RegisterCommand, {
+      const params: Record<string, any> = {
         name: cmd.name,
         description: cmd.description,
-      });
+      };
+      if (cmd.immediate) {
+        params.immediate = true;
+      }
+      this.sendNotification(Method.RegisterCommand, params);
     }
   }
 
@@ -233,10 +238,14 @@ class PigletSDK {
       });
     }
     for (const cmd of this.commands.values()) {
-      this.sendNotification(Method.RegisterCommand, {
+      const params: Record<string, any> = {
         name: cmd.name,
         description: cmd.description,
-      });
+      };
+      if (cmd.immediate) {
+        params.immediate = true;
+      }
+      this.sendNotification(Method.RegisterCommand, params);
     }
 
     // Respond to initialize

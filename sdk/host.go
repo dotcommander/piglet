@@ -48,7 +48,9 @@ func hostCallVoid(e *Extension, ctx context.Context, method string, params any) 
 // Keys use dot notation (e.g. "defaultModel", "agent.compactAt").
 // Returns a map of key → value. Missing keys are omitted.
 func (e *Extension) ConfigGet(ctx context.Context, keys ...string) (map[string]any, error) {
-	type resp struct{ Values map[string]any `json:"values"` }
+	type resp struct {
+		Values map[string]any `json:"values"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/config.get", map[string]any{"keys": keys})
 	if err != nil {
 		return nil, err
@@ -58,8 +60,14 @@ func (e *Extension) ConfigGet(ctx context.Context, keys ...string) (map[string]a
 
 // ConfigReadExtension reads an extension's markdown config file from
 // ~/.config/piglet/<name>.md via the host.
+//
+// Deprecated: Extensions should read their own config files directly from
+// e.ConfigDir() after initialization. This method is retained for backward
+// compatibility.
 func (e *Extension) ConfigReadExtension(ctx context.Context, name string) (string, error) {
-	type resp struct{ Content string `json:"content"` }
+	type resp struct {
+		Content string `json:"content"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/config.readExtension", map[string]any{"name": name})
 	if err != nil {
 		return "", err
@@ -69,7 +77,9 @@ func (e *Extension) ConfigReadExtension(ctx context.Context, name string) (strin
 
 // AuthGetKey retrieves an API key for a provider from the host's auth store.
 func (e *Extension) AuthGetKey(ctx context.Context, provider string) (string, error) {
-	type resp struct{ Key string `json:"key"` }
+	type resp struct {
+		Key string `json:"key"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/auth.getKey", map[string]any{"provider": provider})
 	if err != nil {
 		return "", err
@@ -102,7 +112,9 @@ func (e *Extension) RunAgent(ctx context.Context, req AgentRequest) (*AgentRespo
 // ListHostTools returns the schemas of tools available in the host.
 // Filter can be "all" (default) or "background_safe".
 func (e *Extension) ListHostTools(ctx context.Context, filter string) ([]HostToolInfo, error) {
-	type resp struct{ Tools []HostToolInfo `json:"tools"` }
+	type resp struct {
+		Tools []HostToolInfo `json:"tools"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/listTools", map[string]any{"filter": filter})
 	if err != nil {
 		return nil, err
@@ -153,7 +165,9 @@ func (e *Extension) HostTools(names ...string) []HostTool {
 
 // ConversationMessages returns the current conversation history as raw JSON.
 func (e *Extension) ConversationMessages(ctx context.Context) (json.RawMessage, error) {
-	type resp struct{ Messages json.RawMessage `json:"messages"` }
+	type resp struct {
+		Messages json.RawMessage `json:"messages"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/conversationMessages", struct{}{})
 	if err != nil {
 		return nil, err
@@ -161,9 +175,18 @@ func (e *Extension) ConversationMessages(ctx context.Context) (json.RawMessage, 
 	return r.Messages, nil
 }
 
+// SetConversationMessages replaces the conversation history with the given wire messages.
+func (e *Extension) SetConversationMessages(ctx context.Context, messages json.RawMessage) error {
+	return hostCallVoid(e, ctx, "host/setConversationMessages", map[string]any{
+		"messages": messages,
+	})
+}
+
 // Sessions returns all session summaries from the host.
 func (e *Extension) Sessions(ctx context.Context) ([]SessionInfo, error) {
-	type resp struct{ Sessions []SessionInfo `json:"sessions"` }
+	type resp struct {
+		Sessions []SessionInfo `json:"sessions"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/sessions", struct{}{})
 	if err != nil {
 		return nil, err
@@ -191,7 +214,9 @@ func (e *Extension) SetSessionTitle(ctx context.Context, title string) error {
 
 // SyncModels syncs the model catalog and returns the count of updated models.
 func (e *Extension) SyncModels(ctx context.Context) (int, error) {
-	type resp struct{ Updated int `json:"updated"` }
+	type resp struct {
+		Updated int `json:"updated"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/syncModels", struct{}{})
 	if err != nil {
 		return 0, err
@@ -211,7 +236,9 @@ func (e *Extension) CancelBackground(ctx context.Context) error {
 
 // IsBackgroundRunning returns whether a background agent is currently active.
 func (e *Extension) IsBackgroundRunning(ctx context.Context) (bool, error) {
-	type resp struct{ Running bool `json:"running"` }
+	type resp struct {
+		Running bool `json:"running"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/isBackgroundRunning", struct{}{})
 	if err != nil {
 		return false, err
@@ -221,7 +248,9 @@ func (e *Extension) IsBackgroundRunning(ctx context.Context) (bool, error) {
 
 // ExtInfos returns metadata about all loaded extensions.
 func (e *Extension) ExtInfos(ctx context.Context) ([]ExtInfo, error) {
-	type resp struct{ Extensions []ExtInfo `json:"extensions"` }
+	type resp struct {
+		Extensions []ExtInfo `json:"extensions"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/extInfos", struct{}{})
 	if err != nil {
 		return nil, err
@@ -231,7 +260,9 @@ func (e *Extension) ExtInfos(ctx context.Context) ([]ExtInfo, error) {
 
 // ExtensionsDir returns the path to the extensions directory.
 func (e *Extension) ExtensionsDir(ctx context.Context) (string, error) {
-	type resp struct{ Path string `json:"path"` }
+	type resp struct {
+		Path string `json:"path"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/extensionsDir", struct{}{})
 	if err != nil {
 		return "", err
@@ -241,7 +272,9 @@ func (e *Extension) ExtensionsDir(ctx context.Context) (string, error) {
 
 // UndoSnapshots returns a map of file path to snapshot size in bytes.
 func (e *Extension) UndoSnapshots(ctx context.Context) (map[string]int, error) {
-	type resp struct{ Snapshots map[string]int `json:"snapshots"` }
+	type resp struct {
+		Snapshots map[string]int `json:"snapshots"`
+	}
 	r, err := hostCall[resp](e, ctx, "host/undoSnapshots", struct{}{})
 	if err != nil {
 		return nil, err

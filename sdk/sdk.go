@@ -31,9 +31,10 @@ import (
 
 // Extension manages the JSON-RPC lifecycle for a piglet extension.
 type Extension struct {
-	name    string
-	version string
-	cwd     string
+	name      string
+	version   string
+	cwd       string
+	configDir string // extension's namespaced config dir (from host init)
 
 	tools          map[string]*ToolDef
 	commands       map[string]*CommandDef
@@ -147,6 +148,11 @@ func (e *Extension) OnInitAppend(fn func(e *Extension)) {
 
 // CWD returns the working directory provided by the host during initialization.
 func (e *Extension) CWD() string { return e.cwd }
+
+// ConfigDir returns the extension's namespaced config directory path,
+// as provided by the host during initialization.
+// Returns empty string if the host did not provide it.
+func (e *Extension) ConfigDir() string { return e.configDir }
 
 // Notify sends a notification to the host TUI.
 func (e *Extension) Notify(msg string) {
@@ -314,11 +320,13 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 	var params struct {
 		ProtocolVersion string `json:"protocolVersion"`
 		CWD             string `json:"cwd"`
+		ConfigDir       string `json:"configDir"`
 	}
 	if !e.unmarshalParams(msg, &params) {
 		return
 	}
 	e.cwd = params.CWD
+	e.configDir = params.ConfigDir
 
 	// Call OnInit hook (allows lazy registration that needs CWD)
 	if e.onInit != nil {
@@ -327,18 +335,27 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 
 	// Send all registrations
 	for _, t := range e.tools {
-		e.sendNotification("register/tool", map[string]any{
+		params := map[string]any{
 			"name":        t.Name,
 			"description": t.Description,
 			"parameters":  t.Parameters,
 			"promptHint":  t.PromptHint,
-		})
+			"deferred":    t.Deferred,
+		}
+		if t.InterruptBehavior != "" {
+			params["interruptBehavior"] = t.InterruptBehavior
+		}
+		e.sendNotification("register/tool", params)
 	}
 	for _, c := range e.commands {
-		e.sendNotification("register/command", map[string]any{
+		params := map[string]any{
 			"name":        c.Name,
 			"description": c.Description,
-		})
+		}
+		if c.Immediate {
+			params["immediate"] = true
+		}
+		e.sendNotification("register/command", params)
 	}
 	for _, s := range e.promptSections {
 		e.sendNotification("register/promptSection", map[string]any{
