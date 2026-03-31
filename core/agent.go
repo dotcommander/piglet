@@ -87,6 +87,10 @@ type Agent struct {
 	compacting bool
 	compactWg  sync.WaitGroup
 
+	// Compaction circuit breaker: stops auto-compact after 3 consecutive failures.
+	compactFailCount int
+	compactCooldown  time.Time
+
 	// Reusable timer for emit() to avoid per-call time.After leaks.
 	emitTimer *time.Timer
 }
@@ -109,11 +113,22 @@ func NewAgent(cfg AgentConfig) *Agent {
 
 // Start begins the agent loop with the given user prompt.
 // Returns a channel of events. The channel is closed when the agent finishes.
+// If the agent is already running, Start waits for it to finish before
+// launching a new run. If the context is cancelled while waiting, a closed
+// empty channel is returned.
 func (a *Agent) Start(ctx context.Context, prompt string) <-chan Event {
 	a.mu.Lock()
-	if a.running {
+	for a.running {
+		done := a.done
 		a.mu.Unlock()
-		return a.events
+		select {
+		case <-done:
+		case <-ctx.Done():
+			ch := make(chan Event)
+			close(ch)
+			return ch
+		}
+		a.mu.Lock()
 	}
 	a.running = true
 	ctx, a.cancel = context.WithCancel(ctx)
