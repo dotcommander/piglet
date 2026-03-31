@@ -191,6 +191,8 @@ API keys are stored as a JSON object mapping provider names to keys:
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `zai` | `ZAI_API_KEY` |
 
+Local model servers (LM Studio, Ollama, etc.) do not require API keys. Piglet auto-detects localhost URLs and sends a placeholder token. See [Local Models](models.md#local-models) for details.
+
 ## Sessions
 
 **Directory:** `~/.config/piglet/sessions/`

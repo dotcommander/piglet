@@ -9,6 +9,7 @@ func registerModel(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "model",
 		Description: "Switch model",
+		Immediate:   true,
 		Handler: func(args string, a *ext.App) error {
 			models := a.AvailableModels()
 			if len(models) == 0 {
@@ -75,10 +76,10 @@ func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 		label := s.Title
 		if label == "" {
 			if len(s.ID) > 8 {
-			label = s.ID[:8]
-		} else {
-			label = s.ID
-		}
+				label = s.ID[:8]
+			} else {
+				label = s.ID
+			}
 		}
 		desc := s.CreatedAt.Format("2006-01-02 15:04")
 		if s.CWD != "" {

@@ -19,6 +19,28 @@ To see all available models, run `/model` or press `Ctrl+P` inside a session.
 | Z.AI | GLM-5, GLM-4.7 | `ZAI_API_KEY` |
 | LM Studio | Any local model | — |
 
+## Local Models
+
+Connect to any OpenAI-compatible server with URL-as-model syntax — no YAML editing, no API keys:
+
+```bash
+# Shorthand for localhost
+piglet --model :8080
+
+# Full URL
+piglet --model http://192.168.1.5:8080
+```
+
+Piglet automatically:
+
+1. **Discovers the model** — probes `GET /v1/models` to find the running model's ID
+2. **Handles authentication** — sends `Bearer local` for localhost servers, no `LOCAL_API_KEY` needed
+3. **Registers the model** — appears in `/model` picker for mid-session switching
+
+Works with LM Studio, Ollama, vLLM, llama.cpp server, MLX, and any server implementing the OpenAI `/v1/chat/completions` streaming interface.
+
+If auto-discovery fails (server not running, non-standard API), piglet falls back to a generic "local" model with 32K context and 8K output tokens.
+
 ## Selecting a Model
 
 **At startup:**
@@ -29,6 +51,9 @@ PIGLET_DEFAULT_MODEL=claude-opus-4-6 piglet
 
 # Config file (~/.config/piglet/config.yaml)
 defaultModel: gemini-2.5-pro
+
+# Local model via URL
+piglet --model :8080
 ```
 
 **During a session:**
