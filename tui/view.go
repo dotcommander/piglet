@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -112,11 +113,22 @@ func (m *Model) renderMessages() string {
 	return b.String()
 }
 
+func fmtK(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fm", float64(n)/1_000_000)
+	case n >= 1000:
+		return strconv.Itoa(n/1000) + "k"
+	default:
+		return strconv.Itoa(n)
+	}
+}
+
 func formatTokens(in, out, cacheRead int) string {
 	if cacheRead > 0 {
-		return fmt.Sprintf("%dk/%dk (cached:%dk)", in/1000, out/1000, cacheRead/1000)
+		return fmt.Sprintf("%s/%s (cached:%s)", fmtK(in), fmtK(out), fmtK(cacheRead))
 	}
-	return fmt.Sprintf("%dk/%dk", in/1000, out/1000)
+	return fmt.Sprintf("%s/%s", fmtK(in), fmtK(out))
 }
 
 func formatCost(c float64) string {

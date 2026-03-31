@@ -146,17 +146,7 @@ func modelKey(provider, id string) string {
 // ---------------------------------------------------------------------------
 
 type modelsFile struct {
-	Models []modelEntry `yaml:"models"`
-}
-
-type modelEntry struct {
-	ID            string `yaml:"id"`
-	Name          string `yaml:"name"`
-	Provider      string `yaml:"provider"`
-	API           string `yaml:"api"`
-	BaseURL       string `yaml:"baseUrl"`
-	ContextWindow int    `yaml:"contextWindow"`
-	MaxTokens     int    `yaml:"maxTokens"`
+	Models []CuratedModel `yaml:"models"`
 }
 
 func (r *Registry) loadModels() (int, error) {
@@ -193,6 +183,7 @@ func (r *Registry) loadFromData(data []byte) (int, error) {
 			BaseURL:       e.BaseURL,
 			ContextWindow: e.ContextWindow,
 			MaxTokens:     e.MaxTokens,
+			Cost:          e.Cost,
 		}
 		built[modelKey(m.Provider, m.ID)] = m
 	}

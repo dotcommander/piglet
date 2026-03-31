@@ -299,6 +299,13 @@ func withLargeBuffer(initial, max int) scanOption {
 	}
 }
 
+func computeCost(u core.Usage, c core.ModelCost) float64 {
+	return (float64(u.InputTokens)*c.Input +
+		float64(u.OutputTokens)*c.Output +
+		float64(u.CacheReadTokens)*c.CacheRead +
+		float64(u.CacheWriteTokens)*c.CacheWrite) / 1_000_000
+}
+
 // runStream is the shared Stream() goroutine template.
 func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-chan core.StreamEvent {
 	ch := make(chan core.StreamEvent, 32)
@@ -355,6 +362,7 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 		msg.Model = m.ID
 		msg.Provider = m.Provider
 		msg.Timestamp = time.Now()
+		msg.Usage.Cost = computeCost(msg.Usage, m.Cost)
 
 		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
 	}()

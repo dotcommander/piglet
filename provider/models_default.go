@@ -1,67 +1,55 @@
 package provider
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/dotcommander/piglet/config"
+	"github.com/dotcommander/piglet/core"
+	"gopkg.in/yaml.v3"
 )
+
+//go:embed defaults/models.yaml
+var embeddedModelsYAML []byte
 
 // CuratedModel defines a model in the default catalog.
 // This is the single source of truth for the model list — used by both
 // the embedded fallback YAML and the modelsdev YAML generator.
 type CuratedModel struct {
-	ID            string
-	Name          string
-	Provider      string
-	API           string // "openai", "anthropic", "google"
-	BaseURL       string
-	ContextWindow       int  // default when API data unavailable
-	MaxTokens           int  // default when API data unavailable
-	MaxCompletionTokens bool // true: use max_completion_tokens instead of max_tokens (OpenAI newer models)
+	ID                  string         `yaml:"id"`
+	Name                string         `yaml:"name"`
+	Provider            string         `yaml:"provider"`
+	API                 string         `yaml:"api"` // "openai", "anthropic", "google"
+	BaseURL             string         `yaml:"baseUrl"`
+	ContextWindow       int            `yaml:"contextWindow"`       // default when API data unavailable
+	MaxTokens           int            `yaml:"maxTokens"`           // default when API data unavailable
+	MaxCompletionTokens bool           `yaml:"maxCompletionTokens"` // true: use max_completion_tokens instead of max_tokens (OpenAI newer models)
+	Cost                core.ModelCost `yaml:"cost"`
 }
+
+type curatedModelsFile struct {
+	Models []CuratedModel `yaml:"models"`
+}
+
+// parseCuratedModels parses the embedded YAML on first call and caches the result.
+var parseCuratedModels = sync.OnceValue(func() []CuratedModel {
+	var f curatedModelsFile
+	if err := yaml.Unmarshal(embeddedModelsYAML, &f); err != nil {
+		panic(fmt.Sprintf("provider: failed to parse embedded models.yaml: %v", err))
+	}
+	return f.Models
+})
 
 // CuratedModels returns the default model catalog.
-func CuratedModels() []CuratedModel { return curatedModels }
-
-var curatedModels = []CuratedModel{
-	// Anthropic
-	{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 1000000, MaxTokens: 128000},
-	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 1000000, MaxTokens: 64000},
-	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
-	{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", Provider: "anthropic", API: "anthropic", BaseURL: "https://api.anthropic.com", ContextWindow: 200000, MaxTokens: 64000},
-	// OpenAI
-	{ID: "gpt-5.4", Name: "GPT-5.4", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1050000, MaxTokens: 128000, MaxCompletionTokens: true},
-	{ID: "gpt-5", Name: "GPT-5", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 400000, MaxTokens: 128000, MaxCompletionTokens: true},
-	{ID: "o4-mini", Name: "o4-mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000, MaxCompletionTokens: true},
-	{ID: "gpt-4.1", Name: "GPT-4.1", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768, MaxCompletionTokens: true},
-	{ID: "gpt-4.1-mini", Name: "GPT-4.1 mini", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 1047576, MaxTokens: 32768, MaxCompletionTokens: true},
-	{ID: "gpt-4o", Name: "GPT-4o", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 128000, MaxTokens: 16384},
-	{ID: "o3", Name: "o3", Provider: "openai", API: "openai", BaseURL: "https://api.openai.com", ContextWindow: 200000, MaxTokens: 100000, MaxCompletionTokens: true},
-	// Google
-	{ID: "gemini-3.1-pro-preview", Name: "Gemini 3.1 Pro Preview", Provider: "google", API: "google", BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
-	{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Provider: "google", API: "google", BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
-	{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", Provider: "google", API: "google", BaseURL: "https://generativelanguage.googleapis.com", ContextWindow: 1048576, MaxTokens: 65536},
-	// xAI
-	{ID: "grok-3", Name: "Grok 3", Provider: "xai", API: "openai", BaseURL: "https://api.x.ai", ContextWindow: 131072, MaxTokens: 8192},
-	// Groq (free/fast inference)
-	{ID: "llama-3.3-70b-versatile", Name: "Llama 3.3 70B", Provider: "groq", API: "openai", BaseURL: "https://api.groq.com/openai", ContextWindow: 131072, MaxTokens: 32768},
-	// OpenRouter
-	{ID: "auto", Name: "Auto (best available)", Provider: "openrouter", API: "openai", BaseURL: "https://openrouter.ai/api", ContextWindow: 200000, MaxTokens: 16384},
-	// Z.AI (GLM models)
-	{ID: "glm-5", Name: "GLM-5", Provider: "zai", API: "openai", BaseURL: "https://api.z.ai/api/coding/paas/v4", ContextWindow: 128000, MaxTokens: 8192},
-	{ID: "glm-4.7", Name: "GLM-4.7", Provider: "zai", API: "openai", BaseURL: "https://api.z.ai/api/coding/paas/v4", ContextWindow: 128000, MaxTokens: 8192},
-	{ID: "glm-5-turbo", Name: "GLM-5 Turbo", Provider: "zai", API: "openai", BaseURL: "https://api.z.ai/api/coding/paas/v4", ContextWindow: 128000, MaxTokens: 8192},
-	// LM Studio (local)
-	{ID: "local-model", Name: "Local Model", Provider: "lmstudio", API: "openai", BaseURL: "http://localhost:1234", ContextWindow: 32000, MaxTokens: 32000},
-}
+func CuratedModels() []CuratedModel { return parseCuratedModels() }
 
 // DefaultModelsYAML returns the default models catalog as YAML.
 // The result is cached since the curated list is immutable.
 var defaultModelsYAML = sync.OnceValue(func() string {
-	return GenerateModelsYAML(curatedModels, nil)
+	return GenerateModelsYAML(parseCuratedModels(), nil)
 })
 
 func DefaultModelsYAML() string {
@@ -107,6 +95,17 @@ func GenerateModelsYAML(models []CuratedModel, overrides map[string]CuratedModel
 		fmt.Fprintf(&b, "    baseUrl: %s\n", cm.BaseURL)
 		fmt.Fprintf(&b, "    contextWindow: %d\n", contextWindow)
 		fmt.Fprintf(&b, "    maxTokens: %d\n", maxTokens)
+		if cm.Cost.Input > 0 || cm.Cost.Output > 0 {
+			b.WriteString("    cost:\n")
+			fmt.Fprintf(&b, "      input: %g\n", cm.Cost.Input)
+			fmt.Fprintf(&b, "      output: %g\n", cm.Cost.Output)
+			if cm.Cost.CacheRead > 0 {
+				fmt.Fprintf(&b, "      cacheRead: %g\n", cm.Cost.CacheRead)
+			}
+			if cm.Cost.CacheWrite > 0 {
+				fmt.Fprintf(&b, "      cacheWrite: %g\n", cm.Cost.CacheWrite)
+			}
+		}
 		b.WriteString("\n")
 	}
 

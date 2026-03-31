@@ -98,8 +98,8 @@ func (m Model) DisplayName() string {
 
 // ModelCost is per-million-token pricing.
 type ModelCost struct {
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cacheRead"`
-	CacheWrite float64 `json:"cacheWrite"`
+	Input      float64 `json:"input" yaml:"input"`
+	Output     float64 `json:"output" yaml:"output"`
+	CacheRead  float64 `json:"cacheRead" yaml:"cacheRead"`
+	CacheWrite float64 `json:"cacheWrite" yaml:"cacheWrite"`
 }
