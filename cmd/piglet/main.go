@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -87,7 +88,7 @@ func writeModelsYAML(path string) error {
 func run() error {
 	// Handle flags before anything else
 	var debugFlag bool
-	var modelFlag, baseURLFlag string
+	var modelFlag, baseURLFlag, portFlag string
 	var promptArgs []string
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -112,6 +113,12 @@ func run() error {
 			}
 			i++
 			baseURLFlag = args[i]
+		case "--port":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--port requires a value")
+			}
+			i++
+			portFlag = args[i]
 		default:
 			promptArgs = append(promptArgs, args[i])
 		}
@@ -165,7 +172,11 @@ func run() error {
 	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
 
-	rt, debugCleanup, err := loadRuntime(debugFlag, modelFlag, baseURLFlag)
+	resolvedBaseURL, err := resolveBaseURL(baseURLFlag, portFlag)
+	if err != nil {
+		return err
+	}
+	rt, debugCleanup, err := loadRuntime(debugFlag, modelFlag, resolvedBaseURL)
 	if err != nil {
 		return err
 	}
@@ -207,6 +218,22 @@ func run() error {
 	)
 
 	return runPrint(ag, app, sess, userPrompt)
+}
+
+// resolveBaseURL converts the raw --base-url / --port flags into a single
+// base URL string, enforcing mutual exclusion.
+func resolveBaseURL(baseURL, port string) (string, error) {
+	if baseURL != "" && port != "" {
+		return "", fmt.Errorf("--port and --base-url are mutually exclusive")
+	}
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return "", fmt.Errorf("--port must be a valid port number (1-65535): %s", port)
+		}
+		return fmt.Sprintf("http://localhost:%d", n), nil
+	}
+	return baseURL, nil
 }
 
 // loadRuntime performs first-run setup, loads config/auth, resolves the model,
@@ -256,7 +283,19 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 
 	model, ok := registry.Resolve(modelQuery)
 	if !ok {
-		return nil, nil, fmt.Errorf("unknown model: %s", modelQuery)
+		if baseURLOverride == "" {
+			return nil, nil, fmt.Errorf("unknown model: %s", modelQuery)
+		}
+		// Ad-hoc model for local server — no models.yaml entry needed
+		model = core.Model{
+			ID:            modelQuery,
+			Name:          modelQuery,
+			API:           core.APIOpenAI,
+			Provider:      "local",
+			BaseURL:       baseURLOverride,
+			ContextWindow: 32768,
+			MaxTokens:     8192,
+		}
 	}
 	if baseURLOverride != "" {
 		model.BaseURL = baseURLOverride
@@ -606,6 +645,7 @@ Usage:
   piglet --debug          Log all request/response payloads
   piglet --model <id>     Override model (takes precedence over env/config)
   piglet --base-url <url> Override model base URL
+  piglet --port <n>       Use localhost:<n> as base URL (implies openai API)
 
 Interactive commands:
   /help                   List all commands

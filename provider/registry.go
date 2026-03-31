@@ -55,19 +55,34 @@ func (r *Registry) Resolve(query string) (core.Model, bool) {
 		return m, true
 	}
 
-	// Search by model ID across all providers
+	// Single pass: collect exact-ID, prefix, and substring candidates simultaneously,
+	// then return the highest-priority match. m.ID is lowercased once per model.
 	lower := strings.ToLower(query)
+	var exactID, prefix, substring core.Model
+	hasExact, hasPrefix, hasSub := false, false, false
 	for _, m := range r.models {
-		if strings.ToLower(m.ID) == lower {
-			return m, true
+		ml := strings.ToLower(m.ID)
+		if ml == lower {
+			exactID, hasExact = m, true
+			break // exact ID match wins — no need to scan further
+		}
+		if strings.HasPrefix(ml, lower) && (!hasPrefix || len(m.ID) < len(prefix.ID)) {
+			prefix, hasPrefix = m, true
+			continue
+		}
+		if !hasSub || len(m.ID) < len(substring.ID) {
+			if strings.Contains(ml, lower) || strings.Contains(strings.ToLower(m.Name), lower) {
+				substring, hasSub = m, true
+			}
 		}
 	}
-
-	// Prefix match
-	for _, m := range r.models {
-		if strings.HasPrefix(strings.ToLower(m.ID), lower) {
-			return m, true
-		}
+	switch {
+	case hasExact:
+		return exactID, true
+	case hasPrefix:
+		return prefix, true
+	case hasSub:
+		return substring, true
 	}
 
 	return core.Model{}, false
@@ -206,4 +221,3 @@ func parseAPI(s string) core.API {
 		return core.APIOpenAI
 	}
 }
-
