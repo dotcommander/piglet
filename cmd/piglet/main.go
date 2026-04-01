@@ -91,7 +91,7 @@ func writeModelsYAML(path string) error {
 func run() error {
 	// Handle flags before anything else
 	var debugFlag, jsonFlag bool
-	var modelFlag, baseURLFlag, portFlag string
+	var modelFlag, baseURLFlag, portFlag, resultFlag string
 	var promptArgs []string
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -124,6 +124,12 @@ func run() error {
 			}
 			i++
 			portFlag = args[i]
+		case "--result":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--result requires a file path")
+			}
+			i++
+			resultFlag = args[i]
 		default:
 			promptArgs = append(promptArgs, args[i])
 		}
@@ -225,7 +231,7 @@ func run() error {
 	if jsonFlag {
 		return runJSON(ctx, ag, app, sess, userPrompt)
 	}
-	return runPrint(ctx, ag, app, sess, userPrompt)
+	return runPrint(ctx, ag, app, sess, userPrompt, resultFlag)
 }
 
 // resolveModelURL detects if the model query is a URL or :port shorthand.
@@ -592,7 +598,7 @@ func drainActions(app *ext.App, sess *session.Session) {
 	}
 }
 
-func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
+func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Session, userPrompt, resultPath string) error {
 	// Run message hooks for ephemeral turn context
 	if injections, err := app.RunMessageHooks(ctx, userPrompt); err != nil {
 		slog.Warn("message hook failed", "err", err)
@@ -608,6 +614,7 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 	ch := ag.Start(ctx, userPrompt)
 
 	var agentErr error
+	var resultBuf strings.Builder
 
 	for evt := range ch {
 		app.DispatchEvent(ctx, evt)
@@ -615,6 +622,9 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 		switch e := evt.(type) {
 		case core.EventStreamDelta:
 			fmt.Print(e.Delta)
+			if resultPath != "" {
+				resultBuf.WriteString(e.Delta)
+			}
 		case core.EventToolStart:
 			fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", e.ToolName)
 		case core.EventToolEnd:
@@ -658,6 +668,13 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 					_ = sess.Append(tr)
 				}
 			}
+		}
+	}
+
+	// Write result file for tmux agent protocol
+	if resultPath != "" {
+		if err := os.WriteFile(resultPath, []byte(resultBuf.String()), 0600); err != nil {
+			slog.Warn("write result file", "path", resultPath, "error", err)
 		}
 	}
 
@@ -767,6 +784,7 @@ Usage:
   piglet --version        Show version
   piglet --debug          Log all request/response payloads
   piglet --json           NDJSON event output (single-shot mode only)
+  piglet --result <path>  Write final text output to file (for agent protocol)
   piglet --model <id>     Override model (takes precedence over env/config)
   piglet --base-url <url> Override model base URL
   piglet --port <n>       Use localhost:<n> as base URL (implies openai API)
