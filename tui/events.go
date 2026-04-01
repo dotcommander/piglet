@@ -50,6 +50,7 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 			prompts := m.drainPromptQueue()
 			if len(prompts) > 0 {
 				content := mergePrompts(prompts)
+				m.followOutput = true
 				m.cfg.Agent.Steer(&core.UserMessage{
 					Content:   content,
 					Timestamp: time.Now(),
@@ -172,12 +173,13 @@ func tickCmd() tea.Cmd {
 // merges queued prompts into one turn, and starts the agent loop.
 // Returns (model, cmd) — cmd is non-nil if a new agent loop was started.
 func (m *Model) drainAndSubmitQueued() (Model, tea.Cmd) {
+	var batchCmds []tea.Cmd
+
 	if items := m.drainInputQueue(); len(items) > 0 {
 		cmds := drainCommands(slices.Clone(items))
 		prompts := drainPrompts(items)
 
 		// Execute queued slash commands (collect all, don't early-return)
-		var batchCmds []tea.Cmd
 		for _, c := range cmds {
 			name, args := parseSlashCommand(c.content)
 			model, cmd := m.runCommand(name, args)
@@ -192,15 +194,21 @@ func (m *Model) drainAndSubmitQueued() (Model, tea.Cmd) {
 			content := mergePrompts(prompts)
 			userMsg := &core.UserMessage{Content: content, Timestamp: time.Now()}
 			m.appendMessage(userMsg)
+			m.followOutput = true
 			m.refreshAndFollow()
 			actionCmd := m.applyActions()
 			return *m, tea.Batch(append(batchCmds, actionCmd, m.startAgentLoop(content))...)
 		}
+	}
 
-		// Commands only, no prompts — return batched commands
-		if len(batchCmds) > 0 {
-			return *m, tea.Batch(batchCmds...)
-		}
+	// Apply pending actions even when no prompts were queued (EventAgentEnd
+	// early-returns through this function, skipping the post-switch applyActions
+	// block in handleEvent — extensions may have queued actions during dispatch).
+	if actionCmd := m.applyActions(); actionCmd != nil {
+		batchCmds = append(batchCmds, actionCmd)
+	}
+	if len(batchCmds) > 0 {
+		return *m, tea.Batch(batchCmds...)
 	}
 	return *m, nil
 }
