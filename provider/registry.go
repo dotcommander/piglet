@@ -190,9 +190,7 @@ func (r *Registry) loadFromData(data []byte) (int, error) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for k, m := range built {
-		r.models[k] = m
-	}
+	r.models = built
 
 	return len(file.Models), nil
 }
