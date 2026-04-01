@@ -57,13 +57,17 @@ func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 
 			var matches []string
 			matchCount := 0
+			var walkErr error
 
 			if !info.IsDir() {
 				matches = grepFile(re, searchPath, "", limit, &matchCount)
 			} else {
-				_ = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
-					if err != nil || d.IsDir() {
-						if d != nil && d.IsDir() && shouldSkipDir(d.Name()) {
+				walkErr = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+					if err != nil {
+						return nil
+					}
+					if d.IsDir() {
+						if shouldSkipDir(d.Name()) {
 							return filepath.SkipDir
 						}
 						return nil
@@ -85,6 +89,9 @@ func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 			}
 
 			if len(matches) == 0 {
+				if walkErr != nil {
+					return textResult(fmt.Sprintf("error: %v", walkErr)), nil
+				}
 				return textResult("no matches found"), nil
 			}
 

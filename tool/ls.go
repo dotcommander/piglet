@@ -54,7 +54,7 @@ func lsTool(app *ext.App) *ext.ToolDef {
 				count++
 			}
 
-			if count == 0 && count < limit {
+			if count == 0 {
 				return textResult("(empty directory)"), nil
 			}
 			return textResult(b.String()), nil

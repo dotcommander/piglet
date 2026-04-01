@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -470,7 +471,9 @@ func (m *Model) showNotification(text string) {
 func (m *Model) appendMessage(msg core.Message) {
 	m.messages = append(m.messages, msg)
 	if m.cfg.Session != nil {
-		_ = m.cfg.Session.Append(msg)
+		if err := m.cfg.Session.Append(msg); err != nil {
+			slog.Warn("session: failed to persist message", "error", err)
+		}
 	}
 }
 

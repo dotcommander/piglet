@@ -46,7 +46,10 @@ func findTool(app *ext.App) *ext.ToolDef {
 			}
 
 			var results []string
-			_ = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+			walkErr := filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+				if err != nil && path == searchPath {
+					return err // propagate root-level errors (e.g., permission denied)
+				}
 				if err != nil {
 					return nil
 				}
@@ -69,6 +72,9 @@ func findTool(app *ext.App) *ext.ToolDef {
 			})
 
 			if len(results) == 0 {
+				if walkErr != nil {
+					return textResult(fmt.Sprintf("error: %v", walkErr)), nil
+				}
 				return textResult("no files found matching pattern"), nil
 			}
 
