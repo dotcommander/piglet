@@ -358,11 +358,15 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 		e.sendNotification("register/command", params)
 	}
 	for _, s := range e.promptSections {
-		e.sendNotification("register/promptSection", map[string]any{
+		params := map[string]any{
 			"title":   s.Title,
 			"content": s.Content,
 			"order":   s.Order,
-		})
+		}
+		if s.TokenHint > 0 {
+			params["tokenHint"] = s.TokenHint
+		}
+		e.sendNotification("register/promptSection", params)
 	}
 	for _, i := range e.interceptors {
 		e.sendNotification("register/interceptor", map[string]any{

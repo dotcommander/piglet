@@ -70,9 +70,10 @@ type RegisterCommandParams struct {
 
 // RegisterPromptSectionParams adds a section to the system prompt.
 type RegisterPromptSectionParams struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Order   int    `json:"order,omitempty"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	Order     int    `json:"order,omitempty"`
+	TokenHint int    `json:"tokenHint,omitzero"`
 }
 
 // RegisterInterceptorParams registers a before/after tool interceptor.

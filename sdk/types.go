@@ -54,9 +54,10 @@ type CommandDef struct {
 
 // PromptSectionDef defines a system prompt section.
 type PromptSectionDef struct {
-	Title   string
-	Content string
-	Order   int
+	Title     string
+	Content   string
+	Order     int
+	TokenHint int // estimated token count; 0 = unknown
 }
 
 // InterceptorDef defines a before/after tool interceptor.

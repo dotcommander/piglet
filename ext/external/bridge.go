@@ -141,9 +141,10 @@ func bridge(app *ext.App, h *Host) {
 	// Register prompt sections
 	for _, ps := range h.PromptSections() {
 		app.RegisterPromptSection(ext.PromptSection{
-			Title:   ps.Title,
-			Content: ps.Content,
-			Order:   ps.Order,
+			Title:     ps.Title,
+			Content:   ps.Content,
+			Order:     ps.Order,
+			TokenHint: ps.TokenHint,
 		})
 		info.PromptSections = append(info.PromptSections, ps.Title)
 	}

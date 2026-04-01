@@ -135,13 +135,14 @@ type StatusSection struct {
 
 // Built-in status section keys.
 const (
-	StatusKeyApp    = "app"
-	StatusKeyModel  = "model"
-	StatusKeyMouse  = "mouse"
-	StatusKeyBg     = "bg"
-	StatusKeyTokens = "tokens"
-	StatusKeyCost   = "cost"
-	StatusKeyQueue  = "queue"
+	StatusKeyApp          = "app"
+	StatusKeyModel        = "model"
+	StatusKeyMouse        = "mouse"
+	StatusKeyBg           = "bg"
+	StatusKeyTokens       = "tokens"
+	StatusKeyCost         = "cost"
+	StatusKeyQueue        = "queue"
+	StatusKeyPromptBudget = "prompt-budget"
 )
 
 // ---------------------------------------------------------------------------
@@ -202,9 +203,10 @@ type EventHandler struct {
 // PromptSection is a block of text injected into the system prompt.
 // Extensions use this to add instructions, guidelines, or context.
 type PromptSection struct {
-	Title   string // section heading (e.g. "Code Style")
-	Content string // markdown content
-	Order   int    // lower = earlier in prompt; default 0
+	Title     string // section heading (e.g. "Code Style")
+	Content   string // markdown content
+	Order     int    // lower = earlier in prompt; default 0
+	TokenHint int    // estimated token count; 0 = unknown
 }
 
 // ---------------------------------------------------------------------------
