@@ -37,7 +37,17 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerBg(app)
 	registerBgCancel(app)
 	registerUpdate(app, version)
-	registerUpgrade(app, version)
+	app.RegisterCommand(&ext.Command{
+		Name:        "upgrade",
+		Description: "Alias for /update",
+		Handler: func(args string, a *ext.App) error {
+			if cmd, ok := a.Commands()["update"]; ok {
+				return cmd.Handler(args, a)
+			}
+			a.ShowMessage("update command not found")
+			return nil
+		},
+	})
 	registerQuit(app)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
@@ -114,7 +124,10 @@ func registerClear(app *ext.App) {
 		Name:        "clear",
 		Description: "Clear conversation",
 		Handler: func(args string, a *ext.App) error {
-			// TUI handles clearing messages directly; this is a no-op marker
+			// Clear agent history. TUI clears its own display state (m.messages,
+			// m.msgCache) in runCommand before this handler runs — those fields are
+			// TUI-internal and have no corresponding ext.Action type.
+			a.SetConversationMessages(nil)
 			return nil
 		},
 	})

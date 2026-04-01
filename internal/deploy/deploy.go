@@ -1,4 +1,4 @@
-package command
+package deploy
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dotcommander/piglet/command"
 )
 
 const sdkModule = "github.com/dotcommander/piglet/sdk"
@@ -22,7 +24,7 @@ func RunDeploy(w io.Writer, dryRun, skipSDK bool) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	extDir, err := ResolveGoWorkExtPath()
+	extDir, err := command.ResolveGoWorkExtPath()
 	if err != nil {
 		return fmt.Errorf("resolve extensions path: %w", err)
 	}

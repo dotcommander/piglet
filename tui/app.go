@@ -116,7 +116,7 @@ type Model struct {
 	heldBackEnd bool // main agent ended but bg agent still running
 
 	// Streaming glamour cache
-	streamCache StreamCache
+	streamCache streamCache
 
 	// Toast notification (transient, not in conversation history)
 	notification      string
@@ -434,7 +434,7 @@ func (m *Model) stopStreaming() {
 	m.activeTool = ""
 	m.spinnerVerb = ""
 	m.status.SetSpinnerView("")
-	m.streamCache = StreamCache{}
+	m.streamCache = streamCache{}
 	m.refreshAndFollow()
 }
 

@@ -107,7 +107,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 		return fmt.Errorf("extensions dir: %w", err)
 	}
 
-	extensions := settings.ExtInstall.ResolveOfficial()
+	extensions := settings.ExtInstall.Official
 
 	var srcDir string
 	var remoteHash string
@@ -120,7 +120,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 			return nil
 		}
 
-		repoURL := settings.ExtInstall.ResolveRepoURL()
+		repoURL := settings.ExtInstall.RepoURL
 
 		// Check remote HEAD and compare with cached hash.
 		if out, err := exec.Command("git", "ls-remote", repoURL, "HEAD").Output(); err == nil {
@@ -129,7 +129,6 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 				remoteHash = fields[0]
 				if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
 					fmt.Fprintln(w, "Extensions already up to date.")
-					installCLIsIfNeeded(w, extDir)
 					return nil
 				}
 			}
@@ -264,13 +263,6 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 	}
 
 	return nil
-}
-
-// installCLIsIfNeeded is a no-op placeholder used when extensions are up-to-date
-// but CLIs might need rebuilding. Currently skips — CLIs are tied to the same commit.
-func installCLIsIfNeeded(w io.Writer, extDir string) {
-	// CLIs ship from the same repo as extensions. If the commit hash hasn't
-	// changed, CLIs are also up to date. Nothing to do.
 }
 
 // installCLIs discovers and builds standalone CLI tools from cmd/*/ in the

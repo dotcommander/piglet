@@ -23,6 +23,7 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
+	"github.com/dotcommander/piglet/internal/deploy"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -127,7 +128,7 @@ func run() error {
 
 	// Subcommands (after flag parsing so --debug init works)
 	if len(promptArgs) == 1 && promptArgs[0] == "init" {
-		return config.RunSetup(writeModelsYAML)
+		return config.RunSetup(writeModelsYAML, provider.SetupDefaults())
 	}
 	if len(promptArgs) >= 1 && (promptArgs[0] == "update" || promptArgs[0] == "upgrade") {
 		settings, _ := config.Load()
@@ -166,7 +167,7 @@ func run() error {
 				return fmt.Errorf("unknown flag for deploy: %s", promptArgs[i])
 			}
 		}
-		return command.RunDeploy(os.Stderr, dryRun, skipSDK)
+		return deploy.RunDeploy(os.Stderr, dryRun, skipSDK)
 	}
 
 	// Determine prompt: args after flags or stdin
@@ -253,7 +254,7 @@ func resolveBaseURL(baseURL, port string) (string, error) {
 // creates the provider, and sets up debug logging.
 func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtime, func(), error) {
 	if config.NeedsSetup() {
-		if err := config.RunSetup(writeModelsYAML); err != nil {
+		if err := config.RunSetup(writeModelsYAML, provider.SetupDefaults()); err != nil {
 			return nil, nil, fmt.Errorf("setup: %w", err)
 		}
 	}
@@ -330,8 +331,8 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 			API:           core.APIOpenAI,
 			Provider:      "local",
 			BaseURL:       baseURLOverride,
-			ContextWindow: 32768,
-			MaxTokens:     8192,
+			ContextWindow: config.IntOr(settings.LocalDefaults.ContextWindow, provider.LocalDefaultContextWindow()),
+			MaxTokens:     config.IntOr(settings.LocalDefaults.MaxTokens, provider.LocalDefaultMaxTokens()),
 		}
 		registry.Register(model)
 	}
@@ -380,10 +381,8 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 	return rt, cleanup, nil
 }
 
-// setupApp creates the extension app, registers tools/commands/extensions,
-// builds the system prompt, and returns the app with cleanup.
-func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, string, func()) {
-	app := ext.NewApp(rt.cwd)
+// registerBuiltins registers all compiled-in tools, commands, and prompt sections.
+func registerBuiltins(app *ext.App, rt *runtime) {
 	tool.RegisterBuiltins(app, tool.BashConfig{
 		DefaultTimeout: rt.settings.Bash.DefaultTimeout,
 		MaxTimeout:     rt.settings.Bash.MaxTimeout,
@@ -401,8 +400,26 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 		Tools:    app.Tools(),
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
-
 	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
+}
+
+// buildSystemPrompt assembles the system prompt, resolving deferred tools note.
+func buildSystemPrompt(app *ext.App, rt *runtime) string {
+	deferredNote := rt.settings.DeferredToolsNote
+	if deferredNote == "" {
+		deferredNote = provider.DeferredToolsNote()
+	}
+	return prompt.Build(app, rt.settings.SystemPrompt, prompt.BuildOptions{
+		OrderOverrides:    rt.settings.PromptOrder,
+		DeferredToolsNote: deferredNote,
+	})
+}
+
+// setupApp creates the extension app, registers tools/commands/extensions,
+// builds the system prompt, and returns the app with cleanup.
+func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, string, func()) {
+	app := ext.NewApp(rt.cwd)
+	registerBuiltins(app, rt)
 
 	loaded, extCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
 
@@ -420,10 +437,7 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 
 	prompt.RegisterSelfKnowledge(app)
 
-	basePrompt := rt.settings.SystemPrompt
-	system := prompt.Build(app, basePrompt, prompt.BuildOptions{
-		OrderOverrides: rt.settings.PromptOrder,
-	})
+	system := buildSystemPrompt(app, rt)
 
 	return app, system, extCleanup
 }
@@ -448,7 +462,7 @@ func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
 	}
 	if c := app.Compactor(); c != nil {
 		agCfg.CompactAt = c.Threshold
-		agCfg.OnCompact = c.Compact
+		agCfg.OnCompact = ext.CompactWithCircuitBreaker(c.Compact, 3, 5*time.Minute)
 	}
 	return core.NewAgent(agCfg)
 }
@@ -458,24 +472,7 @@ func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
 func runInteractive(ctx context.Context, rt *runtime) error {
 	// --- Sync phase: register compiled-in extensions only (fast, <10ms) ---
 	app := ext.NewApp(rt.cwd)
-	tool.RegisterBuiltins(app, tool.BashConfig{
-		DefaultTimeout: rt.settings.Bash.DefaultTimeout,
-		MaxTimeout:     rt.settings.Bash.MaxTimeout,
-		MaxStdout:      rt.settings.Bash.MaxStdout,
-		MaxStderr:      rt.settings.Bash.MaxStderr,
-	}, tool.ToolConfig{
-		ReadLimit: rt.settings.Tools.ReadLimit,
-		GrepLimit: rt.settings.Tools.GrepLimit,
-	})
-	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
-	app.RegisterExtInfo(ext.ExtInfo{
-		Name:     "builtin",
-		Kind:     "builtin",
-		Runtime:  "go",
-		Tools:    app.Tools(),
-		Commands: slices.Sorted(maps.Keys(app.Commands())),
-	})
-	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
+	registerBuiltins(app, rt)
 
 	// Session can be created before extensions load.
 	sess, err := session.New(rt.sessDir, rt.cwd)
@@ -524,10 +521,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 
 		prompt.RegisterSelfKnowledge(app)
 
-		basePrompt := rt.settings.SystemPrompt
-		system := prompt.Build(app, basePrompt, prompt.BuildOptions{
-			OrderOverrides: rt.settings.PromptOrder,
-		})
+		system := buildSystemPrompt(app, rt)
 
 		ag := buildAgent(app, rt, system)
 

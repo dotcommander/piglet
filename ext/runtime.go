@@ -28,13 +28,6 @@ func (a *App) Steer(content string) {
 	}
 }
 
-// Model returns the current model. Returns zero value if not bound.
-func (a *App) Model() core.Model {
-	// Agent doesn't expose model directly; this would need a ModelGetter interface
-	// or the model stored on App. For now return zero.
-	return core.Model{}
-}
-
 // SetModel updates the agent's model.
 func (a *App) SetModel(m core.Model) {
 	a.mu.RLock()

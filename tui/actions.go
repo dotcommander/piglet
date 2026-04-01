@@ -307,13 +307,12 @@ func (m Model) runCommand(name, args string) (tea.Model, tea.Cmd) {
 	// Bind callbacks, run handler, apply results
 	m.bindApp()
 
-	// Special handling for /clear: clear messages before handler runs
+	// /clear: reset TUI display state here because m.messages and m.msgCache are
+	// TUI-internal fields with no corresponding ext.Action type. Agent history is
+	// cleared by the command handler via SetConversationMessages.
 	if name == "clear" {
 		m.messages = nil
 		m.msgCache = nil
-		if m.cfg.Agent != nil {
-			m.cfg.Agent.SetMessages(nil)
-		}
 	}
 
 	if err := cmd.Handler(args, m.cfg.App); err != nil {
