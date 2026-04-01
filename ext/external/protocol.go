@@ -351,7 +351,7 @@ type HostExecuteToolResult struct {
 type ShutdownParams struct{}
 
 // Protocol version
-const ProtocolVersion = "4"
+const ProtocolVersion = "5"
 
 // CancelParams tells the extension to abort the request with the given ID.
 type CancelParams struct {
