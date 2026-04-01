@@ -115,7 +115,7 @@ func applyDefaults(s *Settings) {
 	}
 	if len(s.ExtInstall.Official) == 0 {
 		s.ExtInstall.Official = []string{
-			"pack-core", "pack-agent", "pack-context", "pack-code", "pack-workflow",
+			"pack-core", "pack-agent", "pack-context", "pack-code", "pack-workflow", "pack-cron",
 			"mcp",
 		}
 	}

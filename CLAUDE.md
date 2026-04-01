@@ -52,6 +52,7 @@ tui/, cmd/  → anything (wiring layer)
 | `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
 | `pack-core` | admin, export, extensions-list, undo, scaffold, background | 8 commands |
 | `pack-workflow` | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
+| `pack-cron` | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
 
 All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over FD 3/4 (with stdin/stdout fallback) using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
@@ -343,7 +344,7 @@ Before EVERY commit:
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
 7. **Extensions compatible**: clone `piglet-extensions`, run `go build ./...` — extensions must build against the tagged version
-8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`) plus standalone extensions (`mcp`). Verify pack contents match `packs/*/main.go` imports.
+8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`, `pack-cron`) plus standalone extensions (`mcp`). Verify pack contents match `packs/*/main.go` imports.
 
 ### Pre-Push Gate
 
