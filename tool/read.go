@@ -3,9 +3,9 @@ package tool
 import (
 	"context"
 	"fmt"
-	"os"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"os"
 	"strings"
 )
 
@@ -46,6 +46,9 @@ func readTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 			if err != nil {
 				return textResult(fmt.Sprintf("error: %v", err)), nil
 			}
+
+			// Track mtime for TOCTOU staleness detection in edit/write tools.
+			tracker.RecordRead(path, info.ModTime())
 
 			lines := strings.Split(string(data), "\n")
 
