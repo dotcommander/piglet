@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sync"
@@ -73,6 +74,12 @@ func New(name, version string) *Extension {
 }
 
 func (e *Extension) RegisterTool(t ToolDef) {
+	if t.Name == "" {
+		panic("sdk: RegisterTool called with empty Name")
+	}
+	if t.Execute == nil {
+		panic("sdk: RegisterTool called with nil Execute function")
+	}
 	e.tools[t.Name] = &t
 }
 
@@ -93,6 +100,12 @@ func (e *Extension) RegisterEventHandler(h EventHandlerDef) {
 }
 
 func (e *Extension) RegisterShortcut(s ShortcutDef) {
+	if s.Key == "" {
+		panic("sdk: RegisterShortcut called with empty Key")
+	}
+	if s.Handler == nil {
+		panic("sdk: RegisterShortcut called with nil Handler function")
+	}
 	e.shortcuts[s.Key] = &s
 }
 
@@ -475,7 +488,7 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 
 	// Run all interceptors' Before hooks in order
 	allow := true
-	args := params.Args
+	args := maps.Clone(params.Args)
 	for _, ic := range e.interceptors {
 		if ic.Before == nil {
 			continue
@@ -490,7 +503,7 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 			break
 		}
 		if modified != nil {
-			args = modified
+			args = maps.Clone(modified)
 		}
 	}
 
