@@ -293,6 +293,112 @@ func (e *Extension) UndoRestore(ctx context.Context, path string) error {
 	return hostCallVoid(e, ctx, "host/undoRestore", map[string]any{"path": path})
 }
 
+// LastAssistantText returns the text content of the last assistant message.
+// Returns empty string if no assistant messages exist.
+func (e *Extension) LastAssistantText(ctx context.Context) (string, error) {
+	type resp struct {
+		Text string `json:"text"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/lastAssistantText", struct{}{})
+	if err != nil {
+		return "", err
+	}
+	return r.Text, nil
+}
+
+// AppendSessionEntry writes a custom extension entry to the current session.
+// The kind should be namespaced (e.g., "ext:memory:facts").
+func (e *Extension) AppendSessionEntry(ctx context.Context, kind string, data any) error {
+	return hostCallVoid(e, ctx, "host/appendSessionEntry", map[string]any{
+		"kind": kind,
+		"data": data,
+	})
+}
+
+// AppendCustomMessage writes a message that persists AND appears in Messages() on reload.
+// Role must be "user" or "assistant". Use for durable context annotations.
+func (e *Extension) AppendCustomMessage(ctx context.Context, role, content string) error {
+	return hostCallVoid(e, ctx, "host/appendCustomMessage", map[string]any{
+		"role":    role,
+		"content": content,
+	})
+}
+
+// SetLabel sets or clears a bookmark label on a session entry.
+// An empty label clears the bookmark.
+func (e *Extension) SetLabel(ctx context.Context, targetID, label string) error {
+	return hostCallVoid(e, ctx, "host/setLabel", map[string]any{
+		"targetId": targetID,
+		"label":    label,
+	})
+}
+
+// BranchSession moves the current session's leaf to an earlier entry.
+func (e *Extension) BranchSession(ctx context.Context, entryID string) error {
+	return hostCallVoid(e, ctx, "host/branchSession", map[string]any{"entryId": entryID})
+}
+
+// BranchSessionWithSummary moves the leaf and writes a branch_summary entry.
+func (e *Extension) BranchSessionWithSummary(ctx context.Context, entryID, summary string) error {
+	return hostCallVoid(e, ctx, "host/branchSessionWithSummary", map[string]any{
+		"entryId": entryID,
+		"summary": summary,
+	})
+}
+
+// Publish sends data to all subscribers of an event bus topic.
+func (e *Extension) Publish(ctx context.Context, topic string, data any) error {
+	return hostCallVoid(e, ctx, "host/publish", map[string]any{
+		"topic": topic,
+		"data":  data,
+	})
+}
+
+// Subscription tracks an event bus subscription for cleanup.
+type Subscription struct {
+	ID    int
+	topic string
+	ext   *Extension
+	ch    chan json.RawMessage
+}
+
+// Events returns a channel that receives events for this subscription.
+func (s *Subscription) Events() <-chan json.RawMessage { return s.ch }
+
+// Subscribe registers for events on a topic. Returns a Subscription whose
+// Events() channel receives data whenever the topic fires. Call Unsubscribe()
+// when done. Events are delivered as json.RawMessage — unmarshal to your type.
+func (e *Extension) Subscribe(ctx context.Context, topic string) (*Subscription, error) {
+	type resp struct {
+		SubscriptionID int `json:"subscriptionId"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/subscribe", map[string]any{"topic": topic})
+	if err != nil {
+		return nil, err
+	}
+
+	sub := &Subscription{
+		ID:    r.SubscriptionID,
+		topic: topic,
+		ext:   e,
+		ch:    make(chan json.RawMessage, 64),
+	}
+
+	e.subsMu.Lock()
+	e.subs[sub.ID] = sub
+	e.subsMu.Unlock()
+
+	return sub, nil
+}
+
+// Unsubscribe removes the subscription. The Events() channel is closed.
+func (s *Subscription) Unsubscribe() {
+	s.ext.subsMu.Lock()
+	delete(s.ext.subs, s.ID)
+	s.ext.subsMu.Unlock()
+	close(s.ch)
+}
+
 // request sends a JSON-RPC request to the host and waits for the response.
 func (e *Extension) request(ctx context.Context, method string, params any) (*rpcMessage, error) {
 	id := int(e.nextID.Add(1))

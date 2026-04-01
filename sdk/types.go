@@ -90,6 +90,13 @@ type MessageHookDef struct {
 	OnMessage func(ctx context.Context, msg string) (string, error)
 }
 
+// InputTransformerDef defines an input transformer that intercepts user input.
+type InputTransformerDef struct {
+	Name      string
+	Priority  int
+	Transform func(ctx context.Context, input string) (output string, handled bool, err error)
+}
+
 // CompactorDef defines a conversation compactor.
 type CompactorDef struct {
 	Name      string

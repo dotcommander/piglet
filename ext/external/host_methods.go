@@ -492,6 +492,130 @@ func (h *Host) handleHostUndoSnapshots(msg *Message) {
 	h.respond(*msg.ID, HostUndoSnapshotsResult{Snapshots: sizes})
 }
 
+func (h *Host) handleHostLastAssistantText(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	h.respond(*msg.ID, HostLastAssistantTextResult{Text: h.app.LastAssistantText()})
+}
+
+func (h *Host) handleHostAppendSessionEntry(msg *Message) {
+	var params HostAppendSessionEntryParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.AppendSessionEntry(params.Kind, params.Data); err != nil {
+		h.respondError(*msg.ID, -32603, "append session entry: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostAppendCustomMessage(msg *Message) {
+	var params HostAppendCustomMessageParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.AppendCustomMessage(params.Role, params.Content); err != nil {
+		h.respondError(*msg.ID, -32603, "append custom message: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostSetLabel(msg *Message) {
+	var params HostSetLabelParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.SetSessionLabel(params.TargetID, params.Label); err != nil {
+		h.respondError(*msg.ID, -32603, "set label: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostBranchSession(msg *Message) {
+	var params HostBranchSessionParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.BranchSession(params.EntryID); err != nil {
+		h.respondError(*msg.ID, -32603, "branch session: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostBranchSessionSummary(msg *Message) {
+	var params HostBranchSessionSummaryParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.BranchSessionWithSummary(params.EntryID, params.Summary); err != nil {
+		h.respondError(*msg.ID, -32603, "branch session: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostPublish(msg *Message) {
+	var params HostPublishParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	h.app.Publish(params.Topic, params.Data)
+	h.respond(*msg.ID, struct{}{})
+}
+
+func (h *Host) handleHostSubscribe(msg *Message) {
+	var params HostSubscribeParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+
+	// Generate subscription ID
+	subID := int(h.nextID.Add(1))
+
+	// Subscribe on the event bus and forward events as notifications to the extension
+	unsub := h.app.Subscribe(params.Topic, func(data any) {
+		dataJSON, _ := json.Marshal(data)
+		h.sendNotification(MethodHostEventBusEvent, EventBusEventParams{
+			Topic:          params.Topic,
+			SubscriptionID: subID,
+			Data:           dataJSON,
+		})
+	})
+
+	// Track unsubscribe function for cleanup
+	h.subsMu.Lock()
+	h.subscriptions[subID] = unsub
+	h.subsMu.Unlock()
+
+	h.respond(*msg.ID, HostSubscribeResult{SubscriptionID: subID})
+}
+
 func (h *Host) handleHostUndoRestore(msg *Message) {
 	var params HostUndoRestoreParams
 	if !h.decodeParams(msg, &params) {

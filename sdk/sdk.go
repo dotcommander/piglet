@@ -46,6 +46,7 @@ type Extension struct {
 	messageHooks   []MessageHookDef
 	compactor      *CompactorDef
 
+	inputTransformers     []InputTransformerDef
 	rpcOut                *os.File           // JSON-RPC output (FD 4 or os.Stdout fallback)
 	onInit                func(e *Extension) // called after initialize, before responding
 	providerStreamHandler func(ctx context.Context, x *Extension, req ProviderStreamRequest) (*ProviderStreamResponse, error)
@@ -57,6 +58,10 @@ type Extension struct {
 	nextID    atomic.Int64
 	pendingMu sync.Mutex
 	pending   map[int]chan *rpcMessage // request ID → response channel
+
+	// Event bus subscriptions (host → extension notifications)
+	subsMu sync.Mutex
+	subs   map[int]*Subscription // subscription ID → Subscription
 }
 
 // New creates a new extension with the given name and version.
@@ -70,6 +75,7 @@ func New(name, version string) *Extension {
 		shortcuts: make(map[string]*ShortcutDef),
 		cancels:   make(map[int]context.CancelFunc),
 		pending:   make(map[int]chan *rpcMessage),
+		subs:      make(map[int]*Subscription),
 	}
 }
 
@@ -115,6 +121,16 @@ func (e *Extension) RegisterMessageHook(h MessageHookDef) {
 
 func (e *Extension) RegisterCompactor(c CompactorDef) {
 	e.compactor = &c
+}
+
+func (e *Extension) RegisterInputTransformer(t InputTransformerDef) {
+	if t.Name == "" {
+		panic("sdk: RegisterInputTransformer called with empty Name")
+	}
+	if t.Transform == nil {
+		panic("sdk: RegisterInputTransformer called with nil Transform")
+	}
+	e.inputTransformers = append(e.inputTransformers, t)
 }
 
 // RegisterProvider declares that this extension provides LLM streaming for the given API type.
@@ -170,6 +186,43 @@ func (e *Extension) ConfigDir() string { return e.configDir }
 // Notify sends a notification to the host TUI.
 func (e *Extension) Notify(msg string) {
 	e.sendNotification("notify", map[string]string{"message": msg})
+}
+
+// ShowOverlay creates or replaces a named overlay in the TUI.
+// Anchor: "center" (default), "right", "left". Width: "50%", "80" (chars), "" (auto).
+func (e *Extension) ShowOverlay(key, title, content, anchor, width string) {
+	e.sendNotification("showOverlay", map[string]string{
+		"key":     key,
+		"title":   title,
+		"content": content,
+		"anchor":  anchor,
+		"width":   width,
+	})
+}
+
+// CloseOverlay removes a named overlay by key.
+func (e *Extension) CloseOverlay(key string) {
+	e.sendNotification("closeOverlay", map[string]string{"key": key})
+}
+
+// SetWidget sets or clears a persistent multi-line widget in the TUI.
+// Placement: "above-input" or "below-status". Empty content removes the widget.
+func (e *Extension) SetWidget(key, placement, content string) {
+	e.sendNotification("setWidget", map[string]string{
+		"key":       key,
+		"placement": placement,
+		"content":   content,
+	})
+}
+
+// NotifyWarn sends a warning-level notification.
+func (e *Extension) NotifyWarn(msg string) {
+	e.sendNotification("notify", map[string]string{"message": msg, "level": "warn"})
+}
+
+// NotifyError sends an error-level notification.
+func (e *Extension) NotifyError(msg string) {
+	e.sendNotification("notify", map[string]string{"message": msg, "level": "error"})
 }
 
 // ShowMessage displays a message in the conversation.
@@ -257,9 +310,10 @@ type wireActionResult struct {
 // ---------------------------------------------------------------------------
 
 func (e *Extension) handleMessage(msg *rpcMessage) {
-	// Handle notifications (no ID) — currently only $/cancelRequest
+	// Handle notifications (no ID)
 	if msg.ID == nil {
-		if msg.Method == "$/cancelRequest" {
+		switch msg.Method {
+		case "$/cancelRequest":
 			var p struct {
 				ID int `json:"id"`
 			}
@@ -270,6 +324,22 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 				delete(e.cancels, p.ID)
 			}
 			e.cancelMu.Unlock()
+		case "eventBus/event":
+			var p struct {
+				SubscriptionID int             `json:"subscriptionId"`
+				Data           json.RawMessage `json:"data"`
+			}
+			if json.Unmarshal(msg.Params, &p) == nil {
+				e.subsMu.Lock()
+				sub := e.subs[p.SubscriptionID]
+				e.subsMu.Unlock()
+				if sub != nil {
+					select {
+					case sub.ch <- p.Data:
+					default: // drop if full
+					}
+				}
+			}
 		}
 		return
 	}
@@ -310,6 +380,8 @@ func (e *Extension) handleMessage(msg *rpcMessage) {
 		go e.handleShortcutHandle(msg)
 	case "messageHook/onMessage":
 		go e.handleMessageHook(msg)
+	case "inputTransformer/transform":
+		go e.handleInputTransform(msg)
 	case "compact/execute":
 		go e.handleCompactExecute(msg)
 	case "provider/stream":
@@ -404,6 +476,12 @@ func (e *Extension) handleInitialize(msg *rpcMessage) {
 		e.sendNotification("register/messageHook", map[string]any{
 			"name":     h.Name,
 			"priority": h.Priority,
+		})
+	}
+	for _, it := range e.inputTransformers {
+		e.sendNotification("register/inputTransformer", map[string]any{
+			"name":     it.Name,
+			"priority": it.Priority,
 		})
 	}
 	if e.compactor != nil {
@@ -634,6 +712,36 @@ func (e *Extension) handleMessageHook(msg *rpcMessage) {
 	}
 
 	e.sendResponse(*msg.ID, map[string]any{"injection": injection})
+}
+
+func (e *Extension) handleInputTransform(msg *rpcMessage) {
+	var params struct {
+		Input string `json:"input"`
+	}
+	if !e.unmarshalParams(msg, &params) {
+		return
+	}
+
+	ctx, cleanup := e.requestCtx(*msg.ID)
+	defer cleanup()
+
+	current := params.Input
+	for _, it := range e.inputTransformers {
+		if it.Transform == nil {
+			continue
+		}
+		output, handled, err := it.Transform(ctx, current)
+		if err != nil {
+			e.sendError(*msg.ID, -32603, err.Error())
+			return
+		}
+		if handled {
+			e.sendResponse(*msg.ID, map[string]any{"output": output, "handled": true})
+			return
+		}
+		current = output
+	}
+	e.sendResponse(*msg.ID, map[string]any{"output": current, "handled": false})
 }
 
 func (e *Extension) handleCompactExecute(msg *rpcMessage) {

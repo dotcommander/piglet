@@ -46,28 +46,32 @@ type Host struct {
 	readDone  chan struct{} // closed when readLoop exits
 
 	// Registrations collected during handshake
-	tools          []RegisterToolParams
-	commands       []RegisterCommandParams
-	promptSections []RegisterPromptSectionParams
-	interceptors   []RegisterInterceptorParams
-	eventHandlers  []RegisterEventHandlerParams
-	shortcuts      []RegisterShortcutParams
-	messageHooks   []RegisterMessageHookParams
-	compactor      *RegisterCompactorParams
-	providers      []RegisterProviderParams // collected during handshake
-	deltaMu        sync.Mutex
-	deltaChans     map[int]chan ProviderDeltaParams // requestId → delta channel
+	tools             []RegisterToolParams
+	commands          []RegisterCommandParams
+	promptSections    []RegisterPromptSectionParams
+	interceptors      []RegisterInterceptorParams
+	eventHandlers     []RegisterEventHandlerParams
+	shortcuts         []RegisterShortcutParams
+	messageHooks      []RegisterMessageHookParams
+	compactor         *RegisterCompactorParams
+	inputTransformers []RegisterInputTransformerParams
+	providers         []RegisterProviderParams // collected during handshake
+	deltaMu           sync.Mutex
+	deltaChans        map[int]chan ProviderDeltaParams // requestId → delta channel
+	subsMu            sync.Mutex
+	subscriptions     map[int]func() // subscription ID → unsubscribe function
 }
 
 // NewHost creates a host for the given manifest.
 func NewHost(m *Manifest, cwd string) *Host {
 	return &Host{
-		manifest:   m,
-		cwd:        cwd,
-		pending:    make(map[int]chan *Message),
-		closed:     make(chan struct{}),
-		readDone:   make(chan struct{}),
-		deltaChans: make(map[int]chan ProviderDeltaParams),
+		manifest:      m,
+		cwd:           cwd,
+		pending:       make(map[int]chan *Message),
+		closed:        make(chan struct{}),
+		readDone:      make(chan struct{}),
+		deltaChans:    make(map[int]chan ProviderDeltaParams),
+		subscriptions: make(map[int]func()),
 	}
 }
 
@@ -167,6 +171,14 @@ func (h *Host) Stop() {
 		name := h.manifest.Name
 		slog.Debug("stop: begin", "ext", name)
 
+		// Clean up event bus subscriptions
+		h.subsMu.Lock()
+		for id, unsub := range h.subscriptions {
+			unsub()
+			delete(h.subscriptions, id)
+		}
+		h.subsMu.Unlock()
+
 		if h.cancel != nil {
 			h.cancel()
 		}
@@ -252,6 +264,9 @@ func (h *Host) MessageHooks() []RegisterMessageHookParams { return h.messageHook
 
 // Compactor returns the compactor registered during handshake, or nil.
 func (h *Host) Compactor() *RegisterCompactorParams { return h.compactor }
+
+// InputTransformers returns the input transformers registered during handshake.
+func (h *Host) InputTransformers() []RegisterInputTransformerParams { return h.inputTransformers }
 
 // Providers returns the providers registered during handshake.
 func (h *Host) Providers() []RegisterProviderParams { return h.providers }
@@ -388,6 +403,34 @@ func (h *Host) OnMessage(ctx context.Context, msg string) (string, error) {
 		return "", fmt.Errorf("unmarshal message hook: %w", err)
 	}
 	return result.Injection, nil
+}
+
+// TransformInput sends an inputTransformer/transform request to the extension.
+func (h *Host) TransformInput(ctx context.Context, input string) (string, bool, error) {
+	resp, err := h.request(ctx, MethodInputTransform, InputTransformParams{
+		Input: input,
+	})
+	if err != nil {
+		return input, false, err
+	}
+	if resp.Error != nil {
+		return input, false, fmt.Errorf("input transform: %s", resp.Error.Message)
+	}
+	var result InputTransformResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return input, false, fmt.Errorf("unmarshal input transform: %w", err)
+	}
+	return result.Output, result.Handled, nil
+}
+
+// sendNotification sends a JSON-RPC notification (no ID, no response expected) to the extension.
+func (h *Host) sendNotification(method string, params any) {
+	paramsJSON, _ := json.Marshal(params)
+	_ = h.send(&Message{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  paramsJSON,
+	})
 }
 
 // ExecuteCompact sends a compact/execute request with messages and waits for compacted result.

@@ -18,8 +18,9 @@ import (
 
 // LoadAll discovers and starts all external extensions under supervisor management,
 // registering their tools, commands, and prompt sections with the given ext.App.
+// projectDir, if non-empty, is scanned for additional extensions (opt-in via config).
 // Returns the number of loaded extensions and a cleanup function that stops all.
-func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled []string) (loaded int, cleanup func(), err error) {
+func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled []string, projectDir string) (loaded int, cleanup func(), err error) {
 	extDir, err := ExtensionsDir()
 	if err != nil {
 		return 0, func() {}, nil // non-fatal
@@ -28,6 +29,23 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled
 	manifests, err := DiscoverExtensions(extDir)
 	if err != nil {
 		return 0, func() {}, nil // non-fatal
+	}
+
+	// Discover project-local extensions (override global by name)
+	if projectDir != "" {
+		projectManifests, pErr := DiscoverExtensions(projectDir)
+		if pErr != nil {
+			slog.Warn("project extensions discovery failed", "dir", projectDir, "err", pErr)
+		} else if len(projectManifests) > 0 {
+			slog.Info("discovered project-local extensions", "dir", projectDir, "count", len(projectManifests))
+			projectNames := make(map[string]bool, len(projectManifests))
+			for _, pm := range projectManifests {
+				projectNames[pm.Name] = true
+			}
+			// Remove global manifests that project-local overrides
+			manifests = slices.DeleteFunc(manifests, func(m *Manifest) bool { return projectNames[m.Name] })
+			manifests = append(manifests, projectManifests...)
+		}
 	}
 
 	// Filter out disabled extensions
@@ -195,6 +213,16 @@ func bridge(app *ext.App, h *Host) {
 		info.MessageHooks = append(info.MessageHooks, mh.Name)
 	}
 
+	// Register input transformers
+	for _, it := range h.InputTransformers() {
+		app.RegisterInputTransformer(ext.InputTransformer{
+			Name:      it.Name,
+			Priority:  it.Priority,
+			Transform: proxyInputTransform(h),
+		})
+		info.InputTransformers = append(info.InputTransformers, it.Name)
+	}
+
 	// Register compactor
 	if cp := h.Compactor(); cp != nil {
 		app.RegisterCompactor(ext.Compactor{
@@ -306,6 +334,18 @@ func proxyShortcutHandle(h *Host, key string) func(app *ext.App) (ext.Action, er
 func proxyMessageHook(h *Host) func(ctx context.Context, msg string) (string, error) {
 	return func(ctx context.Context, msg string) (string, error) {
 		return h.OnMessage(ctx, msg)
+	}
+}
+
+// proxyInputTransform returns a Transform function that proxies to the extension.
+func proxyInputTransform(h *Host) func(ctx context.Context, input string) (string, bool, error) {
+	return func(ctx context.Context, input string) (string, bool, error) {
+		select {
+		case <-h.Closed():
+			return input, false, nil // host dead — pass through
+		default:
+		}
+		return h.TransformInput(ctx, input)
 	}
 }
 

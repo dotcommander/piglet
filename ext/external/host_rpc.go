@@ -173,15 +173,35 @@ func (h *Host) handleMessage(msg *Message) {
 		if json.Unmarshal(msg.Params, &p) == nil {
 			h.compactor = &p
 		}
+	case MethodRegisterInputTransformer:
+		var p RegisterInputTransformerParams
+		if json.Unmarshal(msg.Params, &p) == nil {
+			h.inputTransformers = append(h.inputTransformers, p)
+		}
 	case MethodRegisterProvider:
 		var p RegisterProviderParams
 		if json.Unmarshal(msg.Params, &p) == nil {
 			h.providers = append(h.providers, p)
 		}
+	case MethodSetWidget:
+		var p SetWidgetParams
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.SetWidget(p.Key, p.Placement, p.Content)
+		}
+	case MethodShowOverlay:
+		var p ShowOverlayParams
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.ShowOverlay(p.Key, p.Title, p.Content, p.Anchor, p.Width)
+		}
+	case MethodCloseOverlay:
+		var p CloseOverlayParams
+		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
+			h.app.CloseOverlay(p.Key)
+		}
 	case MethodNotify:
 		var p NotifyParams
 		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
-			h.app.Notify(p.Message)
+			h.app.NotifyWithLevel(p.Message, p.Level)
 		}
 	case MethodShowMessage:
 		var p ShowMessageParams
@@ -267,6 +287,22 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostUndoSnapshots(msg)
 	case MethodHostUndoRestore:
 		h.handleHostUndoRestore(msg)
+	case MethodHostLastAssistantText:
+		h.handleHostLastAssistantText(msg)
+	case MethodHostAppendSessionEntry:
+		h.handleHostAppendSessionEntry(msg)
+	case MethodHostAppendCustomMessage:
+		h.handleHostAppendCustomMessage(msg)
+	case MethodHostSetLabel:
+		h.handleHostSetLabel(msg)
+	case MethodHostBranchSession:
+		h.handleHostBranchSession(msg)
+	case MethodHostBranchSessionSummary:
+		h.handleHostBranchSessionSummary(msg)
+	case MethodHostPublish:
+		h.handleHostPublish(msg)
+	case MethodHostSubscribe:
+		h.handleHostSubscribe(msg)
 	default:
 		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
 	}

@@ -88,6 +88,15 @@ func ExtensionsDir() (string, error) {
 	return filepath.Join(dir, "extensions"), nil
 }
 
+// ProjectExtensionsDir returns the project-local extensions directory: <cwd>/.piglet/extensions/.
+// Returns empty string if cwd is empty.
+func ProjectExtensionsDir(cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	return filepath.Join(cwd, ".piglet", "extensions")
+}
+
 // RuntimeCommand returns the command and args to execute an extension.
 func (m *Manifest) RuntimeCommand() (string, []string) {
 	switch m.Runtime {

@@ -139,6 +139,7 @@ type ContentBlock struct {
 // NotifyParams sends a notification to the TUI.
 type NotifyParams struct {
 	Message string `json:"message"`
+	Level   string `json:"level,omitempty"` // "", "info" → muted; "warn" → warning; "error" → error
 }
 
 // LogParams writes to the host's log.
@@ -278,6 +279,27 @@ type CompactExecuteResult struct {
 type ActionResult struct {
 	Type    string          `json:"type"`              // "notify", "showMessage", "setSessionTitle", "quit"
 	Payload json.RawMessage `json:"payload,omitempty"` // type-specific data
+}
+
+// SetWidgetParams sets or clears a persistent widget in the TUI.
+type SetWidgetParams struct {
+	Key       string `json:"key"`
+	Placement string `json:"placement"` // "above-input" or "below-status"
+	Content   string `json:"content"`   // empty = remove
+}
+
+// ShowOverlayParams creates or replaces a named overlay.
+type ShowOverlayParams struct {
+	Key     string `json:"key"`
+	Title   string `json:"title,omitempty"`
+	Content string `json:"content"`
+	Anchor  string `json:"anchor,omitempty"` // "center" (default), "right", "left"
+	Width   string `json:"width,omitempty"`  // "50%", "80" (chars), "" (auto)
+}
+
+// CloseOverlayParams removes a named overlay.
+type CloseOverlayParams struct {
+	Key string `json:"key"`
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +550,96 @@ type HostUndoRestoreParams struct {
 }
 
 // ---------------------------------------------------------------------------
+// Host last assistant text: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostLastAssistantTextResult is the host's response.
+type HostLastAssistantTextResult struct {
+	Text string `json:"text"`
+}
+
+// ---------------------------------------------------------------------------
+// Host session entry service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostAppendSessionEntryParams appends a custom entry to the current session.
+type HostAppendSessionEntryParams struct {
+	Kind string `json:"kind"` // namespaced, e.g. "ext:memory:facts"
+	Data any    `json:"data"`
+}
+
+// HostAppendCustomMessageParams writes a custom message to the session.
+type HostAppendCustomMessageParams struct {
+	Role    string `json:"role"` // "user" or "assistant"
+	Content string `json:"content"`
+}
+
+// HostSetLabelParams sets or clears a bookmark label on a session entry.
+type HostSetLabelParams struct {
+	TargetID string `json:"targetId"`
+	Label    string `json:"label"`
+}
+
+// HostBranchSessionParams branches the session at a specific entry.
+type HostBranchSessionParams struct {
+	EntryID string `json:"entryId"`
+}
+
+// HostBranchSessionSummaryParams branches with a summary annotation.
+type HostBranchSessionSummaryParams struct {
+	EntryID string `json:"entryId"`
+	Summary string `json:"summary"`
+}
+
+// ---------------------------------------------------------------------------
+// Host event bus service: extension → host (request/response)
+// ---------------------------------------------------------------------------
+
+// HostPublishParams publishes data to the inter-extension event bus.
+type HostPublishParams struct {
+	Topic string `json:"topic"`
+	Data  any    `json:"data"`
+}
+
+// HostSubscribeParams subscribes to an event bus topic.
+type HostSubscribeParams struct {
+	Topic string `json:"topic"`
+}
+
+// HostSubscribeResult returns a subscription ID for unsubscribing.
+type HostSubscribeResult struct {
+	SubscriptionID int `json:"subscriptionId"`
+}
+
+// EventBusEventParams is a host → extension notification when subscribed topics fire.
+type EventBusEventParams struct {
+	Topic          string          `json:"topic"`
+	SubscriptionID int             `json:"subscriptionId"`
+	Data           json.RawMessage `json:"data"`
+}
+
+// ---------------------------------------------------------------------------
+// Input transformer registration + callback
+// ---------------------------------------------------------------------------
+
+// RegisterInputTransformerParams registers an input transformer.
+type RegisterInputTransformerParams struct {
+	Name     string `json:"name"`
+	Priority int    `json:"priority,omitempty"`
+}
+
+// InputTransformParams is the host → extension callback when user input arrives.
+type InputTransformParams struct {
+	Input string `json:"input"`
+}
+
+// InputTransformResult is the extension's response.
+type InputTransformResult struct {
+	Output  string `json:"output"`
+	Handled bool   `json:"handled"` // true = input was consumed, stop processing
+}
+
+// ---------------------------------------------------------------------------
 // Provider streaming
 // ---------------------------------------------------------------------------
 
@@ -613,6 +725,20 @@ const (
 	MethodHostExtensionsDir           = "host/extensionsDir"
 	MethodHostUndoSnapshots           = "host/undoSnapshots"
 	MethodHostUndoRestore             = "host/undoRestore"
+	MethodHostLastAssistantText       = "host/lastAssistantText"
+	MethodHostAppendSessionEntry      = "host/appendSessionEntry"
+	MethodHostAppendCustomMessage     = "host/appendCustomMessage"
+	MethodHostSetLabel                = "host/setLabel"
+	MethodHostBranchSession           = "host/branchSession"
+	MethodHostBranchSessionSummary    = "host/branchSessionWithSummary"
+	MethodHostPublish                 = "host/publish"
+	MethodHostSubscribe               = "host/subscribe"
+	MethodHostEventBusEvent           = "eventBus/event" // host → extension notification
+	MethodRegisterInputTransformer    = "register/inputTransformer"
+	MethodInputTransform              = "inputTransformer/transform" // host → extension callback
+	MethodSetWidget                   = "setWidget"
+	MethodShowOverlay                 = "showOverlay"
+	MethodCloseOverlay                = "closeOverlay"
 	MethodNotify                      = "notify"
 	MethodLog                         = "log"
 	MethodShowMessage                 = "showMessage"
