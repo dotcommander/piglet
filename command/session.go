@@ -159,6 +159,43 @@ func showSessionTree(a *ext.App) error {
 	return nil
 }
 
+func registerBranch(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "branch",
+		Description: "Branch to an earlier point in this session",
+		Handler: func(args string, a *ext.App) error {
+			infos := a.SessionEntryInfos()
+			if len(infos) == 0 {
+				a.ShowMessage("No entries in current session")
+				return nil
+			}
+
+			items := make([]ext.PickerItem, len(infos))
+			for i, info := range infos {
+				label := fmt.Sprintf("[%s] %s", info.Type, info.ID[:min(8, len(info.ID))])
+				desc := info.Timestamp.Format("15:04:05")
+				if info.Children > 1 {
+					desc += fmt.Sprintf(" (%d branches)", info.Children)
+				}
+				items[i] = ext.PickerItem{
+					ID:    info.ID,
+					Label: label,
+					Desc:  desc,
+				}
+			}
+
+			a.ShowPicker("Branch to entry", items, func(selected ext.PickerItem) {
+				if err := a.BranchSession(selected.ID); err != nil {
+					a.ShowMessage("Branch failed: " + err.Error())
+					return
+				}
+				a.ShowMessage("Branched to " + selected.ID)
+			})
+			return nil
+		},
+	})
+}
+
 func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	// Build tree: index by ID, group children under parents
 	byID := make(map[string]int, len(summaries))

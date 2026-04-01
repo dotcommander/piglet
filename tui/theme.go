@@ -44,14 +44,15 @@ type Styles struct {
 	AssistantMsg   lipgloss.Style
 	AssistantLabel lipgloss.Style
 	ToolName       lipgloss.Style
-	ToolError    lipgloss.Style
-	Thinking     lipgloss.Style
-	Spinner      lipgloss.Style
-	InputBorder  lipgloss.Style
-	Muted        lipgloss.Style
-	Error       lipgloss.Style
-	Success     lipgloss.Style
-	BorderColor color.Color
+	ToolError      lipgloss.Style
+	Thinking       lipgloss.Style
+	Spinner        lipgloss.Style
+	InputBorder    lipgloss.Style
+	Muted          lipgloss.Style
+	Error          lipgloss.Style
+	Success        lipgloss.Style
+	Warning        lipgloss.Style
+	BorderColor    color.Color
 }
 
 // NewStyles creates styles from a theme.
@@ -93,6 +94,8 @@ func NewStyles(t Theme) Styles {
 			Foreground(t.Error),
 		Success: lipgloss.NewStyle().
 			Foreground(t.Success),
+		Warning: lipgloss.NewStyle().
+			Foreground(t.Warning),
 		BorderColor: t.Border,
 	}
 }

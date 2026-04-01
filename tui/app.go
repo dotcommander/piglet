@@ -85,6 +85,7 @@ type Model struct {
 	status   StatusBar
 	msgView  MessageView
 	modal    ModalModel
+	overlays OverlayModel
 	spinner  spinner.Model
 
 	// State
@@ -121,7 +122,8 @@ type Model struct {
 
 	// Toast notification (transient, not in conversation history)
 	notification      string
-	notificationTimer int // ticks remaining (0 = hidden)
+	notificationLevel string // "", "info" → muted; "warn" → warning; "error" → error
+	notificationTimer int    // ticks remaining (0 = hidden)
 
 	// Pending image attachment for next message
 	pendingImage *core.ImageContent
@@ -138,6 +140,15 @@ type Model struct {
 
 	// Rendered message cache — parallel to m.messages, invalidated on width change
 	msgCache []string
+
+	// Extension widgets — keyed, last-write-wins per key, max 5 lines each
+	widgets map[string]widgetState
+}
+
+// widgetState holds the content and placement of a single extension widget.
+type widgetState struct {
+	Placement string // "above-input" or "below-status"
+	Content   string
 }
 
 // New creates a TUI model.
@@ -171,12 +182,14 @@ func New(ctx context.Context, cfg Config) Model {
 		viewport:     vp,
 		status:       status,
 		msgView:      NewMessageView(styles, 80),
+		overlays:     NewOverlayModel(styles),
 		spinner:      sp,
 		streamText:   &strings.Builder{},
 		streamThink:  &strings.Builder{},
 		bgResult:     &strings.Builder{},
 		focused:      true,
 		followOutput: true,
+		widgets:      make(map[string]widgetState),
 	}
 	if hp, err := config.HistoryPath(); err == nil {
 		m.input.LoadHistory(hp)
@@ -348,6 +361,21 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, cmd, true
 	}
 
+	if m.overlays.Visible() {
+		switch {
+		case msg.Code == tea.KeyEscape:
+			m.overlays.DismissTop()
+			return m, nil, true
+		case msg.Code == tea.KeyUp:
+			m.overlays.ScrollUp()
+			return m, nil, true
+		case msg.Code == tea.KeyDown:
+			m.overlays.ScrollDown()
+			return m, nil, true
+		}
+		return m, nil, true // consume all other keys while overlay visible
+	}
+
 	switch {
 	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
 		if m.streaming && m.cfg.Agent != nil {
@@ -437,6 +465,9 @@ func (m *Model) stopStreaming() {
 	m.status.SetSpinnerView("")
 	m.streamCache = streamCache{}
 	m.refreshAndFollow()
+	if m.cfg.App != nil {
+		m.cfg.App.SignalIdle()
+	}
 }
 
 func (m *Model) layout() {
@@ -460,11 +491,25 @@ func (m *Model) layout() {
 	m.msgView.SetWidth(m.width - 2)
 	m.msgCache = nil
 	m.modal.SetSize(m.width, m.height)
+	m.overlays.SetSize(m.width, m.height)
 }
 
 func (m *Model) showNotification(text string) {
 	m.notification = text
+	m.notificationLevel = ""
 	m.notificationTimer = notifyDuration
+}
+
+// notificationStyle returns the lipgloss style for the current notification level.
+func (m Model) notificationStyle() lipgloss.Style {
+	switch m.notificationLevel {
+	case "warn":
+		return m.styles.Warning
+	case "error":
+		return m.styles.Error
+	default:
+		return m.styles.Muted
+	}
 }
 
 // appendMessage adds a message to conversation history and persists to session.

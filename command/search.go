@@ -47,18 +47,10 @@ func registerSearch(app *ext.App) {
 	})
 }
 
-func registerBranch(app *ext.App) {
-	app.RegisterCommand(&ext.Command{
-		Name:        "branch",
-		Description: "Fork session into a new branch",
-		Handler:     forkHandler,
-	})
-}
-
 func registerFork(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "fork",
-		Description: "Fork session into a new branch (alias for /branch)",
+		Description: "Fork session to a new file",
 		Handler:     forkHandler,
 	})
 }

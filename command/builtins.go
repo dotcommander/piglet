@@ -38,6 +38,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerFork(app)
 	registerBg(app)
 	registerBgCancel(app)
+	registerTree(app)
 	registerUpdate(app, version)
 	app.RegisterCommand(&ext.Command{
 		Name:        "upgrade",

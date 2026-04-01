@@ -46,6 +46,18 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	// Re-follow output when user sends a message
 	m.followOutput = true
 
+	// Run input transformers
+	if m.cfg.App != nil {
+		transformed, handled, err := m.cfg.App.RunInputTransformers(m.ctx, text)
+		if err != nil {
+			return m, m.notifyAndTick("Transform error: " + err.Error())
+		}
+		if handled {
+			return m, m.notifyAndTick("Input handled")
+		}
+		text = transformed
+	}
+
 	// Send to agent
 	userMsg := &core.UserMessage{
 		Content:   text,
@@ -136,7 +148,8 @@ func (m *Model) applyActions() tea.Cmd {
 	for _, action := range m.cfg.App.PendingActions() {
 		switch action.(type) {
 		case ext.ActionShowMessage, ext.ActionNotify,
-			ext.ActionShowPicker, ext.ActionAttachImage, ext.ActionDetachImage:
+			ext.ActionShowPicker, ext.ActionAttachImage, ext.ActionDetachImage,
+			ext.ActionSetWidget, ext.ActionShowOverlay, ext.ActionCloseOverlay:
 			if cmd := m.applyUIAction(action); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -166,7 +179,10 @@ func (m *Model) applyUIAction(action ext.Action) tea.Cmd {
 	case ext.ActionShowMessage:
 		return m.notifyAndTick(act.Text)
 	case ext.ActionNotify:
-		return m.notifyAndTick(act.Message)
+		m.notification = act.Message
+		m.notificationLevel = act.Level
+		m.notificationTimer = notifyDuration
+		return notifyTick()
 	case ext.ActionShowPicker:
 		items := make([]ModalItem, len(act.Items))
 		for i, item := range act.Items {
@@ -191,6 +207,19 @@ func (m *Model) applyUIAction(action ext.Action) tea.Cmd {
 		m.pendingImage = nil
 		m.input.SetAttachment("")
 		return m.notifyAndTick("Image attachment removed")
+	case ext.ActionSetWidget:
+		if act.Content == "" {
+			delete(m.widgets, act.Key)
+		} else {
+			m.widgets[act.Key] = widgetState{
+				Placement: act.Placement,
+				Content:   act.Content,
+			}
+		}
+	case ext.ActionShowOverlay:
+		m.overlays.Show(act.Key, act.Title, act.Content, act.Anchor, act.Width)
+	case ext.ActionCloseOverlay:
+		m.overlays.Close(act.Key)
 	}
 	return nil
 }
@@ -207,7 +236,7 @@ func (m *Model) applyStateAction(action ext.Action) {
 		}
 	case ext.ActionSwapSession:
 		if s, ok := act.Session.(*session.Session); ok {
-			if m.cfg.Session != nil {
+			if m.cfg.Session != nil && m.cfg.Session != s {
 				_ = m.cfg.Session.Close()
 			}
 			m.cfg.Session = s

@@ -21,7 +21,13 @@ func (m Model) View() tea.View {
 
 	// Toast notification (transient, above input)
 	if m.notification != "" {
-		sections = append(sections, m.styles.Muted.Render(" "+m.notification+" "))
+		style := m.notificationStyle()
+		sections = append(sections, style.Render(" "+m.notification+" "))
+	}
+
+	// Extension widgets: above-input placement
+	if w := m.renderWidgets("above-input"); w != "" {
+		sections = append(sections, w)
 	}
 
 	// Input
@@ -30,9 +36,19 @@ func (m Model) View() tea.View {
 	// Status bar
 	sections = append(sections, m.status.View())
 
+	// Extension widgets: below-status placement
+	if w := m.renderWidgets("below-status"); w != "" {
+		sections = append(sections, w)
+	}
+
 	// Modal overlay
 	if m.modal.Visible() {
 		return tea.NewView(m.modal.View())
+	}
+
+	// Extension overlays (stacked, topmost wins)
+	if m.overlays.Visible() {
+		return tea.NewView(m.overlays.View())
 	}
 
 	v := tea.NewView(m.styles.App.Render(strings.Join(sections, "\n")))
@@ -42,6 +58,38 @@ func (m Model) View() tea.View {
 	}
 	v.WindowTitle = m.windowTitle()
 	return v
+}
+
+// maxWidgetLines caps each individual widget to prevent extensions from eating the viewport.
+const maxWidgetLines = 5
+
+// maxTotalWidgetLines caps the total widget budget across all widgets in a placement.
+const maxTotalWidgetLines = 10
+
+// renderWidgets renders all widgets for a given placement, capped to budget.
+func (m Model) renderWidgets(placement string) string {
+	var lines []string
+	total := 0
+	for _, w := range m.widgets {
+		if w.Placement != placement {
+			continue
+		}
+		wLines := strings.Split(w.Content, "\n")
+		if len(wLines) > maxWidgetLines {
+			wLines = wLines[:maxWidgetLines]
+		}
+		for _, l := range wLines {
+			if total >= maxTotalWidgetLines {
+				break
+			}
+			lines = append(lines, l)
+			total++
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return m.styles.Muted.Render(strings.Join(lines, "\n"))
 }
 
 // windowTitle returns the terminal window title.
