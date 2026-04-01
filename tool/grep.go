@@ -128,7 +128,11 @@ func grepFile(re *regexp.Regexp, path, displayPath string, limit int, count *int
 		line := scanner.Text()
 		if re.MatchString(line) {
 			if len(line) > 200 {
-				line = line[:200] + "..."
+				// Truncate at rune boundary to avoid splitting multi-byte UTF-8.
+				runes := []rune(line)
+				if len(runes) > 200 {
+					line = string(runes[:200]) + "..."
+				}
 			}
 			results = append(results, fmt.Sprintf("%s:%d:%s", displayPath, lineNum, line))
 			*count++

@@ -2,11 +2,11 @@ package tool_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/tool"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -300,4 +300,19 @@ func TestLs_EmptyDir(t *testing.T) {
 
 	out := execTool(t, app, "ls", map[string]any{"path": empty})
 	assert.Contains(t, out, "empty directory")
+}
+
+func TestGrep_UTF8Truncation(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+
+	// 201 Japanese Hiragana characters (3 bytes each in UTF-8 = 603 bytes).
+	// Grep truncates at 200 runes — output should not corrupt characters.
+	longLine := strings.Repeat("あ", 201)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "utf8.txt"), []byte(longLine), 0644))
+
+	out := execTool(t, app, "grep", map[string]any{"pattern": "あ"})
+	assert.Contains(t, out, "utf8.txt:1:")
+	// Verify no partial byte sequences in output — each あ should be intact.
+	assert.NotContains(t, out, "\ufffd", "output should not contain replacement characters")
 }
