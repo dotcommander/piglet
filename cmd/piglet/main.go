@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -89,7 +90,7 @@ func writeModelsYAML(path string) error {
 
 func run() error {
 	// Handle flags before anything else
-	var debugFlag bool
+	var debugFlag, jsonFlag bool
 	var modelFlag, baseURLFlag, portFlag string
 	var promptArgs []string
 	args := os.Args[1:]
@@ -103,6 +104,8 @@ func run() error {
 			return nil
 		case "--debug":
 			debugFlag = true
+		case "--json":
+			jsonFlag = true
 		case "--model":
 			if i+1 >= len(args) {
 				return fmt.Errorf("--model requires a value")
@@ -219,7 +222,10 @@ func run() error {
 		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
 	)
 
-	return runPrint(ag, app, sess, userPrompt)
+	if jsonFlag {
+		return runJSON(ctx, ag, app, sess, userPrompt)
+	}
+	return runPrint(ctx, ag, app, sess, userPrompt)
 }
 
 // resolveModelURL detects if the model query is a URL or :port shorthand.
@@ -421,13 +427,19 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 	app := ext.NewApp(rt.cwd)
 	registerBuiltins(app, rt)
 
-	loaded, extCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+	loaded, extCleanup, extErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+	if extErr != nil {
+		slog.Warn("load extensions", "err", extErr)
+	}
 
 	if interactive && loaded == 0 {
 		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
-		reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		reloaded, reloadCleanup, reloadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		if reloadErr != nil {
+			slog.Warn("load extensions", "err", reloadErr)
+		}
 		origCleanup := extCleanup
 		extCleanup = func() { reloadCleanup(); origCleanup() }
 		if reloaded > 0 {
@@ -495,7 +507,10 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 
 	setupFn := func() tui.AgentReadyMsg {
 		// --- Async phase: load external extensions (~1.3s) ---
-		loaded, cleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		loaded, cleanup, loadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		if loadErr != nil {
+			slog.Warn("load extensions", "err", loadErr)
+		}
 		extCleanupMu.Lock()
 		extCleanup = cleanup
 		extCleanupMu.Unlock()
@@ -504,7 +519,10 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 			if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 				fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 			}
-			reloaded, reloadCleanup, _ := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+			reloaded, reloadCleanup, retryErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+			if retryErr != nil {
+				slog.Warn("load extensions", "err", retryErr)
+			}
 			extCleanupMu.Lock()
 			origCleanup := extCleanup
 			extCleanup = func() { reloadCleanup(); origCleanup() }
@@ -556,12 +574,29 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 	return tuiErr
 }
 
-func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+// drainActions processes all pending ext.App actions, running async actions synchronously.
+func drainActions(app *ext.App, sess *session.Session) {
+	for actions := app.PendingActions(); len(actions) > 0; actions = app.PendingActions() {
+		for _, action := range actions {
+			switch act := action.(type) {
+			case ext.ActionSetSessionTitle:
+				if sess != nil && act.Title != "" {
+					_ = sess.SetTitle(act.Title)
+				}
+			case ext.ActionRunAsync:
+				if result := act.Fn(); result != nil {
+					app.EnqueueAction(result)
+				}
+			}
+		}
+	}
+}
 
+func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
 	// Run message hooks for ephemeral turn context
-	if injections, err := app.RunMessageHooks(ctx, userPrompt); err == nil && len(injections) > 0 {
+	if injections, err := app.RunMessageHooks(ctx, userPrompt); err != nil {
+		slog.Warn("message hook failed", "err", err)
+	} else if len(injections) > 0 {
 		ag.SetTurnContext(injections)
 	}
 
@@ -595,21 +630,7 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 		}
 
 		// Drain pending actions from event handlers until empty
-		for actions := app.PendingActions(); len(actions) > 0; actions = app.PendingActions() {
-			for _, action := range actions {
-				switch act := action.(type) {
-				case ext.ActionSetSessionTitle:
-					if sess != nil && act.Title != "" {
-						_ = sess.SetTitle(act.Title)
-					}
-				case ext.ActionRunAsync:
-					// In single-shot mode, run async actions synchronously
-					if result := act.Fn(); result != nil {
-						app.EnqueueAction(result)
-					}
-				}
-			}
-		}
+		drainActions(app, sess)
 
 		if e, ok := evt.(core.EventTurnEnd); ok {
 			if e.Assistant != nil {
@@ -627,6 +648,76 @@ func runPrint(ag *core.Agent, app *ext.App, sess *session.Session, userPrompt st
 						msg = string(e.Assistant.StopReason)
 					}
 					agentErr = fmt.Errorf("agent error: %s", msg)
+				}
+			}
+			if sess != nil {
+				if e.Assistant != nil {
+					_ = sess.Append(e.Assistant)
+				}
+				for _, tr := range e.ToolResults {
+					_ = sess.Append(tr)
+				}
+			}
+		}
+	}
+
+	return agentErr
+}
+
+func runJSON(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Session, userPrompt string) error {
+	if injections, err := app.RunMessageHooks(ctx, userPrompt); err != nil {
+		slog.Warn("message hook failed", "err", err)
+	} else if len(injections) > 0 {
+		ag.SetTurnContext(injections)
+	}
+
+	if sess != nil {
+		_ = sess.Append(&core.UserMessage{Content: userPrompt})
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	ch := ag.Start(ctx, userPrompt)
+	var agentErr error
+
+	for evt := range ch {
+		app.DispatchEvent(ctx, evt)
+
+		switch e := evt.(type) {
+		case core.EventStreamDelta:
+			_ = enc.Encode(map[string]any{"type": "stream_delta", "kind": e.Kind, "index": e.Index, "delta": e.Delta})
+		case core.EventToolStart:
+			_ = enc.Encode(map[string]any{"type": "tool_start", "tool": e.ToolName, "args": e.Args})
+		case core.EventToolEnd:
+			_ = enc.Encode(map[string]any{"type": "tool_end", "tool": e.ToolName, "is_error": e.IsError})
+		case core.EventRetry:
+			_ = enc.Encode(map[string]any{"type": "retry", "attempt": e.Attempt, "max": e.Max, "error": e.Error})
+		case core.EventCompact:
+			_ = enc.Encode(map[string]any{"type": "compact", "before": e.Before, "after": e.After, "tokens": e.TokensAtCompact})
+		case core.EventAgentEnd:
+			_ = enc.Encode(map[string]any{"type": "agent_end"})
+		}
+
+		drainActions(app, sess)
+
+		if e, ok := evt.(core.EventTurnEnd); ok {
+			if e.Assistant != nil {
+				u := e.Assistant.Usage
+				_ = enc.Encode(map[string]any{
+					"type": "turn_end",
+					"usage": map[string]int{
+						"input_tokens":       u.InputTokens,
+						"output_tokens":      u.OutputTokens,
+						"cache_read_tokens":  u.CacheReadTokens,
+						"cache_write_tokens": u.CacheWriteTokens,
+					},
+				})
+				if e.Assistant.StopReason == core.StopReasonError || e.Assistant.StopReason == core.StopReasonAborted {
+					msg := e.Assistant.Error
+					if msg == "" {
+						msg = string(e.Assistant.StopReason)
+					}
+					agentErr = fmt.Errorf("agent error: %s", msg)
+					_ = enc.Encode(map[string]any{"type": "error", "message": msg})
 				}
 			}
 			if sess != nil {
@@ -675,6 +766,7 @@ Usage:
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads
+  piglet --json           NDJSON event output (single-shot mode only)
   piglet --model <id>     Override model (takes precedence over env/config)
   piglet --base-url <url> Override model base URL
   piglet --port <n>       Use localhost:<n> as base URL (implies openai API)
