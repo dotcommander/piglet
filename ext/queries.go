@@ -1,6 +1,7 @@
 package ext
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"sync"
@@ -39,7 +40,7 @@ func (a *App) FindTool(name string) *core.Tool {
 	}
 }
 
-// ToolDefs returns all registered tool definitions.
+// ToolDefs returns all registered tool definitions, sorted by name.
 func (a *App) ToolDefs() []*ToolDef {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -47,6 +48,9 @@ func (a *App) ToolDefs() []*ToolDef {
 	for _, d := range a.tools {
 		defs = append(defs, d)
 	}
+	slices.SortFunc(defs, func(a, b *ToolDef) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 	return defs
 }
 
@@ -70,11 +74,22 @@ func (a *App) filterTools(pred func(*ToolDef) bool) []core.Tool {
 	// agents are independent and don't share tool execution locks.
 	var unsafeMu sync.Mutex
 
-	tools := make([]core.Tool, 0, len(a.tools))
+	// Collect matching defs first, then sort by name for deterministic order.
+	// Stable tool ordering prevents prompt cache invalidation on every API call
+	// (Go map iteration is non-deterministic).
+	defs := make([]*ToolDef, 0, len(a.tools))
 	for _, td := range a.tools {
 		if pred != nil && !pred(td) {
 			continue
 		}
+		defs = append(defs, td)
+	}
+	slices.SortFunc(defs, func(a, b *ToolDef) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	tools := make([]core.Tool, 0, len(defs))
+	for _, td := range defs {
 		schema := td.ToolSchema
 		if td.Deferred {
 			// Send name+description only; parameters are nil → minimal schema in API.
