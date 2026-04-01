@@ -51,16 +51,26 @@ func registerBranch(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "branch",
 		Description: "Fork session into a new branch",
-		Handler: func(args string, a *ext.App) error {
-			parentID, count, err := a.ForkSession()
-			if err != nil {
-				a.ShowMessage("Failed to branch: " + err.Error())
-				return nil
-			}
-			a.ShowMessage(fmt.Sprintf("Branched from %s with %d messages", parentID, count))
-			return nil
-		},
+		Handler:     forkHandler,
 	})
+}
+
+func registerFork(app *ext.App) {
+	app.RegisterCommand(&ext.Command{
+		Name:        "fork",
+		Description: "Fork session into a new branch (alias for /branch)",
+		Handler:     forkHandler,
+	})
+}
+
+func forkHandler(args string, a *ext.App) error {
+	parentID, count, err := a.ForkSession()
+	if err != nil {
+		a.ShowMessage("Failed to fork: " + err.Error())
+		return nil
+	}
+	a.ShowMessage(fmt.Sprintf("Forked from %s with %d messages", parentID, count))
+	return nil
 }
 
 func registerBg(app *ext.App) {

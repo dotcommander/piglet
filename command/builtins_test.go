@@ -49,16 +49,16 @@ type mockAgent struct {
 	stepMode bool
 }
 
-func (m *mockAgent) Steer(_ core.Message)                    {}
-func (m *mockAgent) FollowUp(_ core.Message)                 {}
-func (m *mockAgent) SetModel(_ core.Model)                   {}
-func (m *mockAgent) SetProvider(_ core.StreamProvider)       {}
-func (m *mockAgent) Messages() []core.Message                { return m.messages }
-func (m *mockAgent) StepMode() bool                          { return m.stepMode }
-func (m *mockAgent) SetStepMode(on bool)                     { m.stepMode = on }
-func (m *mockAgent) SetMessages(msgs []core.Message)         { m.messages = msgs }
-func (m *mockAgent) Provider() core.StreamProvider           { return nil }
-func (m *mockAgent) System() string                          { return "" }
+func (m *mockAgent) Steer(_ core.Message)              {}
+func (m *mockAgent) FollowUp(_ core.Message)           {}
+func (m *mockAgent) SetModel(_ core.Model)             {}
+func (m *mockAgent) SetProvider(_ core.StreamProvider) {}
+func (m *mockAgent) Messages() []core.Message          { return m.messages }
+func (m *mockAgent) StepMode() bool                    { return m.stepMode }
+func (m *mockAgent) SetStepMode(on bool)               { m.stepMode = on }
+func (m *mockAgent) SetMessages(msgs []core.Message)   { m.messages = msgs }
+func (m *mockAgent) Provider() core.StreamProvider     { return nil }
+func (m *mockAgent) System() string                    { return "" }
 
 // userMsg / assistantMsg build minimal Message implementations for compact tests.
 func userMsg(text string) *core.UserMessage {
@@ -287,17 +287,40 @@ func TestSessionPickerItemsWithParent(t *testing.T) {
 
 	summaries := []ext.SessionSummary{
 		{
+			ID:        "parent00-0000-0000",
+			Title:     "Parent",
+			Path:      "/tmp/parent.jsonl",
+			CreatedAt: time.Now(),
+		},
+		{
 			ID:        "child123",
 			Title:     "Child",
-			ParentID:  "parentXYZABC",
+			ParentID:  "parent00-0000-0000",
+			Path:      "/tmp/child.jsonl",
+			CreatedAt: time.Now(),
+		},
+	}
+	items := sessionPickerItems(summaries)
+	require.Len(t, items, 2)
+	assert.Equal(t, "Parent", items[0].Label)
+	assert.Equal(t, "↳ Child", items[1].Label) // tree indentation
+}
+
+func TestSessionPickerItemsOrphanedFork(t *testing.T) {
+	t.Parallel()
+
+	summaries := []ext.SessionSummary{
+		{
+			ID:        "child123",
+			Title:     "Orphan",
+			ParentID:  "deleted-parent",
 			Path:      "/tmp/s.jsonl",
 			CreatedAt: time.Now(),
 		},
 	}
 	items := sessionPickerItems(summaries)
 	require.Len(t, items, 1)
-	assert.Contains(t, items[0].Desc, "forked from")
-	assert.Contains(t, items[0].Desc, "parentXY") // first 8 chars
+	assert.Equal(t, "Orphan", items[0].Label) // orphaned fork becomes root
 }
 
 func TestSessionPickerItemsEmpty(t *testing.T) {
@@ -320,7 +343,7 @@ func TestRegisterBuiltinsRegistersExpectedCommands(t *testing.T) {
 	cmds := app.Commands()
 	expected := []string{
 		"help", "clear", "step", "compact",
-		"model", "session", "quit",
+		"model", "session", "quit", "fork",
 	}
 	for _, name := range expected {
 		assert.Contains(t, cmds, name, "expected command %q to be registered", name)
@@ -349,4 +372,3 @@ func TestRegisterBuiltinsCustomShortcutOverride(t *testing.T) {
 	shortcuts := app.Shortcuts()
 	assert.Contains(t, shortcuts, "ctrl+m", "custom key should override default")
 }
-
