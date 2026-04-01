@@ -241,7 +241,6 @@ Everything lives in `~/.config/piglet/`:
 # config.yaml
 defaultModel: claude-opus-4-6
 smallModel: claude-haiku-4-5-20251001   # for background tasks
-shellPath: /bin/zsh
 agent:
   maxTurns: 10
   maxMessages: 200

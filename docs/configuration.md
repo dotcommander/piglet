@@ -12,7 +12,6 @@ defaultModel: gpt-5
 smallModel: anthropic/claude-haiku-4-5
 systemPrompt: "You are piglet, a helpful coding assistant."
 theme: dark
-shellPath: /bin/zsh
 providers:
   openai: https://my-proxy.example.com   # override base URL for proxies
 ```
@@ -26,7 +25,6 @@ providers:
 | `smallModel` | string | `""` | Cheaper model for background tasks (autotitle, compaction) |
 | `systemPrompt` | string | `""` | Base identity (overridden by `prompt.md`) |
 | `theme` | string | `""` | Color theme |
-| `shellPath` | string | system default | Shell for bash tool |
 | `extensions` | list | `[]` | Extension paths to load |
 | `providers` | map | `{}` | Base URL overrides per provider |
 | `shortcuts` | map | `{}` | Action → keybind (e.g. `model: ctrl+p`) |

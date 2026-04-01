@@ -16,7 +16,6 @@ type Settings struct {
 	SmallModel         string            `yaml:"smallModel,omitempty"`
 	SystemPrompt       string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
 	Theme              string            `yaml:"theme,omitempty"`
-	ShellPath          string            `yaml:"shellPath,omitempty"`
 	Extensions         []string          `yaml:"extensions,omitempty"`
 	Providers          map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
 	Agent              AgentSettings     `yaml:"agent,omitempty"`
