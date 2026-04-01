@@ -228,7 +228,7 @@ func (h *Host) handleRequest(msg *Message) {
 	case MethodHostListTools:
 		h.handleHostListTools(msg)
 	case MethodHostExecuteTool:
-		h.handleHostExecuteTool(msg)
+		go h.handleHostExecuteTool(msg) // may be slow (tool execution)
 	case MethodHostConfigGet:
 		h.handleHostConfigGet(msg)
 	case MethodHostConfigReadExt:

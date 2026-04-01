@@ -32,7 +32,7 @@ func CompactWithCircuitBreaker(
 
 		mu.Lock()
 		defer mu.Unlock()
-		if err != nil || len(result) == 0 {
+		if err != nil {
 			failCount++
 			if failCount >= maxFails {
 				cooldownUntil = time.Now().Add(cooldown)

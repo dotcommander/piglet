@@ -125,11 +125,17 @@ func (e *Extension) ListHostTools(ctx context.Context, filter string) ([]HostToo
 // CallHostTool executes a host-registered tool and returns the result.
 // This allows extensions to use tools like Read, Edit, Grep, Bash that are
 // registered in the host process. The call blocks until the host responds.
-func (e *Extension) CallHostTool(ctx context.Context, name string, args map[string]any) (*ToolResult, error) {
-	resp, err := e.request(ctx, "host/executeTool", map[string]any{
+// callID is optional; when provided, it correlates the tool result with the
+// original tool call for event handlers and session persistence.
+func (e *Extension) CallHostTool(ctx context.Context, name string, args map[string]any, callID ...string) (*ToolResult, error) {
+	params := map[string]any{
 		"name": name,
 		"args": args,
-	})
+	}
+	if len(callID) > 0 && callID[0] != "" {
+		params["callId"] = callID[0]
+	}
+	resp, err := e.request(ctx, "host/executeTool", params)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package external
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -70,7 +71,7 @@ func DiscoverExtensions(baseDir string) ([]*Manifest, error) {
 		dir := filepath.Join(baseDir, entry.Name())
 		m, err := LoadManifest(dir)
 		if err != nil {
-			// Skip invalid extensions, log would be nice but not required
+			slog.Warn("skip invalid extension", "dir", dir, "err", err)
 			continue
 		}
 		manifests = append(manifests, m)

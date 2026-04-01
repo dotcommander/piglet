@@ -310,8 +310,9 @@ type HostToolInfo struct {
 
 // HostExecuteToolParams is sent by the extension to execute a host-registered tool.
 type HostExecuteToolParams struct {
-	Name string         `json:"name"`
-	Args map[string]any `json:"args"`
+	Name   string         `json:"name"`
+	Args   map[string]any `json:"args"`
+	CallID string         `json:"callId,omitzero"`
 }
 
 // HostExecuteToolResult is the host's response.

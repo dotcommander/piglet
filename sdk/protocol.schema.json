@@ -590,7 +590,8 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
-        "args": { "type": "object", "additionalProperties": true }
+        "args": { "type": "object", "additionalProperties": true },
+        "callId": { "type": "string", "description": "Optional tool call ID for event correlation." }
       }
     },
     "HostExecuteToolResult": {

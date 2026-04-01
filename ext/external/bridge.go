@@ -240,6 +240,11 @@ func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App
 // proxyInterceptorBefore returns a Before function that proxies to the extension.
 func proxyInterceptorBefore(h *Host) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+		select {
+		case <-h.Closed():
+			return true, args, nil // host dead — allow tool to proceed
+		default:
+		}
 		return h.InterceptBefore(ctx, toolName, args)
 	}
 }
@@ -247,6 +252,11 @@ func proxyInterceptorBefore(h *Host) func(ctx context.Context, toolName string, 
 // proxyInterceptorAfter returns an After function that proxies to the extension.
 func proxyInterceptorAfter(h *Host) func(ctx context.Context, toolName string, details any) (any, error) {
 	return func(ctx context.Context, toolName string, details any) (any, error) {
+		select {
+		case <-h.Closed():
+			return details, nil // host dead — pass through
+		default:
+		}
 		return h.InterceptAfter(ctx, toolName, details)
 	}
 }
@@ -482,6 +492,14 @@ func (p *proxyStreamProvider) Stream(ctx context.Context, req core.StreamRequest
 
 func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest, ch chan core.StreamEvent) {
 	defer close(ch)
+
+	// Bail out if the host has been stopped (supervisor restart/crash).
+	select {
+	case <-p.host.Closed():
+		ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("extension %s stopped", p.host.Name())}
+		return
+	default:
+	}
 
 	// Allocate a request ID for correlating provider/delta notifications.
 	requestID := int(p.host.nextID.Add(1))

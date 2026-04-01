@@ -1,6 +1,7 @@
 package external
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -9,6 +10,10 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
+
+// hostRequestTimeout caps how long an inbound extension request (tool call, chat,
+// agent run) may run before cancellation.
+const hostRequestTimeout = 5 * time.Minute
 
 // decodeParams unmarshals msg.Params into dst, responding with error on failure.
 func (h *Host) decodeParams(msg *Message, dst any) bool {
@@ -74,6 +79,9 @@ func (h *Host) handleHostListTools(msg *Message) {
 
 // handleHostExecuteTool executes a host-registered tool on behalf of the extension.
 func (h *Host) handleHostExecuteTool(msg *Message) {
+	ctx, cancel := context.WithTimeout(h.ctx, hostRequestTimeout)
+	defer cancel()
+
 	var params HostExecuteToolParams
 	if !h.decodeParams(msg, &params) {
 		return
@@ -90,9 +98,13 @@ func (h *Host) handleHostExecuteTool(msg *Message) {
 		return
 	}
 
-	// Execute the tool
-	result, err := tool.Execute(h.ctx, "", params.Args)
+	// Execute the tool with per-request context
+	result, err := tool.Execute(ctx, params.CallID, params.Args)
 	if err != nil {
+		if ctx.Err() != nil {
+			h.respondError(*msg.ID, -32603, "tool execution cancelled: "+ctx.Err().Error())
+			return
+		}
 		h.respond(*msg.ID, HostExecuteToolResult{
 			Content: []ContentBlock{{Type: "text", Text: err.Error()}},
 			IsError: true,
@@ -162,6 +174,9 @@ func (h *Host) handleHostAuthGetKey(msg *Message) {
 }
 
 func (h *Host) handleHostChat(msg *Message) {
+	ctx, cancel := context.WithTimeout(h.ctx, hostRequestTimeout)
+	defer cancel()
+
 	var params HostChatParams
 	if !h.decodeParams(msg, &params) {
 		return
@@ -198,7 +213,7 @@ func (h *Host) handleHostChat(msg *Message) {
 		req.Options.MaxTokens = &params.MaxTokens
 	}
 
-	ch := prov.Stream(h.ctx, req)
+	ch := prov.Stream(ctx, req)
 
 	var text strings.Builder
 	var usage HostTokenUsage
@@ -212,7 +227,11 @@ func (h *Host) handleHostChat(msg *Message) {
 				usage.Output += evt.Message.Usage.OutputTokens
 			}
 		case core.StreamError:
-			h.respondError(*msg.ID, -32603, "chat error: "+evt.Error.Error())
+			if ctx.Err() != nil {
+				h.respondError(*msg.ID, -32603, "chat cancelled: "+ctx.Err().Error())
+			} else {
+				h.respondError(*msg.ID, -32603, "chat error: "+evt.Error.Error())
+			}
 			return
 		}
 	}
@@ -221,6 +240,9 @@ func (h *Host) handleHostChat(msg *Message) {
 }
 
 func (h *Host) handleHostAgentRun(msg *Message) {
+	ctx, cancel := context.WithTimeout(h.ctx, hostRequestTimeout)
+	defer cancel()
+
 	var params HostAgentRunParams
 	if !h.decodeParams(msg, &params) {
 		return
@@ -260,7 +282,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 		MaxTurns: maxTurns,
 	})
 
-	ch := sub.Start(h.ctx, params.Task)
+	ch := sub.Start(ctx, params.Task)
 
 	var resultBuilder strings.Builder
 	var totalIn, totalOut, turns int

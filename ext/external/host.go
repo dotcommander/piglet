@@ -146,7 +146,9 @@ func (h *Host) Start(ctx context.Context) error {
 
 	var initResult InitializeResult
 	if result.Result != nil {
-		_ = json.Unmarshal(result.Result, &initResult)
+		if err := json.Unmarshal(result.Result, &initResult); err != nil {
+			slog.Warn("unmarshal init result", "name", h.manifest.Name, "err", err)
+		}
 	}
 
 	slog.Debug("extension initialized", "name", h.manifest.Name, "ext_version", initResult.Version)

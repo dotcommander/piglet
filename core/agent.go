@@ -89,10 +89,18 @@ type Agent struct {
 
 	// Reusable timer for emit() to avoid per-call time.After leaks.
 	emitTimer *time.Timer
+	emitMu    sync.Mutex // protects emitTimer from concurrent tool workers and compaction
+	// Lock ordering: a.mu and emitMu are never held simultaneously.
+	// All emit() callers release a.mu before calling emit(), and emit()
+	// does not acquire a.mu. This invariant must be preserved.
 }
 
 // NewAgent creates an agent with the given configuration.
+// Panics with a descriptive message if required fields are missing.
 func NewAgent(cfg AgentConfig) *Agent {
+	if cfg.Provider == nil {
+		panic("core: AgentConfig.Provider is required")
+	}
 	t := time.NewTimer(EmitTimeout)
 	// Drain so the timer is in the "stopped and ready to reset" state.
 	if !t.Stop() {
@@ -257,8 +265,8 @@ func (a *Agent) StepRespond(action StepAction) {
 	case <-gate:
 	default:
 	}
-	gate <- action
 	a.mu.Unlock()
+	gate <- action
 }
 
 // IsRunning returns whether the agent loop is active.
@@ -362,6 +370,7 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 		// Stream assistant response with retry
 		assistant, err := a.streamWithRetry(ctx)
 		if err != nil {
+			a.emit(EventTurnEnd{})
 			return true
 		}
 
@@ -430,6 +439,7 @@ func (a *Agent) runTurns(ctx context.Context) bool {
 // ---------------------------------------------------------------------------
 
 func (a *Agent) emit(evt Event) {
+	a.emitMu.Lock()
 	if !a.emitTimer.Stop() {
 		select {
 		case <-a.emitTimer.C:
@@ -437,6 +447,7 @@ func (a *Agent) emit(evt Event) {
 		}
 	}
 	a.emitTimer.Reset(EmitTimeout)
+	a.emitMu.Unlock()
 	select {
 	case a.events <- evt:
 	case <-a.emitTimer.C:

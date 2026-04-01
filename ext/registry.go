@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/dotcommander/piglet/core"
@@ -15,14 +16,34 @@ import (
 // ---------------------------------------------------------------------------
 
 // RegisterTool adds a tool. Overwrites if name already exists.
+// Panics with a descriptive message if t is nil, has empty Name, or nil Execute.
 func (a *App) RegisterTool(t *ToolDef) {
+	if t == nil {
+		panic("ext: RegisterTool called with nil *ToolDef")
+	}
+	if t.Name == "" {
+		panic("ext: RegisterTool called with empty Name")
+	}
+	if t.Execute == nil {
+		panic("ext: RegisterTool called with nil Execute function")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.tools[t.Name] = t
 }
 
 // RegisterCommand adds a slash command.
+// Panics with a descriptive message if c is nil, has empty Name, or nil Handler.
 func (a *App) RegisterCommand(c *Command) {
+	if c == nil {
+		panic("ext: RegisterCommand called with nil *Command")
+	}
+	if c.Name == "" {
+		panic("ext: RegisterCommand called with empty Name")
+	}
+	if c.Handler == nil {
+		panic("ext: RegisterCommand called with nil Handler")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.commands[c.Name] = c
@@ -30,6 +51,15 @@ func (a *App) RegisterCommand(c *Command) {
 
 // RegisterShortcut adds a keyboard shortcut.
 func (a *App) RegisterShortcut(s *Shortcut) {
+	if s == nil {
+		panic("ext: RegisterShortcut called with nil *Shortcut")
+	}
+	if s.Key == "" {
+		panic("ext: RegisterShortcut called with empty Key")
+	}
+	if s.Handler == nil {
+		panic("ext: RegisterShortcut called with nil Handler")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.shortcuts[s.Key] = s
@@ -37,6 +67,9 @@ func (a *App) RegisterShortcut(s *Shortcut) {
 
 // RegisterInterceptor adds a tool interceptor. Sorted by priority descending.
 func (a *App) RegisterInterceptor(i Interceptor) {
+	if i.Name == "" {
+		panic("ext: RegisterInterceptor called with empty Name")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.interceptors = append(a.interceptors, i)
@@ -46,6 +79,9 @@ func (a *App) RegisterInterceptor(i Interceptor) {
 // RegisterMessageHook adds a hook that runs before user messages reach the LLM.
 // Sorted by priority ascending (lower = earlier).
 func (a *App) RegisterMessageHook(h MessageHook) {
+	if h.Name == "" {
+		panic("ext: RegisterMessageHook called with empty Name")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.messageHooks = append(a.messageHooks, h)
@@ -85,6 +121,9 @@ func (a *App) RegisterRenderer(typ string, r Renderer) {
 
 // RegisterPromptSection adds a section to the system prompt.
 func (a *App) RegisterPromptSection(s PromptSection) {
+	if s.Title == "" {
+		panic("ext: RegisterPromptSection called with empty Title")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.promptSections = append(a.promptSections, s)
@@ -226,7 +265,7 @@ func (a *App) wrapWithInterceptors(toolName string, execute core.ToolExecuteFn) 
 		a.mu.RUnlock()
 
 		// Before chain
-		currentArgs := args
+		currentArgs := maps.Clone(args)
 		for _, ic := range interceptors {
 			if ic.Before == nil {
 				continue
