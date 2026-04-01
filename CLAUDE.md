@@ -14,7 +14,7 @@ Existing AI coding assistants (Claude Code, Cursor, etc.) are closed, single-pro
 - **Terminal-resident** — Lives where the work happens. No browser, no IDE plugin dependency. Sessions persist across days.
 - **User-owned** — All prompts, behavior, skills, and memory live in `~/.config/piglet/` as plain files. Go code reads config; it never contains content.
 
-The core is frozen at 16 events and 5 primitives. The answer to "how do I add X?" is always "write an extension." Piglet must remain small. Features are extensions. If it can't be an extension, question whether it belongs.
+The core is frozen at 17 events and 5 primitives. The answer to "how do I add X?" is always "write an extension." Piglet must remain small. Features are extensions. If it can't be an extension, question whether it belongs.
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
@@ -270,13 +270,14 @@ The memory extension injects a **compact index** (not full content) as a static 
 
 ## Core Freeze (BLOCKING)
 
-`core/` is **frozen**. No new types, events, methods, or behavior changes. All future functionality lives in extensions. The 16 agent events and 5 extension primitives are the complete API surface.
+`core/` is **frozen**. No new types, events, methods, or behavior changes. All future functionality lives in extensions. The 17 agent events and 5 extension primitives are the complete API surface.
 
 ### Agent Events (complete — do not add more)
 
 | Event | When | Payload |
 |-------|------|---------|
 | `EventAgentStart` | Agent loop begins | — |
+| `EventAgentEnd` | Agent loop finished | `Messages` |
 | `EventSessionLoad` | Pre-loaded messages exist at start | `MessageCount` |
 | `EventAgentInit` | Agent configured, before first message | `ToolCount` |
 | `EventPromptBuild` | Final system prompt assembled | `System` |
@@ -295,7 +296,7 @@ The memory extension injects a **compact index** (not full content) as a static 
 
 ### What "frozen" means
 
-- **No new events** — 16 events cover the full lifecycle. Extensions observe, they don't need new hooks.
+- **No new events** — 17 events cover the full lifecycle. Extensions observe, they don't need new hooks.
 - **No new types** — Message/Content unions are sealed. Encode custom data in `TextContent` or `ToolResult.Details`.
 - **No new methods** — Agent API is complete. Extensions interact through `ext.App`, not `core.Agent`.
 - **Bug fixes only** — Security patches and correctness fixes are allowed. Feature additions are not.
