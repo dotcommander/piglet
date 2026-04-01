@@ -27,7 +27,11 @@ func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResu
 	toolCtx, toolCancel := context.WithCancel(ctx)
 	defer toolCancel()
 
-	sem := make(chan struct{}, a.cfg.toolConcurrency())
+	concurrency := a.cfg.toolConcurrency()
+	if stepMode {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
 	resultCh := make(chan toolExecResult, len(calls))
 
 	for i, tc := range calls {
@@ -67,13 +71,12 @@ drain:
 		}
 	}
 
-	filtered := make([]*ToolResultMessage, 0, len(results))
-	for _, r := range results {
-		if r != nil {
-			filtered = append(filtered, r)
+	for i, r := range results {
+		if r == nil {
+			results[i] = errorResult(calls[i], "tool execution cancelled")
 		}
 	}
-	return filtered, steering
+	return results, steering
 }
 
 // executeOneTool handles step-mode gate, tool lookup, execution, and event
