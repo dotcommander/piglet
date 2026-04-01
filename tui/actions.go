@@ -154,6 +154,9 @@ func (m *Model) applyActions() tea.Cmd {
 		m.pendingBgStart = nil
 		cmds = append(cmds, pollBgEvents(ch))
 	}
+	if m.quitting {
+		cmds = append(cmds, tea.Quit)
+	}
 	return tea.Batch(cmds...)
 }
 
