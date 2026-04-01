@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/dotcommander/piglet/core"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -121,6 +122,7 @@ func Open(path string) (*Session, error) {
 	for scanner.Scan() {
 		var entry Entry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			slog.Warn("session: skipping corrupt entry", "path", path, "err", err)
 			continue
 		}
 		s.replayEntry(entry)
@@ -339,6 +341,7 @@ func scanSummary(path string) Summary {
 	for scanner.Scan() {
 		var entry Entry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			slog.Warn("session: skipping corrupt entry", "path", path, "err", err)
 			continue
 		}
 
