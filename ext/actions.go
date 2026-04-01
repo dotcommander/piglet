@@ -10,7 +10,11 @@ type Action interface {
 type ActionShowMessage struct{ Text string }
 
 // ActionNotify sends a transient notification.
-type ActionNotify struct{ Message string }
+// Level controls styling: "" or "info" = muted, "warn" = warning, "error" = error.
+type ActionNotify struct {
+	Message string
+	Level   string
+}
 
 // ActionQuit signals the TUI to exit.
 type ActionQuit struct{}
@@ -51,6 +55,31 @@ type ActionSendMessage struct{ Content string }
 // The TUI asserts *exec.Cmd and uses tea.ExecProcess.
 type ActionExec struct{ Cmd any }
 
+// ActionSetWidget sets or clears persistent multi-line content in a TUI region.
+// Placement: "above-input" (between messages and input) or "below-status" (after status bar).
+// Empty Content removes the widget. Keyed: last-write-wins per key.
+type ActionSetWidget struct {
+	Key       string
+	Placement string // "above-input" or "below-status"
+	Content   string // empty = remove widget
+}
+
+// ActionShowOverlay creates or replaces a named overlay.
+// Anchor: "center" (default), "right", "left".
+// Width: "50%", "80" (chars), "" (auto ~60%).
+type ActionShowOverlay struct {
+	Key     string
+	Title   string
+	Content string
+	Anchor  string
+	Width   string
+}
+
+// ActionCloseOverlay removes a named overlay.
+type ActionCloseOverlay struct {
+	Key string
+}
+
 func (ActionShowMessage) isAction()     {}
 func (ActionNotify) isAction()          {}
 func (ActionQuit) isAction()            {}
@@ -63,3 +92,6 @@ func (ActionAttachImage) isAction()     {}
 func (ActionDetachImage) isAction()     {}
 func (ActionSendMessage) isAction()     {}
 func (ActionExec) isAction()            {}
+func (ActionSetWidget) isAction()       {}
+func (ActionShowOverlay) isAction()     {}
+func (ActionCloseOverlay) isAction()    {}

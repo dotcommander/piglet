@@ -178,6 +178,22 @@ type MessageHook struct {
 }
 
 // ---------------------------------------------------------------------------
+// Input transformers
+// ---------------------------------------------------------------------------
+
+// InputTransformer intercepts user input before it reaches the agent.
+// Transformers run in priority order (ascending). The first transformer
+// that returns handled=true consumes the input — the agent is not invoked.
+type InputTransformer struct {
+	Name     string
+	Priority int // lower = earlier
+
+	// Transform receives the raw user input and returns the (possibly modified) text.
+	// If handled is true, the input was fully consumed — do not send to agent.
+	Transform func(ctx context.Context, input string) (transformed string, handled bool, err error)
+}
+
+// ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
 
@@ -215,19 +231,20 @@ type PromptSection struct {
 
 // ExtInfo describes a loaded extension for /extensions listing.
 type ExtInfo struct {
-	Name            string   // human-readable name
-	Version         string   // semver or empty
-	Kind            string   // "builtin" or "external"
-	Runtime         string   // "go", "bun", "node", "python", etc.
-	Tools           []string // tool names registered by this extension
-	Commands        []string // command names registered by this extension
-	Interceptors    []string // interceptor names
-	EventHandlers   []string // event handler names
-	Shortcuts       []string // shortcut keys
-	MessageHooks    []string // message hook names
-	Compactor       string   // compactor name, empty if none
-	PromptSections  []string // prompt section titles
-	StreamProviders []string // stream provider API types (e.g. "openai")
+	Name              string   // human-readable name
+	Version           string   // semver or empty
+	Kind              string   // "builtin" or "external"
+	Runtime           string   // "go", "bun", "node", "python", etc.
+	Tools             []string // tool names registered by this extension
+	Commands          []string // command names registered by this extension
+	Interceptors      []string // interceptor names
+	EventHandlers     []string // event handler names
+	Shortcuts         []string // shortcut keys
+	MessageHooks      []string // message hook names
+	InputTransformers []string // input transformer names
+	Compactor         string   // compactor name, empty if none
+	PromptSections    []string // prompt section titles
+	StreamProviders   []string // stream provider API types (e.g. "openai")
 }
 
 // ProviderConfig registers a custom LLM provider from an extension.

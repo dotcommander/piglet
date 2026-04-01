@@ -1,7 +1,10 @@
 package ext
 
 import (
+	"context"
 	"fmt"
+	"slices"
+
 	"github.com/dotcommander/piglet/core"
 )
 
@@ -51,6 +54,56 @@ func (a *App) SetProvider(p core.StreamProvider) {
 // Notify sends a notification to the TUI.
 func (a *App) Notify(msg string) {
 	a.enqueue(ActionNotify{Message: msg})
+}
+
+// NotifyWithLevel sends a notification with a severity level.
+func (a *App) NotifyWithLevel(msg, level string) {
+	a.enqueue(ActionNotify{Message: msg, Level: level})
+}
+
+// NotifyWarn sends a warning notification.
+func (a *App) NotifyWarn(msg string) {
+	a.enqueue(ActionNotify{Message: msg, Level: "warn"})
+}
+
+// NotifyError sends an error notification.
+func (a *App) NotifyError(msg string) {
+	a.enqueue(ActionNotify{Message: msg, Level: "error"})
+}
+
+// LastAssistantText returns the text content of the last assistant message,
+// or empty string if none found. Walks backward through conversation history.
+func (a *App) LastAssistantText() string {
+	msgs := a.ConversationMessages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		am, ok := msgs[i].(*core.AssistantMessage)
+		if !ok {
+			continue
+		}
+		for _, c := range am.Content {
+			if tc, ok := c.(core.TextContent); ok && tc.Text != "" {
+				return tc.Text
+			}
+		}
+	}
+	return ""
+}
+
+// ShowOverlay creates or replaces a named overlay in the TUI.
+// Anchor: "center" (default), "right", "left". Width: "50%", "80" (chars), "" (auto).
+func (a *App) ShowOverlay(key, title, content, anchor, width string) {
+	a.enqueue(ActionShowOverlay{Key: key, Title: title, Content: content, Anchor: anchor, Width: width})
+}
+
+// CloseOverlay removes a named overlay.
+func (a *App) CloseOverlay(key string) {
+	a.enqueue(ActionCloseOverlay{Key: key})
+}
+
+// SetWidget sets or clears a persistent multi-line widget in a TUI region.
+// Placement: "above-input" or "below-status". Empty content removes the widget.
+func (a *App) SetWidget(key, placement, content string) {
+	a.enqueue(ActionSetWidget{Key: key, Placement: placement, Content: content})
 }
 
 // SetStatus updates a status bar widget.
@@ -149,6 +202,18 @@ func (a *App) SetConversationMessages(msgs []core.Message) {
 	}
 }
 
+// Publish sends data to all subscribers of a topic.
+// Callbacks run synchronously — keep them fast or use goroutines in the subscriber.
+func (a *App) Publish(topic string, data any) {
+	a.mu.RLock()
+	subs := make([]eventSub, len(a.eventBus[topic]))
+	copy(subs, a.eventBus[topic])
+	a.mu.RUnlock()
+	for _, sub := range subs {
+		sub.fn(data)
+	}
+}
+
 // ToggleStepMode toggles step mode and returns the new state.
 func (a *App) ToggleStepMode() bool {
 	a.mu.RLock()
@@ -160,4 +225,36 @@ func (a *App) ToggleStepMode() bool {
 	on := !agent.StepMode()
 	agent.SetStepMode(on)
 	return on
+}
+
+// WaitForIdle blocks until SignalIdle is called or the context is cancelled.
+// Returns immediately if there are no pending waiters (caller should check
+// whether the agent is active before calling, to avoid blocking forever).
+func (a *App) WaitForIdle(ctx context.Context) error {
+	ch := make(chan struct{}, 1)
+	a.mu.Lock()
+	a.idleWaiters = append(a.idleWaiters, ch)
+	a.mu.Unlock()
+
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		a.mu.Lock()
+		a.idleWaiters = slices.DeleteFunc(a.idleWaiters, func(c chan struct{}) bool { return c == ch })
+		a.mu.Unlock()
+		return ctx.Err()
+	}
+}
+
+// SignalIdle wakes all pending WaitForIdle callers.
+// Called by the TUI when the agent finishes a turn.
+func (a *App) SignalIdle() {
+	a.mu.Lock()
+	waiters := a.idleWaiters
+	a.idleWaiters = nil
+	a.mu.Unlock()
+	for _, ch := range waiters {
+		close(ch)
+	}
 }

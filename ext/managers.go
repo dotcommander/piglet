@@ -6,6 +6,30 @@ import (
 	"github.com/dotcommander/piglet/core"
 )
 
+// EntryInfo is the ext-layer view of a session entry for display.
+// Mirrors session.EntryInfo without importing session/.
+type EntryInfo struct {
+	ID        string
+	ParentID  string
+	Type      string
+	Timestamp time.Time
+	Children  int
+}
+
+// TreeNode is the ext-layer view of a full tree node for DAG rendering.
+// Mirrors session.TreeNode without importing session/.
+type TreeNode struct {
+	ID           string
+	ParentID     string
+	Type         string
+	Timestamp    time.Time
+	Children     int
+	OnActivePath bool
+	Depth        int
+	Preview      string
+	Label        string
+}
+
 // SessionSummary is the ext-layer view of a session.
 // Mirrors session.Summary without importing session/.
 type SessionSummary struct {
@@ -33,11 +57,36 @@ type SessionManager interface {
 	// Returns the parent short ID, forked session handle, message count, and any error.
 	Fork() (parentID string, forked any, count int, err error)
 
+	// Branch moves the current session's leaf to an earlier entry (in-place branching).
+	// Returns the same session handle for refreshing the TUI/agent.
+	Branch(entryID string) (session any, err error)
+
+	// BranchWithSummary moves the leaf and writes a branch_summary entry.
+	BranchWithSummary(entryID, summary string) (session any, err error)
+
+	// EntryInfos returns info about entries on the current branch for display.
+	EntryInfos() []EntryInfo
+
 	// SetTitle updates the current session's title.
 	SetTitle(title string) error
 
 	// Title returns the current session's title (empty if not set).
 	Title() string
+
+	// AppendEntry writes a custom extension entry to the current session.
+	// The kind should be namespaced (e.g., "ext:memory:facts").
+	AppendEntry(kind string, data any) error
+
+	// AppendCustomMessage writes a message that persists AND appears in Messages().
+	// Role must be "user" or "assistant".
+	AppendCustomMessage(role, content string) error
+
+	// AppendLabel sets or clears a bookmark label on a session entry.
+	// Empty label clears the label.
+	AppendLabel(targetID, label string) error
+
+	// FullTree returns every entry in the session for full DAG rendering.
+	FullTree() []TreeNode
 }
 
 // ModelManager provides model operations to commands and extensions.

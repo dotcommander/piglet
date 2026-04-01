@@ -88,6 +88,43 @@ func (a *App) RegisterMessageHook(h MessageHook) {
 	slices.SortFunc(a.messageHooks, func(x, y MessageHook) int { return cmp.Compare(x.Priority, y.Priority) })
 }
 
+// RegisterInputTransformer adds a transformer that intercepts user input before the agent.
+// Sorted by priority ascending (lower = earlier).
+func (a *App) RegisterInputTransformer(t InputTransformer) {
+	if t.Name == "" {
+		panic("ext: RegisterInputTransformer called with empty Name")
+	}
+	if t.Transform == nil {
+		panic("ext: RegisterInputTransformer called with nil Transform")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.inputTransformers = append(a.inputTransformers, t)
+	slices.SortFunc(a.inputTransformers, func(x, y InputTransformer) int { return cmp.Compare(x.Priority, y.Priority) })
+}
+
+// RunInputTransformers executes all input transformers in priority order.
+// Returns the (possibly modified) input text and whether the input was consumed.
+func (a *App) RunInputTransformers(ctx context.Context, input string) (string, bool, error) {
+	a.mu.RLock()
+	transformers := make([]InputTransformer, len(a.inputTransformers))
+	copy(transformers, a.inputTransformers)
+	a.mu.RUnlock()
+
+	current := input
+	for _, t := range transformers {
+		result, handled, err := t.Transform(ctx, current)
+		if err != nil {
+			return "", false, fmt.Errorf("input transformer %s: %w", t.Name, err)
+		}
+		if handled {
+			return result, true, nil
+		}
+		current = result
+	}
+	return current, false, nil
+}
+
 // RunMessageHooks executes all message hooks in priority order.
 // Returns collected non-empty context strings for ephemeral injection.
 func (a *App) RunMessageHooks(ctx context.Context, msg string) ([]string, error) {
@@ -226,6 +263,11 @@ func (a *App) UnregisterExtension(name string) {
 		return slices.Contains(info.MessageHooks, mh.Name)
 	})
 
+	// Remove input transformers by name
+	a.inputTransformers = slices.DeleteFunc(a.inputTransformers, func(it InputTransformer) bool {
+		return slices.Contains(info.InputTransformers, it.Name)
+	})
+
 	// Remove prompt sections by title
 	a.promptSections = slices.DeleteFunc(a.promptSections, func(ps PromptSection) bool {
 		return slices.Contains(info.PromptSections, ps.Title)
@@ -245,6 +287,25 @@ func (a *App) UnregisterExtension(name string) {
 	a.extInfos = slices.DeleteFunc(a.extInfos, func(ei ExtInfo) bool {
 		return ei.Name == name
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Inter-extension event bus
+// ---------------------------------------------------------------------------
+
+// Subscribe registers a callback for a topic. Returns an unsubscribe function.
+// Callbacks run synchronously in the publisher's goroutine — keep them fast.
+func (a *App) Subscribe(topic string, fn func(any)) func() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.eventBusSeq++
+	id := a.eventBusSeq
+	a.eventBus[topic] = append(a.eventBus[topic], eventSub{id: id, fn: fn})
+	return func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.eventBus[topic] = slices.DeleteFunc(a.eventBus[topic], func(s eventSub) bool { return s.id == id })
+	}
 }
 
 // ---------------------------------------------------------------------------

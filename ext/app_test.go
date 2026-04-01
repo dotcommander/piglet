@@ -34,6 +34,18 @@ func (m *mockSessionMgr) Fork() (string, any, int, error) {
 	return m.forkParent, m.forkResult, m.forkCount, m.forkErr
 }
 
+func (m *mockSessionMgr) Branch(entryID string) (any, error) {
+	return nil, nil
+}
+
+func (m *mockSessionMgr) BranchWithSummary(entryID, summary string) (any, error) {
+	return nil, nil
+}
+
+func (m *mockSessionMgr) EntryInfos() []ext.EntryInfo {
+	return nil
+}
+
 func (m *mockSessionMgr) SetTitle(title string) error {
 	return m.titleErr
 }
@@ -42,13 +54,29 @@ func (m *mockSessionMgr) Title() string {
 	return ""
 }
 
+func (m *mockSessionMgr) AppendEntry(kind string, data any) error {
+	return nil
+}
+
+func (m *mockSessionMgr) AppendCustomMessage(role, content string) error {
+	return nil
+}
+
+func (m *mockSessionMgr) AppendLabel(targetID, label string) error {
+	return nil
+}
+
+func (m *mockSessionMgr) FullTree() []ext.TreeNode {
+	return nil
+}
+
 // mockModelMgr implements ext.ModelManager for testing.
 type mockModelMgr struct {
-	models     []core.Model
-	switchMod  core.Model
-	switchErr  error
-	syncCount  int
-	syncErr    error
+	models    []core.Model
+	switchMod core.Model
+	switchErr error
+	syncCount int
+	syncErr   error
 }
 
 func (m *mockModelMgr) Available() []core.Model {
@@ -468,7 +496,7 @@ func TestSessionsWithoutManager(t *testing.T) {
 	app := ext.NewApp("/tmp")
 
 	_, err := app.Sessions()
-	assert.ErrorContains(t, err, "sessions not configured")
+	assert.ErrorContains(t, err, "no active session")
 }
 
 func TestSessionsWithManager(t *testing.T) {

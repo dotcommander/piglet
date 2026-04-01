@@ -29,19 +29,22 @@ type App struct {
 	cwd string
 
 	// Registration state
-	tools          map[string]*ToolDef
-	commands       map[string]*Command
-	shortcuts      map[string]*Shortcut
-	interceptors   []Interceptor
-	messageHooks   []MessageHook
-	renderers      map[string]Renderer
-	providers      map[string]*ProviderConfig
-	streamProviders map[string]StreamProviderFactory // key = API type string ("openai", "anthropic", "google")
-	promptSections []PromptSection
-	compactor      *Compactor
-	statusSections []StatusSection
-	eventHandlers  []EventHandler
-	extInfos       []ExtInfo
+	tools             map[string]*ToolDef
+	commands          map[string]*Command
+	shortcuts         map[string]*Shortcut
+	interceptors      []Interceptor
+	messageHooks      []MessageHook
+	inputTransformers []InputTransformer
+	renderers         map[string]Renderer
+	providers         map[string]*ProviderConfig
+	streamProviders   map[string]StreamProviderFactory // key = API type string ("openai", "anthropic", "google")
+	promptSections    []PromptSection
+	compactor         *Compactor
+	statusSections    []StatusSection
+	eventHandlers     []EventHandler
+	extInfos          []ExtInfo
+	eventBus          map[string][]eventSub // topic -> subscribers
+	eventBusSeq       int                   // monotonic subscription ID
 
 	// Runtime references (set via Bind)
 	agent   AgentAPI
@@ -55,6 +58,9 @@ type App struct {
 	runBackground       func(prompt string) error
 	cancelBackground    func()
 	isBackgroundRunning func() bool
+
+	// Idle signaling
+	idleWaiters []chan struct{} // pending WaitForIdle callers
 }
 
 // AgentReader provides read-only access to agent state.
@@ -88,13 +94,14 @@ type AgentAPI interface {
 // NewApp creates an extension App for the given working directory.
 func NewApp(cwd string) *App {
 	return &App{
-		cwd:       cwd,
-		tools:     make(map[string]*ToolDef),
-		commands:  make(map[string]*Command),
-		shortcuts: make(map[string]*Shortcut),
-		renderers: make(map[string]Renderer),
+		cwd:             cwd,
+		tools:           make(map[string]*ToolDef),
+		commands:        make(map[string]*Command),
+		shortcuts:       make(map[string]*Shortcut),
+		renderers:       make(map[string]Renderer),
 		providers:       make(map[string]*ProviderConfig),
 		streamProviders: make(map[string]StreamProviderFactory),
+		eventBus:        make(map[string][]eventSub),
 	}
 }
 
@@ -166,4 +173,10 @@ func (a *App) enqueue(action Action) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.actions = append(a.actions, action)
+}
+
+// eventSub is an internal subscriber record for the inter-extension event bus.
+type eventSub struct {
+	id int
+	fn func(any)
 }
