@@ -40,6 +40,7 @@ Sent immediately after the extension starts.
 **Params:**
 - `protocolVersion` (string): Currently "4".
 - `cwd` (string): The current working directory of the host.
+- `configDir` (string, optional): The extension's namespaced config directory (`~/.config/piglet/extensions/<name>/`).
 
 **Response (Result):**
 - `name` (string): The extension's display name.
@@ -166,17 +167,21 @@ Extensions should send these notifications **during the handshake phase** (after
 - `description` (string): Tool description for the LLM.
 - `parameters` (object): JSON Schema for tool arguments.
 - `promptHint` (string, optional): Instructions for the LLM on when to use this tool.
+- `deferred` (boolean, optional): If true, tool is not loaded until explicitly requested.
+- `interruptBehavior` (string, optional): `"cancel"` (default) or `"block"` — controls behavior when the user interrupts during tool execution.
 
 ### `register/command`
 **Params:**
 - `name` (string): Slash command name (without the `/`).
 - `description` (string): Description for `/help`.
+- `immediate` (boolean, optional): If true, command runs immediately without waiting for the agent turn to complete.
 
 ### `register/promptSection`
 **Params:**
 - `title` (string): Section title.
 - `content` (string): Instructions to add to the system prompt.
 - `order` (integer, optional): Lower numbers appear earlier.
+- `tokenHint` (integer, optional): Estimated token count for context budget tracking.
 
 ### `register/interceptor`
 **Params:**
@@ -186,6 +191,7 @@ Extensions should send these notifications **during the handshake phase** (after
 ### `register/eventHandler`
 **Params:**
 - `name` (string): Handler name.
+- `priority` (integer, optional): Higher numbers run first.
 - `events` (array, optional): List of event names to observe (null = all).
 
 ### `register/shortcut`
@@ -196,11 +202,12 @@ Extensions should send these notifications **during the handshake phase** (after
 ### `register/messageHook`
 **Params:**
 - `name` (string): Hook name.
+- `priority` (integer, optional): Higher numbers run first.
 
 ### `register/compactor`
 **Params:**
 - `name` (string): Compactor name.
-- `threshold` (integer, optional): Token threshold to trigger compaction.
+- `threshold` (integer, optional): Token threshold to trigger compaction (0 = use config default).
 
 ### `register/provider`
 **Params:**
@@ -222,6 +229,14 @@ Adds a message to the conversation history.
 Writes to the host's log file.
 **Params:** `{ "level": "info", "message": "..." }`
 
+### `sendMessage` (Notification)
+Queues a user message into the agent loop.
+**Params:** `{ "content": "..." }`
+
+### `steer` (Notification)
+Interrupts the current turn and injects a steering message.
+**Params:** `{ "content": "..." }`
+
 ---
 
 ## Host Service Requests (Extension to Host)
@@ -239,8 +254,8 @@ Reads one or more configuration values from the host.
 **Response (Result):**
 - `values` (object): Key→value map of the requested configuration.
 
-### `host/config.readExtension` (Request)
-Reads the extension configuration file at `~/.config/piglet/<name>.md`.
+### `host/config.readExtension` (Request) *(deprecated — use `ConfigDir` from `initialize` params instead)*
+Reads the extension configuration file. Checks `~/.config/piglet/extensions/<name>/<name>.md` first, falling back to `~/.config/piglet/<name>.md`.
 
 **Params:**
 - `name` (string): Extension name.
@@ -280,7 +295,7 @@ Runs a full agent loop with tool use.
 **Params:**
 - `system` (string, optional): System prompt.
 - `task` (string): The task or prompt to execute.
-- `tools` (string, optional): Tool access — "background_safe" or "all".
+- `tools` (string, optional): Tool access — "background_safe" (default) or "all".
 - `model` (string, optional): Model to use.
 - `maxTurns` (integer, optional): Maximum agent turns.
 
@@ -297,7 +312,7 @@ Runs a full agent loop with tool use.
 Lists all tools available on the host (core tools + other extensions).
 
 **Params:**
-- `filter` (string): Either "all" or "background_safe".
+- `filter` (string, optional): Either "all" (default) or "background_safe".
 
 **Response (Result):**
 - `tools` (array): List of tool definitions.
@@ -324,6 +339,16 @@ Returns the current conversation's message history.
 
 **Response (Result):**
 - `messages` (array): Raw JSON array of conversation messages.
+
+### `host/setConversationMessages` (Request)
+Replaces the current conversation's message history.
+
+**Params:**
+- `messages` (array): Array of `{ "type": "user"|"assistant"|"tool_result", "data": ... }` objects.
+
+**Response (Result):** Empty.
+
+---
 
 ### `host/sessions` (Request)
 Lists all available sessions.
@@ -472,8 +497,40 @@ Returned by event handlers and shortcuts to trigger TUI actions.
 **Supported Types:**
 - `notify`: Show a TUI notification.
 - `showMessage`: Display a message in the conversation.
+- `sendMessage`: Queue a user message into the agent loop.
 - `setSessionTitle`: Update the current session's title.
 - `setStatus`: Update a status bar key.
 - `attachImage`: Attach an image to the next message.
 - `detachImage`: Clear the attached image.
 - `quit`: Exit Piglet.
+
+---
+
+## Provider Streaming
+
+Extensions that register a provider (via `register/provider`) can handle LLM streaming on behalf of the host.
+
+### `provider/stream` (Request, host → extension)
+Asks the extension to stream an LLM call.
+
+**Params:**
+- `requestId` (integer): Correlation ID for matching deltas to this request.
+- `model` (object): Model definition (JSON).
+- `system` (string): System prompt.
+- `messages` (array): Conversation messages (JSON).
+- `tools` (array, optional): Tool definitions (JSON).
+- `options` (object, optional): Provider-specific options (JSON).
+
+**Response (Result):**
+- `message` (object): The final assembled message (JSON).
+- `error` (string, optional): Error description if streaming failed.
+
+### `provider/delta` (Notification, extension → host)
+Sent during streaming to deliver incremental chunks, correlated by `requestId`.
+
+**Params:**
+- `requestId` (integer): Matches the `requestId` from `provider/stream`.
+- `type` (string): Delta type (e.g., "text", "toolcall_start", "toolcall_delta", "toolcall_end").
+- `index` (integer, optional): Content block index.
+- `delta` (string, optional): Text chunk.
+- `tool` (object, optional): Tool call info for `toolcall_end` — `{ "id": "...", "name": "...", "arguments": "..." }`.

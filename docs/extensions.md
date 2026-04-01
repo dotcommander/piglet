@@ -27,6 +27,7 @@ Official extensions are consolidated into packs — single binaries that registe
 | **pack-agent** | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
 | **pack-core** | admin, export, extensions-list, undo, scaffold, background | 8 commands |
 | **pack-workflow** | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
+| **pack-cron** | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | **mcp** | mcp | Dynamic tools, 1 command, 1 prompt section (standalone) |
 
 Packs use the same `ext.App` API as individual extensions. Each constituent extension keeps its own package — only the binary entry points are merged. Individual extensions remain independently buildable for development and testing.
@@ -235,7 +236,8 @@ Go SDK API:
 | `e.SendMessage(content)` | Inject a user message into the agent loop |
 | `e.Steer(content)` | Interrupt current turn with a steering message |
 | `e.ConfigGet(ctx, keys...)` | Read host config values |
-| `e.ConfigReadExtension(ctx, name)` | Read extension config file |
+| `e.ConfigDir()` | Get the extension's namespaced config directory |
+| `e.ConfigReadExtension(ctx, name)` | Read extension config file (deprecated — use `e.ConfigDir()` instead) |
 | `e.AuthGetKey(ctx, provider)` | Get API key from host auth |
 | `e.Chat(ctx, req)` | Single-turn LLM call via host |
 | `e.RunAgent(ctx, req)` | Full agent loop via host |
@@ -245,8 +247,8 @@ Go SDK API:
 
 The protocol is newline-delimited JSON-RPC 2.0 over FD 3 (host→extension) and FD 4 (extension→host). See [docs/protocol.md](protocol.md) for the full message specification. The flow:
 
-1. Host sends `initialize` request with `{ protocolVersion, cwd }`
-2. Extension sends `register/*` notifications (tool, command, promptSection, interceptor, eventHandler, shortcut, messageHook)
+1. Host sends `initialize` request with `{ protocolVersion, cwd, configDir }`
+2. Extension sends `register/*` notifications (tool, command, promptSection, interceptor, eventHandler, shortcut, messageHook, compactor, provider)
 3. Extension responds to `initialize` with `{ name, version }`
 4. Host sends requests as needed: `tool/execute`, `command/execute`, `interceptor/before`, `interceptor/after`, `event/dispatch`, `shortcut/handle`, `messageHook/onMessage`
 5. Host sends `shutdown` when done
@@ -419,7 +421,6 @@ Beyond the command handler methods, extensions have full runtime access after bi
 | `app.SetConversationMessages(msgs)` | Replace conversation history |
 | `app.ToggleStepMode()` | Toggle step-by-step tool approval |
 | `app.CWD()` | Get the working directory |
-| `app.Model()` | Get the current model |
 
 ## Overriding Built-ins
 
@@ -448,13 +449,19 @@ Later registrations overwrite earlier ones for the same name.
 
 ## Building Extensions
 
-Official extensions live in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions):
+Official extensions live in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions). Install from within piglet:
 
 ```bash
-git clone https://github.com/dotcommander/piglet-extensions
-cd piglet-extensions
-make extensions              # Build + install all to ~/.config/piglet/extensions/
-make extensions-safeguard    # Build a single extension
+/extensions install          # Clone, build all packs, install
+/extensions update           # Rebuild from latest source
+piglet update --local        # Build from local go.work checkout (development)
+```
+
+Or build manually:
+
+```bash
+cd ~/go/src/piglet-extensions
+make packs                   # Build all pack binaries
 ```
 
 Without extensions installed, piglet runs as a minimal agent with only the compiled-in tools and commands.

@@ -35,6 +35,8 @@ providers:
 | `rtk` | *bool | `nil` (auto-detect) | RTK token optimization: `nil` = auto-detect, `true` = force enable, `false` = disable |
 | `debug` | bool | `false` | Log all request/response payloads |
 | `safeguard` | *bool | `nil` (enabled) | Dangerous command blocking: `nil`/`true` = enabled, `false` = disabled |
+| `disabled_extensions` | list | `[]` | Extension names to skip during loading |
+| `deferredToolsNote` | string | `""` | Instruction shown when deferred tools are present |
 
 #### Agent Settings (`agent:`)
 
@@ -42,10 +44,10 @@ providers:
 |-----|------|---------|-------------|
 | `maxTurns` | int | `10` | Max agent turns per interaction |
 | `bgMaxTurns` | int | `5` | Max turns for background agents |
-| `autoTitle` | bool | `true` | Auto-generate session titles |
+| `autoTitle` | *bool | `nil` (true) | Auto-generate session titles: `nil`/`true` = enabled, `false` = disabled |
 | `compactKeepRecent` | int | `6` | Messages to keep after compaction |
 | `compactAt` | int | `0` | Token threshold for auto-compact (0 = disabled) |
-| `maxMessages` | int | `200` | Hard cap on conversation messages |
+| `maxMessages` | int | `0` (unlimited) | Hard cap on conversation messages (0 = unlimited) |
 | `maxTokens` | int | model default | Output token limit |
 | `maxRetries` | int | `3` | Retry attempts on error |
 | `toolConcurrency` | int | `10` | Max parallel tool calls |
@@ -81,6 +83,20 @@ providers:
 |-----|------|---------|-------------|
 | `maxTurns` | int | `10` | Max turns for sub-agents |
 
+#### Extension Install Settings (`extInstall:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `repoUrl` | string | `https://github.com/dotcommander/piglet-extensions.git` | Git URL for extension source |
+| `official` | list | `[pack-core, pack-agent, ...]` | Official extension/pack names to install |
+
+#### Local Model Defaults (`localDefaults:`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `contextWindow` | int | `0` | Fallback context window for local models (0 = auto-detect) |
+| `maxTokens` | int | `0` | Fallback max output tokens for local models (0 = auto-detect) |
+
 #### Project Docs (`projectDocs:`)
 
 Auto-read files into the system prompt as context:
@@ -89,9 +105,11 @@ Auto-read files into the system prompt as context:
 projectDocs:
   - name: CLAUDE.md
     title: Project Instructions
-  - name: docs/architecture.md
-    title: Architecture
+  - name: agents.md
+    title: Agents
 ```
+
+The defaults above are applied when no `projectDocs` are configured. Override to customize which files are auto-read.
 
 ### Environment Variables
 
@@ -99,6 +117,8 @@ projectDocs:
 |----------|--------|
 | `PIGLET_DEFAULT_MODEL` | Override default model |
 | `PIGLET_SMALL_MODEL` | Override small model for background tasks |
+
+**Resolution cascade:** `PIGLET_SMALL_MODEL` env → `smallModel` config → `PIGLET_DEFAULT_MODEL` env → `defaultModel` config. The `--model` CLI flag takes highest precedence for the default model.
 
 ## Prompt Templates
 
