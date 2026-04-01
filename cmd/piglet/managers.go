@@ -60,6 +60,44 @@ func (m *sessionMgr) Fork() (string, any, int, error) {
 	return parentID, forked, len(forked.Messages()), nil
 }
 
+func (m *sessionMgr) Branch(entryID string) (any, error) {
+	if *m.current == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+	if err := (*m.current).Branch(entryID); err != nil {
+		return nil, err
+	}
+	return *m.current, nil
+}
+
+func (m *sessionMgr) BranchWithSummary(entryID, summary string) (any, error) {
+	if *m.current == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+	if err := (*m.current).BranchWithSummary(entryID, summary); err != nil {
+		return nil, err
+	}
+	return *m.current, nil
+}
+
+func (m *sessionMgr) EntryInfos() []ext.EntryInfo {
+	if *m.current == nil {
+		return nil
+	}
+	raw := (*m.current).EntryInfos()
+	out := make([]ext.EntryInfo, len(raw))
+	for i, e := range raw {
+		out[i] = ext.EntryInfo{
+			ID:        e.ID,
+			ParentID:  e.ParentID,
+			Type:      e.Type,
+			Timestamp: e.Timestamp,
+			Children:  e.Children,
+		}
+	}
+	return out
+}
+
 func (m *sessionMgr) SetTitle(title string) error {
 	if *m.current == nil {
 		return fmt.Errorf("no active session")
@@ -72,6 +110,49 @@ func (m *sessionMgr) Title() string {
 		return ""
 	}
 	return (*m.current).Meta().Title
+}
+
+func (m *sessionMgr) AppendEntry(kind string, data any) error {
+	if *m.current == nil {
+		return fmt.Errorf("no active session")
+	}
+	return (*m.current).AppendCustom(kind, data)
+}
+
+func (m *sessionMgr) AppendCustomMessage(role, content string) error {
+	if *m.current == nil {
+		return fmt.Errorf("no active session")
+	}
+	return (*m.current).AppendCustomMessage(role, content)
+}
+
+func (m *sessionMgr) AppendLabel(targetID, label string) error {
+	if *m.current == nil {
+		return fmt.Errorf("no active session")
+	}
+	return (*m.current).AppendLabel(targetID, label)
+}
+
+func (m *sessionMgr) FullTree() []ext.TreeNode {
+	if *m.current == nil {
+		return nil
+	}
+	raw := (*m.current).FullTree()
+	out := make([]ext.TreeNode, len(raw))
+	for i, n := range raw {
+		out[i] = ext.TreeNode{
+			ID:           n.ID,
+			ParentID:     n.ParentID,
+			Type:         n.Type,
+			Timestamp:    n.Timestamp,
+			Children:     n.Children,
+			OnActivePath: n.OnActivePath,
+			Depth:        n.Depth,
+			Preview:      n.Preview,
+			Label:        n.Label,
+		}
+	}
+	return out
 }
 
 // modelMgr implements ext.ModelManager using the provider registry.

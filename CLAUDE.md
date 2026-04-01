@@ -38,7 +38,7 @@ tui/, cmd/  → anything (wiring layer)
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
 | Tools | 7 | `tool/` | `RegisterTool` |
-| Commands | 9 | `command/` | `RegisterCommand` |
+| Commands | 16 | `command/` | `RegisterCommand` |
 | Shortcuts | 1 | `command/` | `RegisterShortcut` |
 | Status sections | 6 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
@@ -133,7 +133,7 @@ command/       Compiled-in commands, status sections, shortcuts (see command/bui
 prompt/        System prompt builder + compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
-session/       JSONL conversation persistence, compaction
+session/       Tree-structured JSONL persistence, in-place branching, compaction (see docs/sessions.md)
 tui/           Bubble Tea v2 UI
 
 # External extensions live in separate repo: dotcommander/piglet-extensions

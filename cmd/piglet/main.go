@@ -82,6 +82,14 @@ type runtime struct {
 	sessDir  string
 }
 
+// projectExtDir returns the project-local extensions directory if enabled, else "".
+func (rt *runtime) projectExtDir() string {
+	if rt.settings.AllowProjectExtensions != nil && *rt.settings.AllowProjectExtensions {
+		return external.ProjectExtensionsDir(rt.cwd)
+	}
+	return ""
+}
+
 // writeModelsYAML writes the default model catalog. The modelsdev extension
 // enriches it with live API data on first interactive startup.
 func writeModelsYAML(path string) error {
@@ -443,7 +451,7 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 	app := ext.NewApp(rt.cwd)
 	registerBuiltins(app, rt)
 
-	loaded, extCleanup, extErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+	loaded, extCleanup, extErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, rt.projectExtDir())
 	if extErr != nil {
 		slog.Warn("load extensions", "err", extErr)
 	}
@@ -452,7 +460,7 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 		}
-		reloaded, reloadCleanup, reloadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		reloaded, reloadCleanup, reloadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, rt.projectExtDir())
 		if reloadErr != nil {
 			slog.Warn("load extensions", "err", reloadErr)
 		}
@@ -527,7 +535,8 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 
 	setupFn := func() tui.AgentReadyMsg {
 		// --- Async phase: load external extensions (~1.3s) ---
-		loaded, cleanup, loadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+		projectDir := rt.projectExtDir()
+		loaded, cleanup, loadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, projectDir)
 		if loadErr != nil {
 			slog.Warn("load extensions", "err", loadErr)
 		}
@@ -539,7 +548,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 			if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
 				fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
 			}
-			reloaded, reloadCleanup, retryErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions)
+			reloaded, reloadCleanup, retryErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, projectDir)
 			if retryErr != nil {
 				slog.Warn("load extensions", "err", retryErr)
 			}

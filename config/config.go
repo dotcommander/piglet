@@ -11,28 +11,29 @@ import (
 
 // Settings holds user configuration.
 type Settings struct {
-	DefaultProvider    string            `yaml:"defaultProvider,omitempty"`
-	DefaultModel       string            `yaml:"defaultModel,omitempty"`
-	SmallModel         string            `yaml:"smallModel,omitempty"`
-	SystemPrompt       string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
-	Theme              string            `yaml:"theme,omitempty"`
-	Extensions         []string          `yaml:"extensions,omitempty"`
-	Providers          map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
-	Agent              AgentSettings     `yaml:"agent,omitempty"`
-	Git                GitSettings       `yaml:"git,omitempty"`
-	Tools              ToolSettings      `yaml:"tools,omitempty"`
-	Bash               BashSettings      `yaml:"bash,omitempty"`
-	Shortcuts          map[string]string `yaml:"shortcuts,omitempty"`           // action → keybind (e.g. "model": "ctrl+p")
-	PromptOrder        map[string]int    `yaml:"promptOrder,omitempty"`         // section title → order override
-	ProjectDocs        []ProjectDoc      `yaml:"projectDocs,omitempty"`         // files to auto-read for context
-	RTK                *bool             `yaml:"rtk,omitempty"`                 // nil = auto-detect; true/false = explicit
-	Debug              bool              `yaml:"debug,omitempty"`               // log all request/response payloads
-	Safeguard          *bool             `yaml:"safeguard,omitempty"`           // nil/true = enabled; false = disabled
-	DisabledExtensions []string          `yaml:"disabled_extensions,omitempty"` // extensions to skip during loading
-	SubAgent           SubAgentSettings  `yaml:"subagent,omitempty"`
-	ExtInstall         ExtensionSettings `yaml:"extInstall,omitempty"`
-	LocalDefaults      LocalDefaults     `yaml:"localDefaults,omitempty"`
-	DeferredToolsNote  string            `yaml:"deferredToolsNote,omitempty"` // instruction shown when deferred tools are present
+	DefaultProvider        string            `yaml:"defaultProvider,omitempty"`
+	DefaultModel           string            `yaml:"defaultModel,omitempty"`
+	SmallModel             string            `yaml:"smallModel,omitempty"`
+	SystemPrompt           string            `yaml:"systemPrompt,omitempty"` // base identity; overridden by prompt.md
+	Theme                  string            `yaml:"theme,omitempty"`
+	Extensions             []string          `yaml:"extensions,omitempty"`
+	Providers              map[string]string `yaml:"providers,omitempty"` // provider name → base URL override
+	Agent                  AgentSettings     `yaml:"agent,omitempty"`
+	Git                    GitSettings       `yaml:"git,omitempty"`
+	Tools                  ToolSettings      `yaml:"tools,omitempty"`
+	Bash                   BashSettings      `yaml:"bash,omitempty"`
+	Shortcuts              map[string]string `yaml:"shortcuts,omitempty"`              // action → keybind (e.g. "model": "ctrl+p")
+	PromptOrder            map[string]int    `yaml:"promptOrder,omitempty"`            // section title → order override
+	ProjectDocs            []ProjectDoc      `yaml:"projectDocs,omitempty"`            // files to auto-read for context
+	RTK                    *bool             `yaml:"rtk,omitempty"`                    // nil = auto-detect; true/false = explicit
+	Debug                  bool              `yaml:"debug,omitempty"`                  // log all request/response payloads
+	Safeguard              *bool             `yaml:"safeguard,omitempty"`              // nil/true = enabled; false = disabled
+	DisabledExtensions     []string          `yaml:"disabled_extensions,omitempty"`    // extensions to skip during loading
+	AllowProjectExtensions *bool             `yaml:"allowProjectExtensions,omitempty"` // default false; must opt-in for security
+	SubAgent               SubAgentSettings  `yaml:"subagent,omitempty"`
+	ExtInstall             ExtensionSettings `yaml:"extInstall,omitempty"`
+	LocalDefaults          LocalDefaults     `yaml:"localDefaults,omitempty"`
+	DeferredToolsNote      string            `yaml:"deferredToolsNote,omitempty"` // instruction shown when deferred tools are present
 }
 
 // ProjectDoc maps a filename to a prompt section title.
