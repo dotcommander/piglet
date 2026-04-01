@@ -166,3 +166,24 @@ func TestRegisterProjectDocs_FindsRepoRootAboveCWD(t *testing.T) {
 	require.Len(t, sections, 1)
 	assert.Contains(t, sections[0].Content, "root doc")
 }
+
+func TestRegisterProjectDocs_OversizedFileSkipped(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
+	// Write a file larger than 512 KB
+	bigContent := make([]byte, 513<<10) // 513 KB
+	for i := range bigContent {
+		bigContent[i] = 'x'
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "CLAUDE.md"), bigContent, 0o644))
+
+	app := ext.NewApp(repoRoot)
+	docs := []config.ProjectDoc{
+		{Name: "CLAUDE.md", Title: "Big Doc"},
+	}
+	prompt.RegisterProjectDocs(app, docs)
+
+	assert.Empty(t, app.PromptSections(), "files > 512KB should be skipped")
+}

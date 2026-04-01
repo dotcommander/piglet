@@ -155,3 +155,44 @@ func TestBuild_NoToolsSection(t *testing.T) {
 	// No tools registered → no tool usage section
 	assert.NotContains(t, result, "# Tool Usage Notes")
 }
+
+func TestBuild_OrderOverrides(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterPromptSection(ext.PromptSection{Title: "A", Content: "aaa", Order: 10})
+	app.RegisterPromptSection(ext.PromptSection{Title: "B", Content: "bbb", Order: 20})
+
+	// Swap order so B comes before A
+	result := prompt.Build(app, "base", prompt.BuildOptions{
+		OrderOverrides: map[string]int{"B": 5},
+	})
+
+	idxA := strings.Index(result, "# A")
+	idxB := strings.Index(result, "# B")
+	assert.Greater(t, idxB, -1)
+	assert.Greater(t, idxA, -1)
+	assert.Less(t, idxB, idxA, "B (overridden to 5) should appear before A (10)")
+}
+
+func TestBuild_DeferredToolsNote(t *testing.T) {
+	t.Parallel()
+
+	app := ext.NewApp("")
+	app.RegisterTool(&ext.ToolDef{
+		ToolSchema: core.ToolSchema{Name: "lazy_tool", Description: "loaded on demand"},
+		Execute:    func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) { return nil, nil },
+		Deferred:   true,
+	})
+
+	// Without DeferredToolsNote — deferred tools present but no note → no section
+	result := prompt.Build(app, "base")
+	assert.NotContains(t, result, "## Deferred Tools")
+
+	// With DeferredToolsNote — section appears
+	result = prompt.Build(app, "base", prompt.BuildOptions{
+		DeferredToolsNote: "Some tools are loaded on first use.",
+	})
+	assert.Contains(t, result, "## Deferred Tools")
+	assert.Contains(t, result, "Some tools are loaded on first use.")
+}
