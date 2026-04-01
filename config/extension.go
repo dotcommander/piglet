@@ -7,15 +7,6 @@ import (
 	"strings"
 )
 
-// writeFileAtomic writes data to path atomically using a temp file + rename.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 // ReadExtensionConfig reads a markdown config file for the named extension.
 // Looks for ~/.config/piglet/extensions/<name>/<name>.md first,
 // falling back to ~/.config/piglet/<name>.md for backward compatibility.
@@ -51,7 +42,7 @@ func ReadExtensionConfig(name string) (string, error) {
 
 	// Migrate: copy old to new atomically (best-effort)
 	if err := os.MkdirAll(extDir, 0o755); err == nil {
-		_ = writeFileAtomic(newPath, data, 0o600)
+		_ = AtomicWrite(newPath, data, 0o600)
 	}
 
 	return strings.TrimSpace(string(data)), nil

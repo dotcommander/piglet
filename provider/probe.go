@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-var probeClient = &http.Client{Timeout: 3 * time.Second}
-
 // ProbeResult holds the outcome of probing a local model server.
 type ProbeResult struct {
 	ModelID       string // discovered model ID (e.g. "qwen3.5-27b-mxfp8")
@@ -22,10 +20,11 @@ type ProbeResult struct {
 // ProbeServer contacts baseURL + "/v1/models" and returns the first
 // available model along with the detected server type.
 func ProbeServer(baseURL string) (ProbeResult, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
 	baseURL = strings.TrimRight(baseURL, "/")
 	endpoint := baseURL + "/v1/models"
 
-	resp, err := probeClient.Get(endpoint)
+	resp, err := client.Get(endpoint)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("probe %s: %w", endpoint, err)
 	}

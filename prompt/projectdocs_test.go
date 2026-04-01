@@ -99,23 +99,10 @@ func TestRegisterProjectDocs_EmptyFileSkipped(t *testing.T) {
 	assert.Empty(t, app.PromptSections())
 }
 
-func TestRegisterProjectDocs_DefaultsUsedWhenNil(t *testing.T) {
+func TestRegisterProjectDocs_NilDocsIsNoOp(t *testing.T) {
 	t.Parallel()
 
-	// Nil docs → defaults (CLAUDE.md + agents.md). Neither file exists → no sections.
-	repoRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
-
-	app := ext.NewApp(repoRoot)
-	prompt.RegisterProjectDocs(app, nil)
-
-	// No default files exist → no sections (not an error)
-	assert.Empty(t, app.PromptSections())
-}
-
-func TestRegisterProjectDocs_DefaultsWithFilesPresent(t *testing.T) {
-	t.Parallel()
-
+	// Nil docs → no-op; files in the repo root are not read.
 	repoRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "CLAUDE.md"), []byte("instructions"), 0o644))
@@ -123,9 +110,21 @@ func TestRegisterProjectDocs_DefaultsWithFilesPresent(t *testing.T) {
 	app := ext.NewApp(repoRoot)
 	prompt.RegisterProjectDocs(app, nil)
 
-	sections := app.PromptSections()
-	require.Len(t, sections, 1)
-	assert.Equal(t, "Project Instructions", sections[0].Title)
+	// Nil slice is a no-op — callers supply the doc list (via applyDefaults).
+	assert.Empty(t, app.PromptSections())
+}
+
+func TestRegisterProjectDocs_EmptyDocsIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "CLAUDE.md"), []byte("instructions"), 0o644))
+
+	app := ext.NewApp(repoRoot)
+	prompt.RegisterProjectDocs(app, []config.ProjectDoc{})
+
+	assert.Empty(t, app.PromptSections())
 }
 
 func TestRegisterProjectDocs_NoCWD_UsesGivenDir(t *testing.T) {

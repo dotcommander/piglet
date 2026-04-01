@@ -32,6 +32,8 @@ type Settings struct {
 	DisabledExtensions []string          `yaml:"disabled_extensions,omitempty"` // extensions to skip during loading
 	SubAgent           SubAgentSettings  `yaml:"subagent,omitempty"`
 	ExtInstall         ExtensionSettings `yaml:"extInstall,omitempty"`
+	LocalDefaults      LocalDefaults     `yaml:"localDefaults,omitempty"`
+	DeferredToolsNote  string            `yaml:"deferredToolsNote,omitempty"` // instruction shown when deferred tools are present
 }
 
 // ProjectDoc maps a filename to a prompt section title.
@@ -88,33 +90,43 @@ type SubAgentSettings struct {
 	MaxTurns int `yaml:"maxTurns,omitempty"` // default 10
 }
 
-const defaultExtensionsRepoURL = "https://github.com/dotcommander/piglet-extensions.git"
-
-var defaultOfficialExtensions = []string{
-	"pack-core", "pack-agent", "pack-context", "pack-code", "pack-workflow",
-	"mcp",
-}
-
 // ExtensionSettings controls extension installation defaults.
 type ExtensionSettings struct {
 	RepoURL  string   `yaml:"repoUrl,omitempty"`
 	Official []string `yaml:"official,omitempty"`
 }
 
-// ResolveRepoURL returns the configured repo URL or the default.
-func (s ExtensionSettings) ResolveRepoURL() string {
-	if s.RepoURL != "" {
-		return s.RepoURL
-	}
-	return defaultExtensionsRepoURL
+// LocalDefaults holds default values for ad-hoc local model connections.
+type LocalDefaults struct {
+	ContextWindow int `yaml:"contextWindow,omitempty"`
+	MaxTokens     int `yaml:"maxTokens,omitempty"`
 }
 
-// ResolveOfficial returns the configured extension list or the default.
-func (s ExtensionSettings) ResolveOfficial() []string {
-	if len(s.Official) > 0 {
-		return s.Official
+// applyDefaults fills in zero-value fields with their defaults.
+func applyDefaults(s *Settings) {
+	if len(s.ProjectDocs) == 0 {
+		s.ProjectDocs = []ProjectDoc{
+			{Name: "CLAUDE.md", Title: "Project Instructions"},
+			{Name: "agents.md", Title: "Agents"},
+		}
 	}
-	return defaultOfficialExtensions
+	if s.ExtInstall.RepoURL == "" {
+		s.ExtInstall.RepoURL = "https://github.com/dotcommander/piglet-extensions.git"
+	}
+	if len(s.ExtInstall.Official) == 0 {
+		s.ExtInstall.Official = []string{
+			"pack-core", "pack-agent", "pack-context", "pack-code", "pack-workflow",
+			"mcp",
+		}
+	}
+}
+
+// DefaultSettings returns a Settings with all defaults applied.
+// Useful for testing and for code that needs a baseline configuration.
+func DefaultSettings() Settings {
+	var s Settings
+	applyDefaults(&s)
+	return s
 }
 
 // ConfigDir returns ~/.config/piglet/, respecting XDG_CONFIG_HOME.
@@ -192,7 +204,9 @@ func LoadFrom(path string) (Settings, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Settings{}, nil
+			var s Settings
+			applyDefaults(&s)
+			return s, nil
 		}
 		return Settings{}, fmt.Errorf("read config: %w", err)
 	}
@@ -201,6 +215,7 @@ func LoadFrom(path string) (Settings, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return Settings{}, fmt.Errorf("parse config: %w", err)
 	}
+	applyDefaults(&s)
 	return s, nil
 }
 

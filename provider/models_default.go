@@ -31,25 +31,49 @@ type CuratedModel struct {
 }
 
 type curatedModelsFile struct {
-	Models []CuratedModel `yaml:"models"`
+	Models                      []CuratedModel    `yaml:"models"`
+	MaxCompletionTokensPrefixes []string          `yaml:"maxCompletionTokensPrefixes"`
+	ProviderLabels              map[string]string `yaml:"providerLabels"`
+	SetupDefaultsMap            map[string]string `yaml:"setupDefaults"`
+	LocalDefaults               struct {
+		ContextWindow int `yaml:"contextWindow"`
+		MaxTokens     int `yaml:"maxTokens"`
+	} `yaml:"localDefaults"`
+	DeferredToolsNote string `yaml:"deferredToolsNote"`
 }
 
-// parseCuratedModels parses the embedded YAML on first call and caches the result.
-var parseCuratedModels = sync.OnceValue(func() []CuratedModel {
+// parseModelsFile parses the embedded YAML on first call and caches the result.
+var parseModelsFile = sync.OnceValue(func() curatedModelsFile {
 	var f curatedModelsFile
 	if err := yaml.Unmarshal(embeddedModelsYAML, &f); err != nil {
 		panic(fmt.Sprintf("provider: failed to parse embedded models.yaml: %v", err))
 	}
-	return f.Models
+	return f
 })
 
 // CuratedModels returns the default model catalog.
-func CuratedModels() []CuratedModel { return parseCuratedModels() }
+func CuratedModels() []CuratedModel { return parseModelsFile().Models }
+
+// SetupDefaults returns the per-provider default model IDs used during first-time setup.
+func SetupDefaults() map[string]string { return parseModelsFile().SetupDefaultsMap }
+
+// MaxCompletionTokensPrefixes returns model ID prefixes that require
+// max_completion_tokens instead of max_tokens.
+func MaxCompletionTokensPrefixes() []string { return parseModelsFile().MaxCompletionTokensPrefixes }
+
+// LocalDefaultContextWindow returns the default context window for ad-hoc local models.
+func LocalDefaultContextWindow() int { return parseModelsFile().LocalDefaults.ContextWindow }
+
+// LocalDefaultMaxTokens returns the default max tokens for ad-hoc local models.
+func LocalDefaultMaxTokens() int { return parseModelsFile().LocalDefaults.MaxTokens }
+
+// DeferredToolsNote returns the instruction shown when deferred tools are present.
+func DeferredToolsNote() string { return parseModelsFile().DeferredToolsNote }
 
 // DefaultModelsYAML returns the default models catalog as YAML.
 // The result is cached since the curated list is immutable.
 var defaultModelsYAML = sync.OnceValue(func() string {
-	return GenerateModelsYAML(parseCuratedModels(), nil)
+	return GenerateModelsYAML(parseModelsFile().Models, nil)
 })
 
 func DefaultModelsYAML() string {
@@ -120,26 +144,15 @@ type CuratedModelOverride struct {
 }
 
 func providerLabel(provider string) string {
-	switch provider {
-	case "anthropic":
-		return "Anthropic"
-	case "openai":
-		return "OpenAI"
-	case "google":
-		return "Google"
-	case "xai":
-		return "xAI"
-	case "groq":
-		return "Groq (free/fast inference)"
-	case "openrouter":
-		return "OpenRouter"
-	case "zai":
-		return "Z.AI (GLM models)"
-	case "lmstudio":
-		return "LM Studio (local)"
-	default:
+	labels := parseModelsFile().ProviderLabels
+	if label, ok := labels[provider]; ok {
+		return label
+	}
+	// Fallback: title-case the key
+	if len(provider) == 0 {
 		return provider
 	}
+	return strings.ToUpper(provider[:1]) + provider[1:]
 }
 
 // WriteDefaultModels writes the default models catalog to path.

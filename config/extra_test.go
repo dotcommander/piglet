@@ -124,7 +124,7 @@ func TestLoadFrom_EmptyFile(t *testing.T) {
 
 	s, err := config.LoadFrom(path)
 	require.NoError(t, err)
-	assert.Equal(t, config.Settings{}, s)
+	assert.Equal(t, config.DefaultSettings(), s)
 }
 
 // ── Settings roundtrip: nested structs and pointer booleans ────────────────
@@ -175,7 +175,7 @@ func TestSaveToAndLoadFrom_NestedStructs(t *testing.T) {
 		SubAgent: config.SubAgentSettings{
 			MaxTurns: 15,
 		},
-		Shortcuts: map[string]string{"model": "ctrl+p"},
+		Shortcuts:   map[string]string{"model": "ctrl+p"},
 		PromptOrder: map[string]int{"repomap": 10, "memory": 50},
 		ProjectDocs: []config.ProjectDoc{
 			{Name: "README.md", Title: "Project readme"},
@@ -223,18 +223,19 @@ func TestLoadAndSave_ViaXDG(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	// Load from missing file returns zero Settings.
+	// Load from missing file returns defaults.
 	s, err := config.Load()
 	require.NoError(t, err)
-	assert.Equal(t, config.Settings{}, s)
+	assert.Equal(t, config.DefaultSettings(), s)
 
-	// Save then Load round-trips correctly.
+	// Save then Load round-trips correctly (loaded value has defaults merged in).
 	want := config.Settings{DefaultProvider: "openai", DefaultModel: "gpt-4o"}
 	require.NoError(t, config.Save(want))
 
 	got, err := config.Load()
 	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	assert.Equal(t, want.DefaultProvider, got.DefaultProvider)
+	assert.Equal(t, want.DefaultModel, got.DefaultModel)
 }
 
 // ── ReadExtensionConfig ─────────────────────────────────────────────────────
@@ -351,7 +352,7 @@ func TestRunSetup_NoKeysNoExistingFiles(t *testing.T) {
 	err := config.RunSetup(func(path string) error {
 		writeModelsCalled = true
 		return os.WriteFile(path, []byte("models: []"), 0600)
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.True(t, writeModelsCalled)
 
@@ -382,7 +383,7 @@ func TestRunSetup_ExistingFilesNotOverwritten(t *testing.T) {
 	err := config.RunSetup(func(path string) error {
 		writeModelsCalled = true
 		return nil
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.False(t, writeModelsCalled, "writeModels should not be called when models.yaml already exists")
 
@@ -400,7 +401,7 @@ func TestRunSetup_WithDetectedKey(t *testing.T) {
 
 	err := config.RunSetup(func(path string) error {
 		return os.WriteFile(path, []byte("models: []"), 0600)
-	})
+	}, map[string]string{"anthropic": "claude-opus-4-6"})
 	require.NoError(t, err)
 
 	// config.yaml should have a defaultModel set to anthropic's default model.
@@ -415,7 +416,7 @@ func TestRunSetup_WriteModelsError(t *testing.T) {
 
 	err := config.RunSetup(func(path string) error {
 		return os.ErrPermission
-	})
+	}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "write models.yaml")
 }

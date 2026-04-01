@@ -430,19 +430,10 @@ func useMaxCompletionTokens(modelID string) bool {
 	if maxCompletionTokensSet()[modelID] {
 		return true
 	}
-	// Fallback heuristic for non-curated models (custom endpoints, OpenRouter)
-	for _, p := range []string{"o1", "o3", "o4"} {
-		if strings.HasPrefix(modelID, p) {
-			return true
-		}
-	}
-	const pfx = "gpt-"
-	if strings.HasPrefix(modelID, pfx) {
-		rest := modelID[len(pfx):]
-		if len(rest) > 0 && rest[0] >= '5' {
-			return true
-		}
-		if strings.HasPrefix(rest, "4.1") || strings.HasPrefix(rest, "4.5") {
+	// Fallback heuristic for non-curated models (custom endpoints, OpenRouter):
+	// check against the prefix list loaded from models.yaml.
+	for _, pfx := range MaxCompletionTokensPrefixes() {
+		if strings.HasPrefix(modelID, pfx) {
 			return true
 		}
 	}

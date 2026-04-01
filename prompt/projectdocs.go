@@ -3,7 +3,6 @@ package prompt
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/dotcommander/piglet/config"
@@ -12,17 +11,12 @@ import (
 
 const projectDocsOrder = 30 // before git context (40) and memory (50)
 
-var defaultProjectDocs = []config.ProjectDoc{
-	{Name: "CLAUDE.md", Title: "Project Instructions"},
-	{Name: "agents.md", Title: "Agents"},
-}
-
 // RegisterProjectDocs reads markdown files from the repository root and
-// injects each as a prompt section. Uses configured docs if provided,
-// otherwise falls back to defaults. Silently skips files that don't exist.
+// injects each as a prompt section. Silently skips files that don't exist or
+// are empty; a nil or empty docs slice is a no-op.
 func RegisterProjectDocs(app *ext.App, docs []config.ProjectDoc) {
 	if len(docs) == 0 {
-		docs = slices.Clone(defaultProjectDocs)
+		return
 	}
 
 	root := repoRoot(app.CWD())

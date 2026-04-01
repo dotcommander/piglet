@@ -45,7 +45,8 @@ func NeedsSetup() bool {
 
 // RunSetup runs the interactive first-time setup flow.
 // writeModels is called to write the default models.yaml file.
-func RunSetup(writeModels func(path string) error) error {
+// modelDefaults maps provider key → default model ID (used during key detection).
+func RunSetup(writeModels func(path string) error, modelDefaults map[string]string) error {
 	fmt.Println("piglet — first-time setup")
 	fmt.Println()
 	fmt.Println("Creating ~/.config/piglet/...")
@@ -71,12 +72,12 @@ func RunSetup(writeModels func(path string) error) error {
 	}
 
 	// Detect API keys
-	candidates := detectAPIKeys()
+	candidates := detectAPIKeys(modelDefaults)
 
 	var selectedModel string
 
 	if len(candidates) == 0 {
-		selectedModel = noKeysFlow()
+		selectedModel = noKeysFlow(modelDefaults)
 	} else {
 		// Pick best available: detection order is anthropic, openai, google, ...
 		// so candidates[0] is already the highest priority.
@@ -108,30 +109,33 @@ func RunSetup(writeModels func(path string) error) error {
 	return nil
 }
 
-// detectAPIKeys checks environment variables for known provider keys.
-func detectAPIKeys() []providerCandidate {
-	checks := []struct {
-		envKeys  []string
-		provider string
-		model    string
-	}{
-		{[]string{"ANTHROPIC_API_KEY"}, "anthropic", "claude-opus-4-6"},
-		{[]string{"OPENAI_API_KEY"}, "openai", "gpt-5.4"},
-		{[]string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}, "google", "gemini-3.1-pro-preview"},
-		{[]string{"XAI_API_KEY"}, "xai", "grok-3"},
-		{[]string{"GROQ_API_KEY"}, "groq", "llama-3.3-70b-versatile"},
-		{[]string{"OPENROUTER_API_KEY"}, "openrouter", "auto"},
-		{[]string{"ZAI_API_KEY"}, "zai", "glm-5"},
-	}
+// providerEnvKeys maps provider name → env var names checked for an API key.
+// Order determines setup priority (first detected wins).
+// Default model IDs (e.g. claude-opus-4-6, gpt-5.4, gemini-3.1-pro-preview) are
+// loaded at runtime from models.yaml via SetSetupModelDefaults.
+var providerEnvKeys = []struct {
+	provider string
+	envKeys  []string
+}{
+	{"anthropic", []string{"ANTHROPIC_API_KEY"}},
+	{"openai", []string{"OPENAI_API_KEY"}},
+	{"google", []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}},
+	{"xai", []string{"XAI_API_KEY"}},
+	{"groq", []string{"GROQ_API_KEY"}},
+	{"openrouter", []string{"OPENROUTER_API_KEY"}},
+	{"zai", []string{"ZAI_API_KEY"}},
+}
 
+// detectAPIKeys checks environment variables for known provider keys.
+func detectAPIKeys(modelDefaults map[string]string) []providerCandidate {
 	var found []providerCandidate
-	for _, c := range checks {
+	for _, c := range providerEnvKeys {
 		for _, key := range c.envKeys {
 			if os.Getenv(key) != "" {
 				found = append(found, providerCandidate{
 					provider: c.provider,
 					envKey:   key,
-					model:    c.model,
+					model:    setupDefaultModel(c.provider, modelDefaults),
 				})
 				break
 			}
@@ -140,7 +144,16 @@ func detectAPIKeys() []providerCandidate {
 	return found
 }
 
-func noKeysFlow() string {
+// setupDefaultModel returns the default model ID for a provider.
+// Falls back to the provider name if modelDefaults is nil or the provider is absent.
+func setupDefaultModel(provider string, modelDefaults map[string]string) string {
+	if model, ok := modelDefaults[provider]; ok {
+		return model
+	}
+	return provider
+}
+
+func noKeysFlow(modelDefaults map[string]string) string {
 	fmt.Println("No API keys detected in environment.")
 	fmt.Println()
 	fmt.Println("Set an API key to get started:")
@@ -151,7 +164,7 @@ func noKeysFlow() string {
 	fmt.Println("Or add it to ~/.config/piglet/auth.json:")
 	fmt.Println(`  {"anthropic": "sk-ant-..."}`)
 	fmt.Println()
-	model := "claude-opus-4-6"
+	model := setupDefaultModel("anthropic", modelDefaults)
 	fmt.Printf("Default model set to: %s (change in config.yaml)\n", model)
 	return model
 }

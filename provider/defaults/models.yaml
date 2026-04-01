@@ -1,3 +1,36 @@
+localDefaults:
+  contextWindow: 32768
+  maxTokens: 8192
+
+deferredToolsNote: "Some tools are listed by name only — their full parameter schemas are omitted to save context. Use the `tool_search` tool to look up a deferred tool's complete schema before calling it."
+
+maxCompletionTokensPrefixes:
+  - "o1"
+  - "o3"
+  - "o4"
+  - "gpt-4.1"
+  - "gpt-4.5"
+  - "gpt-5"
+
+providerLabels:
+  anthropic: "Anthropic"
+  openai: "OpenAI"
+  google: "Google"
+  xai: "xAI"
+  groq: "Groq (free/fast inference)"
+  openrouter: "OpenRouter"
+  zai: "Z.AI (GLM models)"
+  lmstudio: "LM Studio (local)"
+
+setupDefaults:
+  anthropic: "claude-opus-4-6"
+  openai: "gpt-5.4"
+  google: "gemini-3.1-pro-preview"
+  xai: "grok-3"
+  groq: "llama-3.3-70b-versatile"
+  openrouter: "auto"
+  zai: "glm-5"
+
 models:
   # Anthropic
   - id: claude-opus-4-6

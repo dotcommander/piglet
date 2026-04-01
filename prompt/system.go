@@ -3,17 +3,18 @@ package prompt
 
 import (
 	"cmp"
-	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 )
 
 // BuildOptions controls optional prompt building behavior.
 type BuildOptions struct {
-	OrderOverrides map[string]int // section title → order override
+	OrderOverrides    map[string]int // section title → order override
+	DeferredToolsNote string         // instruction injected when deferred tools are present
 }
 
 // Build constructs the system prompt from:
@@ -86,18 +87,30 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 	// Deferred tools note
 	if hasDeferred {
-		b.WriteString("## Deferred Tools\n\n")
-		b.WriteString("Some tools are listed by name only — their full parameter schemas are omitted to save context. Use the `tool_search` tool to look up a deferred tool's complete schema before calling it.\n\n")
+		note := ""
+		if len(opts) > 0 {
+			note = opts[0].DeferredToolsNote
+		}
+		if note != "" {
+			b.WriteString("## Deferred Tools\n\n")
+			b.WriteString(note)
+			b.WriteString("\n\n")
+		}
 	}
 
 	return b.String()
 }
 
 // loadUserPrompt reads ~/.config/piglet/prompt.md if it exists.
+// Uses direct file read — prompt.md is a top-level user config file, not an extension config.
 func loadUserPrompt() string {
-	s, err := config.ReadExtensionConfig("prompt")
+	dir, err := os.UserConfigDir()
 	if err != nil {
-		slog.Warn("failed to load user prompt", "error", err)
+		return ""
 	}
-	return s
+	data, err := os.ReadFile(filepath.Join(dir, "piglet", "prompt.md"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

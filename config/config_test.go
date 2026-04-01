@@ -14,7 +14,7 @@ func TestLoadFrom_NonExistent(t *testing.T) {
 	t.Parallel()
 	s, err := config.LoadFrom("/tmp/piglet-test-nonexistent/config.yaml")
 	require.NoError(t, err)
-	assert.Equal(t, config.Settings{}, s)
+	assert.Equal(t, config.DefaultSettings(), s)
 }
 
 func TestSaveToAndLoadFrom(t *testing.T) {
@@ -36,7 +36,14 @@ func TestSaveToAndLoadFrom(t *testing.T) {
 
 	loaded, err := config.LoadFrom(path)
 	require.NoError(t, err)
-	assert.Equal(t, s, loaded)
+	// applyDefaults merges in fields that were omitted on save; compare only
+	// the fields explicitly set above.
+	assert.Equal(t, s.DefaultProvider, loaded.DefaultProvider)
+	assert.Equal(t, s.DefaultModel, loaded.DefaultModel)
+	assert.Equal(t, s.SmallModel, loaded.SmallModel)
+	assert.Equal(t, s.Theme, loaded.Theme)
+	assert.Equal(t, s.Extensions, loaded.Extensions)
+	assert.Equal(t, s.Providers, loaded.Providers)
 }
 
 func TestSaveTo_CreatesDir(t *testing.T) {
