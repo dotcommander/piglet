@@ -99,6 +99,10 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 			m.totalIn = (m.totalIn * e.After) / e.Before
 			m.updateTokenStatus()
 		}
+		// Persist compacted state so session reload skips original messages
+		if m.cfg.Session != nil && m.cfg.Agent != nil {
+			_ = m.cfg.Session.AppendCompact(m.cfg.Agent.Messages())
+		}
 	}
 
 	// Apply actions after event types that may produce them

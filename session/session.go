@@ -164,22 +164,42 @@ func (s *Session) Append(msg core.Message) error {
 
 	s.messages = append(s.messages, msg)
 
-	entryType := "unknown"
-	switch msg.(type) {
-	case *core.UserMessage:
-		entryType = "user"
-	case *core.AssistantMessage:
-		entryType = "assistant"
-	case *core.ToolResultMessage:
-		entryType = "tool_result"
-	}
-
 	data, err := marshalJSON(msg)
 	if err != nil {
 		return err
 	}
 	return s.appendEntry(Entry{
-		Type:      entryType,
+		Type:      messageEntryType(msg),
+		Timestamp: time.Now(),
+		Data:      data,
+	})
+}
+
+// AppendCompact writes a compact checkpoint to the session. On reload, all
+// entries before this checkpoint are replaced by the compacted messages.
+// The in-memory message list is also replaced.
+func (s *Session) AppendCompact(msgs []core.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.messages = make([]core.Message, len(msgs))
+	copy(s.messages, msgs)
+
+	entries := make([]Entry, 0, len(msgs))
+	for _, msg := range msgs {
+		data, err := marshalJSON(msg)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, Entry{Type: messageEntryType(msg), Data: data})
+	}
+
+	data, err := marshalJSON(entries)
+	if err != nil {
+		return err
+	}
+	return s.appendEntry(Entry{
+		Type:      "compact",
 		Timestamp: time.Now(),
 		Data:      data,
 	})
@@ -322,7 +342,8 @@ func scanSummary(path string) Summary {
 			continue
 		}
 
-		if entry.Type == "meta" {
+		switch entry.Type {
+		case "meta":
 			var meta Meta
 			if err := json.Unmarshal(entry.Data, &meta); err == nil {
 				s.ID = meta.ID
@@ -332,7 +353,12 @@ func scanSummary(path string) Summary {
 				s.CreatedAt = meta.CreatedAt
 				s.ParentID = meta.ParentID
 			}
-		} else {
+		case "compact":
+			var entries []Entry
+			if err := json.Unmarshal(entry.Data, &entries); err == nil {
+				s.Messages = len(entries)
+			}
+		default:
 			s.Messages++
 		}
 	}
@@ -376,6 +402,28 @@ func (s *Session) replayEntry(entry Entry) {
 		if err := json.Unmarshal(entry.Data, &msg); err == nil {
 			s.messages = append(s.messages, &msg)
 		}
+	case "compact":
+		var entries []Entry
+		if err := json.Unmarshal(entry.Data, &entries); err != nil {
+			return
+		}
+		s.messages = s.messages[:0]
+		for _, sub := range entries {
+			s.replayEntry(sub)
+		}
+	}
+}
+
+func messageEntryType(msg core.Message) string {
+	switch msg.(type) {
+	case *core.UserMessage:
+		return "user"
+	case *core.AssistantMessage:
+		return "assistant"
+	case *core.ToolResultMessage:
+		return "tool_result"
+	default:
+		return "unknown"
 	}
 }
 

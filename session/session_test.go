@@ -1,11 +1,12 @@
 package session_test
 
 import (
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/session"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,7 +118,7 @@ func TestFork(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := range 5 {
-		require.NoError(t, s.Append(&core.UserMessage{Content: string(rune('a'+i)), Timestamp: time.Now()}))
+		require.NoError(t, s.Append(&core.UserMessage{Content: string(rune('a' + i)), Timestamp: time.Now()}))
 	}
 
 	// Fork keeping first 3 messages
@@ -306,4 +307,131 @@ func TestList_NonExistent(t *testing.T) {
 	summaries, err := session.List("/nonexistent/dir/12345")
 	require.NoError(t, err)
 	assert.Nil(t, summaries)
+}
+
+func TestCompactRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	// Write 6 original messages
+	for i := range 6 {
+		require.NoError(t, s.Append(&core.UserMessage{Content: fmt.Sprintf("msg%d", i), Timestamp: time.Now()}))
+	}
+
+	// Compact to 2 messages (summary + last)
+	compacted := []core.Message{
+		&core.UserMessage{Content: "summary of 0-4", Timestamp: time.Now()},
+		&core.UserMessage{Content: "msg5", Timestamp: time.Now()},
+	}
+	require.NoError(t, s.AppendCompact(compacted))
+
+	// Write 1 post-compact message
+	require.NoError(t, s.Append(&core.UserMessage{Content: "msg6", Timestamp: time.Now()}))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reload — should see compacted state + post-compact message, not originals
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	msgs := s2.Messages()
+	require.Len(t, msgs, 3, "should have 2 compacted + 1 post-compact")
+	assert.Equal(t, "summary of 0-4", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "msg5", msgs[1].(*core.UserMessage).Content)
+	assert.Equal(t, "msg6", msgs[2].(*core.UserMessage).Content)
+}
+
+func TestCompactReplacesInMemoryMessages(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+	require.Len(t, s.Messages(), 3)
+
+	compacted := []core.Message{
+		&core.UserMessage{Content: "summary", Timestamp: time.Now()},
+	}
+	require.NoError(t, s.AppendCompact(compacted))
+
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "summary", msgs[0].(*core.UserMessage).Content)
+}
+
+func TestCompactScanSummary(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	// Write 10 messages, compact to 3, then add 2 more
+	for i := range 10 {
+		require.NoError(t, s.Append(&core.UserMessage{Content: fmt.Sprintf("m%d", i), Timestamp: time.Now()}))
+	}
+	compacted := []core.Message{
+		&core.UserMessage{Content: "s1", Timestamp: time.Now()},
+		&core.UserMessage{Content: "s2", Timestamp: time.Now()},
+		&core.UserMessage{Content: "s3", Timestamp: time.Now()},
+	}
+	require.NoError(t, s.AppendCompact(compacted))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "post1", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "post2", Timestamp: time.Now()}))
+	require.NoError(t, s.Close())
+
+	summaries, err := session.List(dir)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	// 3 from compact + 2 post-compact = 5
+	assert.Equal(t, 5, summaries[0].Messages)
+}
+
+func TestCompactMultiple(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	// First batch
+	for i := range 4 {
+		require.NoError(t, s.Append(&core.UserMessage{Content: fmt.Sprintf("a%d", i), Timestamp: time.Now()}))
+	}
+	require.NoError(t, s.AppendCompact([]core.Message{
+		&core.UserMessage{Content: "compact1", Timestamp: time.Now()},
+	}))
+
+	// Second batch + second compaction
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b0", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b1", Timestamp: time.Now()}))
+	require.NoError(t, s.AppendCompact([]core.Message{
+		&core.UserMessage{Content: "compact2", Timestamp: time.Now()},
+	}))
+
+	// Post-compact message
+	require.NoError(t, s.Append(&core.UserMessage{Content: "final", Timestamp: time.Now()}))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reload — only last compact + post-compact messages survive
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	msgs := s2.Messages()
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "compact2", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "final", msgs[1].(*core.UserMessage).Content)
 }

@@ -635,6 +635,9 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 			fmt.Fprintf(os.Stderr, "[retry %d/%d: %s]\n", e.Attempt, e.Max, e.Error)
 		case core.EventCompact:
 			fmt.Fprintf(os.Stderr, "[compacted: %d → %d messages at %d tokens]\n", e.Before, e.After, e.TokensAtCompact)
+			if sess != nil {
+				_ = sess.AppendCompact(ag.Messages())
+			}
 		case core.EventAgentEnd:
 			fmt.Println()
 		}
@@ -710,6 +713,9 @@ func runJSON(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Se
 			_ = enc.Encode(map[string]any{"type": "retry", "attempt": e.Attempt, "max": e.Max, "error": e.Error})
 		case core.EventCompact:
 			_ = enc.Encode(map[string]any{"type": "compact", "before": e.Before, "after": e.After, "tokens": e.TokensAtCompact})
+			if sess != nil {
+				_ = sess.AppendCompact(ag.Messages())
+			}
 		case core.EventAgentEnd:
 			_ = enc.Encode(map[string]any{"type": "agent_end"})
 		}
