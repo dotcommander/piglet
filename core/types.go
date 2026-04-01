@@ -215,24 +215,11 @@ type Usage struct {
 // Tools
 // ---------------------------------------------------------------------------
 
-// InterruptBehavior controls how a tool reacts to steering (mid-turn user input).
-type InterruptBehavior int
-
-const (
-	// InterruptCancel cancels the tool on steer and discards its result (default).
-	InterruptCancel InterruptBehavior = iota
-	// InterruptBlock keeps the tool running when steered; the steer is queued
-	// for after the tool completes. Use for long-running tools (bash, monitors).
-	InterruptBlock
-)
-
 // ToolSchema is the definition sent to the LLM so it knows what tools exist.
 type ToolSchema struct {
-	Name              string                         `json:"name"`
-	Description       string                         `json:"description"`
-	Parameters        any                            `json:"parameters"` // JSON Schema object
-	ConcurrencySafe   func(args map[string]any) bool // nil = always safe (parallel execution)
-	InterruptBehavior InterruptBehavior              // default: InterruptCancel
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"` // JSON Schema object
 }
 
 // ToolResult is what a tool returns after execution.

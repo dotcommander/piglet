@@ -2,17 +2,15 @@ package tool
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
-
-var errLimitReached = errors.New("limit reached")
 
 func findTool(app *ext.App) *ext.ToolDef {
 	return &ext.ToolDef{
@@ -48,17 +46,27 @@ func findTool(app *ext.App) *ext.ToolDef {
 			}
 
 			var results []string
-			fsys := filteredFS{base: os.DirFS(searchPath), skip: shouldSkipDir}
-			_ = doublestar.GlobWalk(fsys, pattern, func(path string, d os.DirEntry) error {
+			_ = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
 				if d.IsDir() {
+					if shouldSkipDir(d.Name()) {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				rel, _ := filepath.Rel(searchPath, path)
+				matched, _ := doublestar.Match(pattern, rel)
+				if !matched {
 					return nil
 				}
 				if len(results) >= limit {
-					return errLimitReached
+					return filepath.SkipAll
 				}
-				results = append(results, path)
+				results = append(results, rel)
 				return nil
-			}, doublestar.WithNoFollow())
+			})
 
 			if len(results) == 0 {
 				return textResult("no files found matching pattern"), nil

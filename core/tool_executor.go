@@ -12,11 +12,6 @@ type toolExecResult struct {
 	steer  []Message // steering messages that arrived during execution
 }
 
-type toolMeta struct {
-	call     ToolCall
-	behavior InterruptBehavior
-}
-
 func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResultMessage, []Message) {
 	a.mu.RLock()
 	tools := a.cfg.Tools
@@ -29,84 +24,22 @@ func (a *Agent) executeTools(ctx context.Context, calls []ToolCall) ([]*ToolResu
 		toolMap[tools[i].Name] = &tools[i]
 	}
 
-	var safeMeta, unsafeMeta []toolMeta
-	for _, tc := range calls {
-		safe := true
-		behavior := InterruptCancel
-		if t, ok := toolMap[tc.Name]; ok {
-			if t.ConcurrencySafe != nil {
-				safe = t.ConcurrencySafe(tc.Arguments)
-			}
-			behavior = t.InterruptBehavior
-		}
-		m := toolMeta{call: tc, behavior: behavior}
-		if safe {
-			safeMeta = append(safeMeta, m)
-		} else {
-			unsafeMeta = append(unsafeMeta, m)
-		}
-	}
-
-	// Execute safe calls in parallel.
-	safeResults, safeSteer := a.executeParallelBatch(ctx, safeMeta, toolMap, stepMode, stepGate)
-
-	// If an error or steering occurred, skip unsafe calls.
-	if len(safeSteer) > 0 {
-		return safeResults, safeSteer
-	}
-	for _, r := range safeResults {
-		if r.IsError {
-			return safeResults, nil
-		}
-	}
-
-	// Execute unsafe calls sequentially.
-	unsafeResults, unsafeSteer := a.executeSequentialBatch(ctx, unsafeMeta, toolMap, stepMode, stepGate)
-
-	// Merge results.
-	merged := make([]*ToolResultMessage, 0, len(safeResults)+len(unsafeResults))
-	merged = append(merged, safeResults...)
-	merged = append(merged, unsafeResults...)
-	return merged, unsafeSteer
-}
-
-// executeParallelBatch runs tool calls concurrently with a semaphore and
-// error-triggered cancellation of siblings.
-func (a *Agent) executeParallelBatch(
-	ctx context.Context,
-	meta []toolMeta,
-	toolMap map[string]*Tool,
-	stepMode bool,
-	stepGate chan StepAction,
-) ([]*ToolResultMessage, []Message) {
-	if len(meta) == 0 {
-		return nil, nil
-	}
-
 	toolCtx, toolCancel := context.WithCancel(ctx)
 	defer toolCancel()
 
 	sem := make(chan struct{}, a.cfg.toolConcurrency())
-	resultCh := make(chan toolExecResult, len(meta))
+	resultCh := make(chan toolExecResult, len(calls))
 
-	for i, m := range meta {
-		go a.executeOneToolWorker(toolCtx, i, m.call, toolMap, sem, resultCh, stepMode, stepGate)
+	for i, tc := range calls {
+		go a.executeOneToolWorker(toolCtx, i, tc, toolMap, sem, resultCh, stepMode, stepGate)
 	}
 
-	results := make([]*ToolResultMessage, len(meta))
+	results := make([]*ToolResultMessage, len(calls))
 	var steering []Message
 	received := 0
 
-	allBlock := true
-	for _, m := range meta {
-		if m.behavior != InterruptBlock {
-			allBlock = false
-			break
-		}
-	}
-
 drain:
-	for received < len(meta) {
+	for received < len(calls) {
 		select {
 		case res := <-resultCh:
 			results[res.index] = res.result
@@ -118,15 +51,11 @@ drain:
 
 			if len(res.steer) > 0 && steering == nil {
 				steering = res.steer
-				// Only cancel if not all tools are InterruptBlock.
-				// If all are block-type, let them finish — steer is queued for after.
-				if !allBlock {
-					toolCancel()
-				}
+				toolCancel()
 			}
 		case <-toolCtx.Done():
-			// Collect remaining — guard with parent ctx in case a worker is stuck
-			for received < len(meta) {
+			// Collect remaining — guard with parent ctx in case a worker is stuck.
+			for received < len(calls) {
 				select {
 				case res := <-resultCh:
 					results[res.index] = res.result
@@ -145,43 +74,6 @@ drain:
 		}
 	}
 	return filtered, steering
-}
-
-// executeSequentialBatch returns immediately on first error or steering message.
-func (a *Agent) executeSequentialBatch(
-	ctx context.Context,
-	meta []toolMeta,
-	toolMap map[string]*Tool,
-	stepMode bool,
-	stepGate chan StepAction,
-) ([]*ToolResultMessage, []Message) {
-	if len(meta) == 0 {
-		return nil, nil
-	}
-
-	results := make([]*ToolResultMessage, 0, len(meta))
-
-	for _, m := range meta {
-		// Check context before starting next call.
-		select {
-		case <-ctx.Done():
-			return results, nil
-		default:
-		}
-
-		r, steer := a.executeOneTool(ctx, m.call, toolMap, stepMode, stepGate)
-		if r != nil {
-			results = append(results, r)
-		}
-		if steer != nil {
-			return results, steer
-		}
-		if r != nil && r.IsError {
-			return results, nil
-		}
-	}
-
-	return results, nil
 }
 
 // executeOneTool handles step-mode gate, tool lookup, execution, and event

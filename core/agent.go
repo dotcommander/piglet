@@ -87,10 +87,6 @@ type Agent struct {
 	compacting bool
 	compactWg  sync.WaitGroup
 
-	// Compaction circuit breaker: stops auto-compact after 3 consecutive failures.
-	compactFailCount int
-	compactCooldown  time.Time
-
 	// Reusable timer for emit() to avoid per-call time.After leaks.
 	emitTimer *time.Timer
 }

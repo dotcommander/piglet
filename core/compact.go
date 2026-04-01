@@ -31,13 +31,6 @@ func (a *Agent) maybeCompact(ctx context.Context) {
 		return
 	}
 
-	a.mu.RLock()
-	cooldown := a.compactCooldown
-	a.mu.RUnlock()
-	if !cooldown.IsZero() && time.Now().Before(cooldown) {
-		return
-	}
-
 	a.compactMu.Lock()
 	if a.compacting {
 		a.compactMu.Unlock()
@@ -63,12 +56,6 @@ func (a *Agent) runCompaction(ctx context.Context, msgs []Message, snapshotLen, 
 
 	compacted, err := a.cfg.OnCompact(ctx, msgs)
 	if err != nil || len(compacted) == 0 {
-		a.mu.Lock()
-		a.compactFailCount++
-		if a.compactFailCount >= 3 {
-			a.compactCooldown = time.Now().Add(5 * time.Minute)
-		}
-		a.mu.Unlock()
 		return
 	}
 
@@ -91,11 +78,6 @@ func (a *Agent) runCompaction(ctx context.Context, msgs []Message, snapshotLen, 
 	a.mu.Unlock()
 
 	a.emit(EventCompact{Before: len(msgs), After: len(compacted), TokensAtCompact: tokenCount})
-
-	a.mu.Lock()
-	a.compactFailCount = 0
-	a.compactCooldown = time.Time{}
-	a.mu.Unlock()
 }
 
 // enforceMessageCap drops oldest messages (keeping the first) when over MaxMessages.

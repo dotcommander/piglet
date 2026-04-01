@@ -112,20 +112,20 @@ func bridge(app *ext.App, h *Host) {
 	}
 	// Register tools
 	for _, t := range tools {
-		schema := core.ToolSchema{
-			Name:        t.Name,
-			Description: t.Description,
-			Parameters:  t.Parameters,
-		}
-		if t.InterruptBehavior == InterruptBehaviorBlock {
-			schema.InterruptBehavior = core.InterruptBlock
-		}
-		app.RegisterTool(&ext.ToolDef{
-			ToolSchema: schema,
+		def := &ext.ToolDef{
+			ToolSchema: core.ToolSchema{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
 			PromptHint: t.PromptHint,
 			Deferred:   t.Deferred,
 			Execute:    proxyToolExecute(h, t.Name),
-		})
+		}
+		if t.InterruptBehavior == InterruptBehaviorBlock {
+			def.InterruptBehavior = ext.InterruptBlock
+		}
+		app.RegisterTool(def)
 	}
 
 	// Register commands

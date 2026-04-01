@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +76,7 @@ func atomicWrite(path string, data []byte) error {
 }
 
 // ---------------------------------------------------------------------------
-// Directory filtering — shared by find (via filteredFS) and grep (via walk)
+// Directory filtering — shared by find and grep (via walk)
 // ---------------------------------------------------------------------------
 
 func shouldSkipDir(name string) bool {
@@ -87,34 +86,6 @@ func shouldSkipDir(name string) bool {
 	default:
 		return strings.HasPrefix(name, ".")
 	}
-}
-
-// filteredFS wraps an fs.FS and hides directories matching the skip predicate.
-// Used by find's doublestar.GlobWalk to prevent recursion into junk directories.
-type filteredFS struct {
-	base fs.FS
-	skip func(string) bool
-}
-
-func (f filteredFS) Open(name string) (fs.File, error) { return f.base.Open(name) }
-
-func (f filteredFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	rdfs, ok := f.base.(fs.ReadDirFS)
-	if !ok {
-		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
-	}
-	entries, err := rdfs.ReadDir(name)
-	if err != nil {
-		return nil, err
-	}
-	filtered := make([]fs.DirEntry, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() && f.skip(e.Name()) {
-			continue
-		}
-		filtered = append(filtered, e)
-	}
-	return filtered, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,17 @@ type Extension func(app *App) error
 // Tool definition
 // ---------------------------------------------------------------------------
 
+// InterruptBehavior controls how a tool reacts to steering (mid-turn user input).
+type InterruptBehavior int
+
+const (
+	// InterruptCancel cancels the tool on steer and discards its result (default).
+	InterruptCancel InterruptBehavior = iota
+	// InterruptBlock keeps the tool running when steered; the steer is queued
+	// for after the tool completes.
+	InterruptBlock
+)
+
 // ToolDef extends core.ToolSchema with execution and optional UI rendering.
 type ToolDef struct {
 	core.ToolSchema
@@ -40,7 +51,7 @@ type ToolDef struct {
 
 	// InterruptBehavior controls how this tool reacts to steering.
 	// InterruptBlock keeps the tool running; InterruptCancel (default) cancels it.
-	InterruptBehavior core.InterruptBehavior
+	InterruptBehavior InterruptBehavior
 
 	// Deferred marks this tool as rarely used. Only name+description sent in API schemas.
 	// Full schema available via tool_search.
