@@ -1,6 +1,7 @@
 package prompt_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -55,6 +56,7 @@ func TestBuild_WithToolDefs(t *testing.T) {
 			Name:        "read_file",
 			Description: "Reads a file from disk.",
 		},
+		Execute:      func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) { return nil, nil },
 		PromptHint:   "Read file contents with line numbers",
 		PromptGuides: []string{"Use offset/limit for large files", "Prefer grep to locate content"},
 	})
@@ -129,6 +131,9 @@ func TestBuild_ToolWithoutHint(t *testing.T) {
 		ToolSchema: core.ToolSchema{
 			Name:        "list_dir",
 			Description: "Lists directory contents.",
+		},
+		Execute: func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) {
+			return nil, nil
 		},
 		// No PromptHint, no PromptGuides — tool is omitted from prompt entirely
 	})

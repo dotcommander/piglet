@@ -140,7 +140,10 @@ func run() error {
 		return config.RunSetup(writeModelsYAML, provider.SetupDefaults())
 	}
 	if len(promptArgs) >= 1 && (promptArgs[0] == "update" || promptArgs[0] == "upgrade") {
-		settings, _ := config.Load()
+		settings, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
 		var installOpts []command.InstallOption
 		for i := 1; i < len(promptArgs); i++ {
 			switch promptArgs[i] {
@@ -210,6 +213,7 @@ func run() error {
 	// Session
 	sess, err := session.New(rt.sessDir, rt.cwd)
 	if err != nil {
+		slog.Warn("session creation failed, persistence disabled", "err", err)
 		sess = nil
 	}
 	if sess != nil {
@@ -229,6 +233,9 @@ func run() error {
 	)
 
 	if jsonFlag {
+		if resultFlag != "" {
+			fmt.Fprintf(os.Stderr, "warning: --result is ignored with --json\n")
+		}
 		return runJSON(ctx, ag, app, sess, userPrompt)
 	}
 	return runPrint(ctx, ag, app, sess, userPrompt, resultFlag)
@@ -379,7 +386,10 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 		return nil, cleanup, fmt.Errorf("get cwd: %w", err)
 	}
 
-	sessDir, _ := config.SessionsDir()
+	sessDir, err := config.SessionsDir()
+	if err != nil {
+		slog.Warn("session directory unavailable", "err", err)
+	}
 
 	rt := &runtime{
 		settings: settings,
@@ -495,7 +505,11 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 	// Session can be created before extensions load.
 	sess, err := session.New(rt.sessDir, rt.cwd)
 	if err != nil {
+		slog.Warn("session creation failed, persistence disabled", "err", err)
 		sess = nil
+	}
+	if sess != nil {
+		defer sess.Close()
 	}
 	if sess != nil {
 		if err := sess.SetModel(rt.model.ID); err != nil {
@@ -570,9 +584,6 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 		SetupFn:  setupFn,
 	})
 
-	if sess != nil {
-		_ = sess.Close()
-	}
 	extCleanupMu.Lock()
 	extCleanup()
 	extCleanupMu.Unlock()
@@ -581,7 +592,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 }
 
 // drainActions processes all pending ext.App actions, running async actions synchronously.
-func drainActions(app *ext.App, sess *session.Session) {
+func drainActions(app *ext.App, sess *session.Session, ag ...*core.Agent) {
 	for actions := app.PendingActions(); len(actions) > 0; actions = app.PendingActions() {
 		for _, action := range actions {
 			switch act := action.(type) {
@@ -592,6 +603,14 @@ func drainActions(app *ext.App, sess *session.Session) {
 			case ext.ActionRunAsync:
 				if result := act.Fn(); result != nil {
 					app.EnqueueAction(result)
+				}
+			case ext.ActionShowMessage:
+				fmt.Fprintln(os.Stderr, act.Text)
+			case ext.ActionNotify:
+				fmt.Fprintln(os.Stderr, act.Message)
+			case ext.ActionSendMessage:
+				if len(ag) > 0 && ag[0] != nil {
+					ag[0].Steer(&core.UserMessage{Content: act.Content, Timestamp: time.Now()})
 				}
 			}
 		}
@@ -621,9 +640,11 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 
 		switch e := evt.(type) {
 		case core.EventStreamDelta:
-			fmt.Print(e.Delta)
-			if resultPath != "" {
-				resultBuf.WriteString(e.Delta)
+			if e.Kind == "text" {
+				fmt.Print(e.Delta)
+				if resultPath != "" {
+					resultBuf.WriteString(e.Delta)
+				}
 			}
 		case core.EventToolStart:
 			fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", e.ToolName)
@@ -638,12 +659,15 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 			if sess != nil {
 				_ = sess.AppendCompact(ag.Messages())
 			}
+		case core.EventMaxTurns:
+			fmt.Fprintf(os.Stderr, "[max turns reached: %d/%d]\n", e.Count, e.Max)
+			agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
 		case core.EventAgentEnd:
 			fmt.Println()
 		}
 
 		// Drain pending actions from event handlers until empty
-		drainActions(app, sess)
+		drainActions(app, sess, ag)
 
 		if e, ok := evt.(core.EventTurnEnd); ok {
 			if e.Assistant != nil {
@@ -674,10 +698,27 @@ func runPrint(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.S
 		}
 	}
 
-	// Write result file for tmux agent protocol
+	// Write result file for tmux agent protocol (atomic: temp + rename)
 	if resultPath != "" {
-		if err := os.WriteFile(resultPath, []byte(resultBuf.String()), 0600); err != nil {
-			slog.Warn("write result file", "path", resultPath, "error", err)
+		dir := filepath.Dir(resultPath)
+		tmp, tmpErr := os.CreateTemp(dir, ".piglet-result-*")
+		if tmpErr != nil {
+			slog.Warn("create temp result file", "path", resultPath, "error", tmpErr)
+		} else {
+			if _, writeErr := tmp.WriteString(resultBuf.String()); writeErr != nil {
+				tmp.Close()
+				os.Remove(tmp.Name())
+				slog.Warn("write result file", "path", resultPath, "error", writeErr)
+			} else if renameErr := os.Rename(tmp.Name(), resultPath); renameErr != nil {
+				tmp.Close()
+				os.Remove(tmp.Name())
+				// Cross-filesystem fallback
+				if copyErr := os.WriteFile(resultPath, []byte(resultBuf.String()), 0600); copyErr != nil {
+					slog.Warn("write result file", "path", resultPath, "error", copyErr)
+				}
+			} else {
+				tmp.Close()
+			}
 		}
 	}
 
@@ -716,11 +757,14 @@ func runJSON(ctx context.Context, ag *core.Agent, app *ext.App, sess *session.Se
 			if sess != nil {
 				_ = sess.AppendCompact(ag.Messages())
 			}
+		case core.EventMaxTurns:
+			_ = enc.Encode(map[string]any{"type": "max_turns", "count": e.Count, "max": e.Max})
+			agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
 		case core.EventAgentEnd:
 			_ = enc.Encode(map[string]any{"type": "agent_end"})
 		}
 
-		drainActions(app, sess)
+		drainActions(app, sess, ag)
 
 		if e, ok := evt.(core.EventTurnEnd); ok {
 			if e.Assistant != nil {

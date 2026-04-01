@@ -1,6 +1,7 @@
 package prompt_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -36,9 +37,11 @@ func TestRegisterSelfKnowledge_WithTools(t *testing.T) {
 	app := ext.NewApp(t.TempDir())
 	app.RegisterTool(&ext.ToolDef{
 		ToolSchema: core.ToolSchema{Name: "alpha", Description: "desc"},
+		Execute:    func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) { return nil, nil },
 	})
 	app.RegisterTool(&ext.ToolDef{
 		ToolSchema: core.ToolSchema{Name: "beta", Description: "desc"},
+		Execute:    func(_ context.Context, _ string, _ map[string]any) (*core.ToolResult, error) { return nil, nil },
 	})
 
 	prompt.RegisterSelfKnowledge(app)
@@ -114,6 +117,7 @@ func TestRegisterSelfKnowledge_WithShortcuts(t *testing.T) {
 	app.RegisterShortcut(&ext.Shortcut{
 		Key:         "ctrl+v",
 		Description: "Paste from clipboard",
+		Handler:     func(_ *ext.App) (ext.Action, error) { return nil, nil },
 	})
 
 	prompt.RegisterSelfKnowledge(app)

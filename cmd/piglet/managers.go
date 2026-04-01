@@ -57,9 +57,6 @@ func (m *sessionMgr) Fork() (string, any, int, error) {
 		return "", nil, 0, err
 	}
 	parentID := (*m.current).ID()
-	if len(parentID) > 8 {
-		parentID = parentID[:8]
-	}
 	return parentID, forked, len(forked.Messages()), nil
 }
 
