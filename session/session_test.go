@@ -397,6 +397,542 @@ func TestCompactScanSummary(t *testing.T) {
 	assert.Equal(t, 5, summaries[0].Messages)
 }
 
+// ---------------------------------------------------------------------------
+// In-place branching tests
+// ---------------------------------------------------------------------------
+
+func TestBranch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+
+	// Get entry info for the branch point
+	infos := s.EntryInfos()
+	require.Len(t, infos, 3)
+	branchPoint := infos[0].ID // entry "a"
+
+	// Branch back to first entry
+	require.NoError(t, s.Branch(branchPoint))
+
+	// Messages should now be just [a]
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "a", msgs[0].(*core.UserMessage).Content)
+
+	// Append on the new branch
+	require.NoError(t, s.Append(&core.UserMessage{Content: "d", Timestamp: time.Now()}))
+	msgs = s.Messages()
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "a", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "d", msgs[1].(*core.UserMessage).Content)
+}
+
+func TestBranchWithSummary(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "x", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "y", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	require.Len(t, infos, 2)
+	branchPoint := infos[0].ID
+
+	require.NoError(t, s.BranchWithSummary(branchPoint, "tried Y but it failed"))
+
+	// Summary is not a conversation message, so Messages() returns just [x]
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "x", msgs[0].(*core.UserMessage).Content)
+
+	// But the summary exists as an entry
+	newInfos := s.EntryInfos()
+	require.Len(t, newInfos, 2) // x + branch_summary
+	assert.Equal(t, "branch_summary", newInfos[1].Type)
+}
+
+func TestBranchPersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	branchPoint := infos[0].ID // entry "a"
+
+	require.NoError(t, s.Branch(branchPoint))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "d", Timestamp: time.Now()}))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reload — should recover the branched state
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = s2.Close() }()
+
+	msgs := s2.Messages()
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "a", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "d", msgs[1].(*core.UserMessage).Content)
+}
+
+func TestBranchWithCompaction(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+
+	// Build initial conversation
+	for i := range 5 {
+		require.NoError(t, s.Append(&core.UserMessage{Content: fmt.Sprintf("m%d", i), Timestamp: time.Now()}))
+	}
+
+	// Compact
+	require.NoError(t, s.AppendCompact([]core.Message{
+		&core.UserMessage{Content: "summary", Timestamp: time.Now()},
+	}))
+
+	// Add post-compact messages
+	require.NoError(t, s.Append(&core.UserMessage{Content: "post1", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "post2", Timestamp: time.Now()}))
+
+	// Branch back to the compact entry
+	infos := s.EntryInfos()
+	var compactID string
+	for _, info := range infos {
+		if info.Type == "compact" {
+			compactID = info.ID
+			break
+		}
+	}
+	require.NotEmpty(t, compactID)
+
+	require.NoError(t, s.Branch(compactID))
+	msgs := s.Messages()
+	require.Len(t, msgs, 1) // just the compact summary
+	assert.Equal(t, "summary", msgs[0].(*core.UserMessage).Content)
+
+	// Append on new branch
+	require.NoError(t, s.Append(&core.UserMessage{Content: "alt1", Timestamp: time.Now()}))
+	msgs = s.Messages()
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "summary", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "alt1", msgs[1].(*core.UserMessage).Content)
+}
+
+func TestBranchInvalidEntry(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	err = s.Branch("nonexistent")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestEntryInfos(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello world", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.AssistantMessage{
+		Content:    []core.AssistantContent{core.TextContent{Text: "hi back"}},
+		StopReason: core.StopReasonStop,
+		Timestamp:  time.Now(),
+	}))
+	require.NoError(t, s.Append(&core.ToolResultMessage{
+		ToolCallID: "tc1",
+		ToolName:   "test",
+		Content:    []core.ContentBlock{core.TextContent{Text: "result"}},
+	}))
+
+	infos := s.EntryInfos()
+	require.Len(t, infos, 3)
+
+	assert.Equal(t, "user", infos[0].Type)
+	assert.Equal(t, "assistant", infos[1].Type)
+	assert.Equal(t, "tool_result", infos[2].Type)
+}
+
+func TestLeafID(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	assert.Empty(t, s.LeafID()) // no entries yet
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	leaf1 := s.LeafID()
+	assert.NotEmpty(t, leaf1)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	leaf2 := s.LeafID()
+	assert.NotEqual(t, leaf1, leaf2)
+
+	// Branch back — leaf becomes a new branch_summary entry, not leaf1 itself
+	require.NoError(t, s.Branch(leaf1))
+	leaf3 := s.LeafID()
+	assert.NotEqual(t, leaf1, leaf3, "branch writes a summary entry")
+	assert.NotEqual(t, leaf2, leaf3)
+
+	// Messages should show only [a] (branch_summary is not a conversation message)
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "a", msgs[0].(*core.UserMessage).Content)
+}
+
+func TestBranchSummaryNotInScanCount(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	require.NoError(t, s.BranchWithSummary(infos[0].ID, "abandoned"))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+	require.NoError(t, s.Close())
+
+	summaries, err := session.List(dir)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	// 3 message entries (a, b, c), branch_summary should NOT be counted
+	assert.Equal(t, 3, summaries[0].Messages)
+}
+
+// ---------------------------------------------------------------------------
+// AppendCustom tests
+// ---------------------------------------------------------------------------
+
+func TestAppendCustom(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Append a regular message first
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+
+	// Append a custom entry
+	require.NoError(t, s.AppendCustom("ext:test:state", map[string]string{"key": "value"}))
+
+	// Custom entry should not appear in Messages (it's metadata)
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "hello", msgs[0].(*core.UserMessage).Content)
+
+	// But it should appear in EntryInfos
+	infos := s.EntryInfos()
+	require.Len(t, infos, 2)
+	assert.Equal(t, "user", infos[0].Type)
+	assert.Equal(t, "ext:test:state", infos[1].Type)
+}
+
+func TestAppendCustomPersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+	require.NoError(t, s.AppendCustom("ext:test:data", map[string]int{"count": 42}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "world", Timestamp: time.Now()}))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reload — custom entry should be in the tree, messages intact
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = s2.Close() }()
+
+	msgs := s2.Messages()
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "hello", msgs[0].(*core.UserMessage).Content)
+	assert.Equal(t, "world", msgs[1].(*core.UserMessage).Content)
+}
+
+func TestAppendCustomBranchCorrectly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.AppendCustom("ext:test:marker", "checkpoint"))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+
+	// Branch back to entry "a"
+	infos := s.EntryInfos()
+	require.NoError(t, s.Branch(infos[0].ID))
+
+	// Custom entry should NOT be in the new branch's path
+	msgs := s.Messages()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "a", msgs[0].(*core.UserMessage).Content)
+}
+
+// ---------------------------------------------------------------------------
+// AppendCustomMessage tests
+// ---------------------------------------------------------------------------
+
+func TestAppendCustomMessage(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+	require.NoError(t, s.AppendCustomMessage("assistant", "injected context"))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "world", Timestamp: time.Now()}))
+
+	// Custom message SHOULD appear in Messages (unlike AppendCustom)
+	msgs := s.Messages()
+	require.Len(t, msgs, 3)
+	assert.Equal(t, "hello", msgs[0].(*core.UserMessage).Content)
+
+	am, ok := msgs[1].(*core.AssistantMessage)
+	require.True(t, ok, "custom_message with role=assistant should produce AssistantMessage")
+	require.Len(t, am.Content, 1)
+	tc, ok := am.Content[0].(core.TextContent)
+	require.True(t, ok)
+	assert.Equal(t, "injected context", tc.Text)
+
+	assert.Equal(t, "world", msgs[2].(*core.UserMessage).Content)
+}
+
+func TestAppendCustomMessagePersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.AppendCustomMessage("user", "injected user msg"))
+	require.NoError(t, s.AppendCustomMessage("assistant", "injected assistant msg"))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reload — custom messages should survive and appear in Messages()
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = s2.Close() }()
+
+	msgs := s2.Messages()
+	require.Len(t, msgs, 2)
+
+	um, ok := msgs[0].(*core.UserMessage)
+	require.True(t, ok)
+	assert.Equal(t, "injected user msg", um.Content)
+
+	am, ok := msgs[1].(*core.AssistantMessage)
+	require.True(t, ok)
+	require.Len(t, am.Content, 1)
+	tc, ok := am.Content[0].(core.TextContent)
+	require.True(t, ok)
+	assert.Equal(t, "injected assistant msg", tc.Text)
+}
+
+func TestAppendCustomMessageInScanCount(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.AppendCustomMessage("assistant", "injected"))
+	require.NoError(t, s.Close())
+
+	summaries, err := session.List(dir)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, 2, summaries[0].Messages) // both user and custom_message counted
+}
+
+// ---------------------------------------------------------------------------
+// FullTree tests
+// ---------------------------------------------------------------------------
+
+func TestFullTree(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+
+	tree := s.FullTree()
+	require.Len(t, tree, 3)
+
+	// All should be on active path (linear chain)
+	for _, n := range tree {
+		assert.True(t, n.OnActivePath, "node %s should be on active path", n.ID)
+	}
+
+	// Depth should increase
+	assert.Equal(t, 0, tree[0].Depth)
+	assert.Equal(t, 1, tree[1].Depth)
+	assert.Equal(t, 2, tree[2].Depth)
+
+	// Previews
+	assert.Equal(t, "a", tree[0].Preview)
+	assert.Equal(t, "b", tree[1].Preview)
+	assert.Equal(t, "c", tree[2].Preview)
+}
+
+func TestFullTreeWithBranch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "a", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "b", Timestamp: time.Now()}))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "c", Timestamp: time.Now()}))
+
+	// Branch back to "a"
+	infos := s.EntryInfos()
+	require.NoError(t, s.Branch(infos[0].ID))
+	require.NoError(t, s.Append(&core.UserMessage{Content: "d", Timestamp: time.Now()}))
+
+	tree := s.FullTree()
+	// a → {b → c, branch_summary → d}
+	// Total: a, branch_summary, d, b, c = 5 nodes
+	require.Len(t, tree, 5)
+
+	// Root "a" should be first and on active path
+	assert.Equal(t, "a", tree[0].Preview)
+	assert.True(t, tree[0].OnActivePath)
+
+	// Active subtree should come before abandoned branch
+	// After "a": branch_summary (active), d (active), then b (inactive), c (inactive)
+	assert.True(t, tree[1].OnActivePath)  // branch_summary
+	assert.True(t, tree[2].OnActivePath)  // d
+	assert.False(t, tree[3].OnActivePath) // b (abandoned)
+	assert.False(t, tree[4].OnActivePath) // c (abandoned)
+}
+
+func TestAppendLabel(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	require.Len(t, infos, 1)
+	targetID := infos[0].ID
+
+	require.NoError(t, s.AppendLabel(targetID, "checkpoint-1"))
+	assert.Equal(t, "checkpoint-1", s.Label(targetID))
+
+	// Label appears in FullTree on the target node
+	tree := s.FullTree()
+	require.Len(t, tree, 2) // user message + label entry
+	assert.Equal(t, "checkpoint-1", tree[0].Label)
+	assert.Equal(t, "label", tree[1].Type)
+}
+
+func TestAppendLabelClear(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	targetID := infos[0].ID
+
+	require.NoError(t, s.AppendLabel(targetID, "checkpoint-1"))
+	assert.Equal(t, "checkpoint-1", s.Label(targetID))
+
+	// Clear
+	require.NoError(t, s.AppendLabel(targetID, ""))
+	assert.Equal(t, "", s.Label(targetID))
+}
+
+func TestAppendLabelPersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+
+	require.NoError(t, s.Append(&core.UserMessage{Content: "hello", Timestamp: time.Now()}))
+
+	infos := s.EntryInfos()
+	targetID := infos[0].ID
+
+	require.NoError(t, s.AppendLabel(targetID, "bookmark"))
+
+	path := s.Path()
+	require.NoError(t, s.Close())
+
+	// Reopen and verify label survives
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	assert.Equal(t, "bookmark", s2.Label(targetID))
+
+	tree := s2.FullTree()
+	require.Len(t, tree, 2) // user message + label entry
+	assert.Equal(t, "bookmark", tree[0].Label)
+}
+
 func TestCompactMultiple(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
