@@ -15,16 +15,18 @@ type UndoSnapshotsFn func() (map[string][]byte, error)
 // Supervisor wraps a Host with crash detection and automatic restart.
 // When the extension process exits unexpectedly, the supervisor creates a new
 // Host from the same Manifest, re-runs the handshake, and re-bridges registrations.
+// Reload() triggers an intentional restart (e.g. binary changed on disk).
 type Supervisor struct {
-	manifest       *Manifest
-	cwd            string
-	app            *ext.App
-	resolverFn     providerResolverFn
+	manifest        *Manifest
+	cwd             string
+	app             *ext.App
+	resolverFn      providerResolverFn
 	undoSnapshotsFn UndoSnapshotsFn
 
 	mu   sync.Mutex
 	host *Host // current live host; nil between crash and restart
 
+	reloadCh chan struct{} // signals intentional reload (buffered 1)
 	stopped  chan struct{}
 	stopOnce sync.Once
 }
@@ -32,12 +34,13 @@ type Supervisor struct {
 // NewSupervisor creates a supervisor for the given manifest.
 func NewSupervisor(m *Manifest, cwd string, app *ext.App, resolver providerResolverFn, undoFn UndoSnapshotsFn) *Supervisor {
 	return &Supervisor{
-		manifest:       m,
-		cwd:            cwd,
-		app:            app,
-		resolverFn:     resolver,
+		manifest:        m,
+		cwd:             cwd,
+		app:             app,
+		resolverFn:      resolver,
 		undoSnapshotsFn: undoFn,
-		stopped:        make(chan struct{}),
+		reloadCh:        make(chan struct{}, 1),
+		stopped:         make(chan struct{}),
 	}
 }
 
@@ -78,6 +81,16 @@ func (s *Supervisor) Stop() {
 
 func (s *Supervisor) Name() string { return s.manifest.Name }
 
+// Reload triggers a graceful restart of the extension process.
+// The watch goroutine handles the actual restart — this method just signals it.
+// Safe for concurrent use; no-op if a reload is already pending.
+func (s *Supervisor) Reload() {
+	select {
+	case s.reloadCh <- struct{}{}:
+	default: // already pending
+	}
+}
+
 const (
 	maxRestarts    = 5
 	initialBackoff = time.Second
@@ -85,7 +98,7 @@ const (
 	stableAfter    = 30 * time.Second // reset failure count after this uptime
 )
 
-// watch monitors the current host and restarts on crash.
+// watch monitors the current host and restarts on crash or intentional reload.
 func (s *Supervisor) watch(ctx context.Context) {
 	backoff := initialBackoff
 	failures := 0
@@ -94,76 +107,101 @@ func (s *Supervisor) watch(ctx context.Context) {
 		s.mu.Lock()
 		h := s.host
 		s.mu.Unlock()
+
+		// Determine what triggered the restart cycle.
+		var crash bool
 		if h == nil {
-			return
-		}
-
-		startedAt := time.Now()
-
-		// Block until crash, manual stop, or context cancellation.
-		select {
-		case <-h.Closed():
-			// Stop() closes s.stopped then calls h.Stop() which closes h.closed.
-			// Both may fire simultaneously — check s.stopped to distinguish
-			// a manual stop from an unexpected crash.
+			// No live host (previous restart failed) — wait for reload signal.
 			select {
+			case <-s.reloadCh:
 			case <-s.stopped:
 				return
-			default:
+			case <-ctx.Done():
+				return
 			}
-		case <-s.stopped:
-			return
-		case <-ctx.Done():
-			return
+		} else {
+			startedAt := time.Now()
+
+			// Block until crash, reload, manual stop, or context cancellation.
+			select {
+			case <-h.Closed():
+				// Stop() closes s.stopped then calls h.Stop() which closes h.closed.
+				// Both may fire simultaneously — check s.stopped to distinguish.
+				select {
+				case <-s.stopped:
+					return
+				default:
+				}
+				crash = true
+			case <-s.reloadCh:
+				// Intentional reload — gracefully stop old host.
+				s.mu.Lock()
+				s.host = nil
+				s.mu.Unlock()
+				h.Stop()
+			case <-s.stopped:
+				return
+			case <-ctx.Done():
+				return
+			}
+
+			if crash {
+				if time.Since(startedAt) >= stableAfter {
+					failures = 0
+					backoff = initialBackoff
+				}
+				failures++
+				if failures > maxRestarts {
+					slog.Error("extension restart limit reached",
+						"name", s.manifest.Name,
+						"attempts", failures)
+					s.app.Notify(s.manifest.Name + " crashed and could not be restarted")
+					return
+				}
+				slog.Warn("extension crashed, restarting",
+					"name", s.manifest.Name,
+					"attempt", failures,
+					"backoff", backoff)
+				s.app.Notify(s.manifest.Name + " crashed, restarting...")
+			} else {
+				slog.Info("extension reloading", "name", s.manifest.Name)
+				s.app.Notify("Reloading " + s.manifest.Name + "...")
+				failures = 0
+				backoff = initialBackoff
+			}
 		}
 
-		// If the host was stable for long enough, reset failure tracking.
-		if time.Since(startedAt) >= stableAfter {
-			failures = 0
-			backoff = initialBackoff
-		}
-
-		failures++
-		if failures > maxRestarts {
-			slog.Error("extension restart limit reached",
-				"name", s.manifest.Name,
-				"attempts", failures)
-			s.app.Notify(s.manifest.Name + " crashed and could not be restarted")
-			return
-		}
-
-		slog.Warn("extension crashed, restarting",
-			"name", s.manifest.Name,
-			"attempt", failures,
-			"backoff", backoff)
-		s.app.Notify(s.manifest.Name + " crashed, restarting...")
-
-		// Remove stale registrations from the crashed host.
+		// Remove stale registrations.
 		s.app.UnregisterExtension(s.manifest.Name)
 
-		// Backoff before restart.
-		t := time.NewTimer(backoff)
-		select {
-		case <-t.C:
-		case <-s.stopped:
-			t.Stop()
-			return
-		case <-ctx.Done():
-			t.Stop()
-			return
+		// Backoff before restart (crash only — reloads are immediate).
+		if crash {
+			t := time.NewTimer(backoff)
+			select {
+			case <-t.C:
+			case <-s.stopped:
+				t.Stop()
+				return
+			case <-ctx.Done():
+				t.Stop()
+				return
+			}
+			backoff = min(backoff*2, maxBackoff)
 		}
-		backoff = min(backoff*2, maxBackoff)
 
 		// Attempt restart.
 		newHost := NewHost(s.manifest, s.cwd)
 		if err := newHost.Start(ctx); err != nil {
-			slog.Error("extension restart handshake failed",
+			slog.Error("extension restart failed",
 				"name", s.manifest.Name,
 				"err", err)
+			if !crash {
+				s.app.Notify(s.manifest.Name + " reload failed: " + err.Error())
+			}
 			s.mu.Lock()
 			s.host = nil
 			s.mu.Unlock()
-			continue // loops back, host is nil, returns at top
+			continue // loop back — nil host waits for next signal
 		}
 		newHost.SetApp(s.app)
 		newHost.SetProviderResolver(s.resolverFn)
@@ -175,6 +213,11 @@ func (s *Supervisor) watch(ctx context.Context) {
 
 		bridge(s.app, newHost)
 
-		slog.Info("extension restarted successfully", "name", s.manifest.Name)
+		if crash {
+			slog.Info("extension restarted successfully", "name", s.manifest.Name)
+		} else {
+			slog.Info("extension reloaded", "name", s.manifest.Name)
+			s.app.Notify(s.manifest.Name + " reloaded")
+		}
 	}
 }

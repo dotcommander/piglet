@@ -79,7 +79,11 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled
 		supervisors = append(supervisors, r.sup)
 	}
 
+	// Start hot-reload watcher for extension binaries/manifests.
+	watcher := startWatcher(supervisors)
+
 	return len(supervisors), func() {
+		watcher.Stop() // safe on nil
 		var wg sync.WaitGroup
 		for _, s := range supervisors {
 			wg.Add(1)
