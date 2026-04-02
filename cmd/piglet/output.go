@@ -48,58 +48,67 @@ func runPrint(ctx context.Context, sh *shell.Shell, userPrompt, resultPath strin
 	var agentErr error
 	var resultBuf strings.Builder
 
-	for evt := range resp.Events {
-		switch e := evt.(type) {
-		case core.EventStreamDelta:
-			if e.Kind == "text" {
-				fmt.Print(e.Delta)
-				if resultPath != "" {
-					resultBuf.WriteString(e.Delta)
+loop:
+	for {
+		select {
+		case evt, ok := <-resp.Events:
+			if !ok {
+				break loop
+			}
+			switch e := evt.(type) {
+			case core.EventStreamDelta:
+				if e.Kind == "text" {
+					fmt.Print(e.Delta)
+					if resultPath != "" {
+						resultBuf.WriteString(e.Delta)
+					}
+				}
+			case core.EventToolStart:
+				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", e.ToolName)
+			case core.EventToolEnd:
+				if e.IsError {
+					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", e.ToolName)
+				}
+			case core.EventRetry:
+				fmt.Fprintf(os.Stderr, "[retry %d/%d: %s]\n", e.Attempt, e.Max, e.Error)
+			case core.EventCompact:
+				fmt.Fprintf(os.Stderr, "[compacted: %d → %d messages at %d tokens]\n", e.Before, e.After, e.TokensAtCompact)
+			case core.EventMaxTurns:
+				fmt.Fprintf(os.Stderr, "[max turns reached: %d/%d]\n", e.Count, e.Max)
+				agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
+			case core.EventAgentEnd:
+				fmt.Println()
+			}
+
+			sh.ProcessEvent(evt)
+
+			if e, ok := evt.(core.EventTurnEnd); ok {
+				if e.Assistant != nil {
+					u := e.Assistant.Usage
+					slog.Debug("turn complete",
+						"input_tokens", u.InputTokens,
+						"output_tokens", u.OutputTokens,
+						"cache_read_tokens", u.CacheReadTokens,
+						"cache_write_tokens", u.CacheWriteTokens,
+					)
+					if err := extractAgentError(e.Assistant); err != nil {
+						agentErr = err
+					}
 				}
 			}
-		case core.EventToolStart:
-			fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", e.ToolName)
-		case core.EventToolEnd:
-			if e.IsError {
-				fmt.Fprintf(os.Stderr, "[tool error: %s]\n", e.ToolName)
-			}
-		case core.EventRetry:
-			fmt.Fprintf(os.Stderr, "[retry %d/%d: %s]\n", e.Attempt, e.Max, e.Error)
-		case core.EventCompact:
-			fmt.Fprintf(os.Stderr, "[compacted: %d → %d messages at %d tokens]\n", e.Before, e.After, e.TokensAtCompact)
-		case core.EventMaxTurns:
-			fmt.Fprintf(os.Stderr, "[max turns reached: %d/%d]\n", e.Count, e.Max)
-			agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
-		case core.EventAgentEnd:
-			fmt.Println()
-		}
 
-		sh.ProcessEvent(evt)
-
-		if e, ok := evt.(core.EventTurnEnd); ok {
-			if e.Assistant != nil {
-				u := e.Assistant.Usage
-				slog.Debug("turn complete",
-					"input_tokens", u.InputTokens,
-					"output_tokens", u.OutputTokens,
-					"cache_read_tokens", u.CacheReadTokens,
-					"cache_write_tokens", u.CacheWriteTokens,
-				)
-				if err := extractAgentError(e.Assistant); err != nil {
-					agentErr = err
+			for _, n := range sh.Notifications() {
+				switch n.Kind {
+				case shell.NotifyMessage:
+					fmt.Fprintln(os.Stderr, n.Text)
+				case shell.NotifyWarn:
+					fmt.Fprintf(os.Stderr, "warning: %s\n", n.Text)
+				case shell.NotifyError:
+					fmt.Fprintf(os.Stderr, "error: %s\n", n.Text)
 				}
 			}
-		}
-
-		for _, n := range sh.Notifications() {
-			switch n.Kind {
-			case shell.NotifyMessage:
-				fmt.Fprintln(os.Stderr, n.Text)
-			case shell.NotifyWarn:
-				fmt.Fprintf(os.Stderr, "warning: %s\n", n.Text)
-			case shell.NotifyError:
-				fmt.Fprintf(os.Stderr, "error: %s\n", n.Text)
-			}
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 
@@ -150,44 +159,53 @@ func runJSON(ctx context.Context, sh *shell.Shell, userPrompt string) error {
 	enc := json.NewEncoder(os.Stdout)
 	var agentErr error
 
-	for evt := range resp.Events {
-		switch e := evt.(type) {
-		case core.EventStreamDelta:
-			_ = enc.Encode(map[string]any{"type": "stream_delta", "kind": e.Kind, "index": e.Index, "delta": e.Delta})
-		case core.EventToolStart:
-			_ = enc.Encode(map[string]any{"type": "tool_start", "tool": e.ToolName, "args": e.Args})
-		case core.EventToolEnd:
-			_ = enc.Encode(map[string]any{"type": "tool_end", "tool": e.ToolName, "is_error": e.IsError})
-		case core.EventRetry:
-			_ = enc.Encode(map[string]any{"type": "retry", "attempt": e.Attempt, "max": e.Max, "error": e.Error})
-		case core.EventCompact:
-			_ = enc.Encode(map[string]any{"type": "compact", "before": e.Before, "after": e.After, "tokens": e.TokensAtCompact})
-		case core.EventMaxTurns:
-			_ = enc.Encode(map[string]any{"type": "max_turns", "count": e.Count, "max": e.Max})
-			agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
-		case core.EventAgentEnd:
-			_ = enc.Encode(map[string]any{"type": "agent_end"})
-		}
+loop:
+	for {
+		select {
+		case evt, ok := <-resp.Events:
+			if !ok {
+				break loop
+			}
+			switch e := evt.(type) {
+			case core.EventStreamDelta:
+				_ = enc.Encode(map[string]any{"type": "stream_delta", "kind": e.Kind, "index": e.Index, "delta": e.Delta})
+			case core.EventToolStart:
+				_ = enc.Encode(map[string]any{"type": "tool_start", "tool": e.ToolName, "args": e.Args})
+			case core.EventToolEnd:
+				_ = enc.Encode(map[string]any{"type": "tool_end", "tool": e.ToolName, "is_error": e.IsError})
+			case core.EventRetry:
+				_ = enc.Encode(map[string]any{"type": "retry", "attempt": e.Attempt, "max": e.Max, "error": e.Error})
+			case core.EventCompact:
+				_ = enc.Encode(map[string]any{"type": "compact", "before": e.Before, "after": e.After, "tokens": e.TokensAtCompact})
+			case core.EventMaxTurns:
+				_ = enc.Encode(map[string]any{"type": "max_turns", "count": e.Count, "max": e.Max})
+				agentErr = fmt.Errorf("agent stopped: max turns (%d) reached", e.Max)
+			case core.EventAgentEnd:
+				_ = enc.Encode(map[string]any{"type": "agent_end"})
+			}
 
-		sh.ProcessEvent(evt)
+			sh.ProcessEvent(evt)
 
-		if e, ok := evt.(core.EventTurnEnd); ok {
-			if e.Assistant != nil {
-				u := e.Assistant.Usage
-				_ = enc.Encode(map[string]any{
-					"type": "turn_end",
-					"usage": map[string]int{
-						"input_tokens":       u.InputTokens,
-						"output_tokens":      u.OutputTokens,
-						"cache_read_tokens":  u.CacheReadTokens,
-						"cache_write_tokens": u.CacheWriteTokens,
-					},
-				})
-				if err := extractAgentError(e.Assistant); err != nil {
-					agentErr = err
-					_ = enc.Encode(map[string]any{"type": "error", "message": err.Error()})
+			if e, ok := evt.(core.EventTurnEnd); ok {
+				if e.Assistant != nil {
+					u := e.Assistant.Usage
+					_ = enc.Encode(map[string]any{
+						"type": "turn_end",
+						"usage": map[string]int{
+							"input_tokens":       u.InputTokens,
+							"output_tokens":      u.OutputTokens,
+							"cache_read_tokens":  u.CacheReadTokens,
+							"cache_write_tokens": u.CacheWriteTokens,
+						},
+					})
+					if err := extractAgentError(e.Assistant); err != nil {
+						agentErr = err
+						_ = enc.Encode(map[string]any{"type": "error", "message": err.Error()})
+					}
 				}
 			}
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 

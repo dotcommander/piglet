@@ -13,31 +13,12 @@ import (
 )
 
 func runREPL(ctx context.Context, rt *runtime) error {
-	app, system, extCleanup := setupApp(ctx, rt, true)
-	defer extCleanup()
-
-	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
-		rt.prov = p
+	b := buildShell(ctx, rt, true)
+	defer b.cleanup()
+	if b.sess != nil {
+		defer b.sess.Close()
 	}
-
-	sess := openSession(rt)
-	if sess != nil {
-		defer sess.Close()
-	}
-
-	ag := buildAgent(app, rt, system)
-
-	sessPtr := &sess
-	sh := shell.New(ctx, shell.Config{
-		App:      app,
-		Agent:    ag,
-		Session:  sess,
-		Settings: &rt.settings,
-	})
-	sh.SetAgent(ag,
-		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-		ext.WithModelManager(newModelMgr(rt, app)),
-	)
+	sh := b.sh
 
 	fmt.Fprintf(os.Stderr, "piglet %s · %s\n", resolveVersion(), rt.model.DisplayName())
 	fmt.Fprintf(os.Stderr, "/help for commands · Ctrl+D to quit\n\n")

@@ -22,6 +22,7 @@ import (
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
+	"github.com/dotcommander/piglet/shell"
 	"github.com/dotcommander/piglet/tool"
 )
 
@@ -140,7 +141,7 @@ func resolveModel(registry *provider.Registry, settings config.Settings, modelOv
 
 // loadRuntime performs first-run setup, loads config/auth, resolves the model,
 // creates the provider, and sets up debug logging.
-func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtime, func(), error) {
+func loadRuntime(ctx context.Context, debugFlag bool, modelOverride, baseURLOverride string) (*runtime, func(), error) {
 	if config.NeedsSetup() {
 		if err := config.RunSetup(writeModelsYAML, provider.SetupDefaults()); err != nil {
 			return nil, nil, fmt.Errorf("setup: %w", err)
@@ -167,7 +168,7 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 
 	if selfupdate.CheckStale() {
 		go func() {
-			uCtx, uCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			uCtx, uCancel := context.WithTimeout(ctx, 10*time.Second)
 			defer uCancel()
 			if rel, err := selfupdate.FetchLatestRelease(uCtx); err == nil {
 				_ = selfupdate.WriteCache(rel)
@@ -244,7 +245,7 @@ func registerBuiltins(app *ext.App, rt *runtime) {
 		Tools:    app.Tools(),
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
-	prompt.RegisterProjectDocs(app, rt.settings.ProjectDocs)
+	prompt.RegisterProjectDocs(app, rt.settings.GetProjectDocs())
 }
 
 // buildSystemPrompt assembles the system prompt, resolving deferred tools note.
@@ -353,4 +354,44 @@ func openDebugLog() (*slog.Logger, func(), error) {
 	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	fmt.Fprintf(os.Stderr, "debug: logging to %s\n", path)
 	return logger, func() { _ = f.Close() }, nil
+}
+
+// shellBundle groups the objects produced by buildShell so callers can defer
+// cleanup and sess.Close() correctly.
+type shellBundle struct {
+	sh      *shell.Shell
+	sess    *session.Session
+	cleanup func()
+}
+
+// buildShell runs the 6-step shell-construction sequence shared by run() and
+// runREPL(): setup app → resolve provider → open session → build agent →
+// create shell → attach managers.
+func buildShell(ctx context.Context, rt *runtime, interactive bool) *shellBundle {
+	app, system, extCleanup := setupApp(ctx, rt, interactive)
+
+	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
+		rt.prov = p
+	}
+
+	sess := openSession(rt)
+	ag := buildAgent(app, rt, system)
+
+	sessPtr := &sess
+	sh := shell.New(ctx, shell.Config{
+		App:      app,
+		Agent:    ag,
+		Session:  sess,
+		Settings: &rt.settings,
+	})
+	sh.SetAgent(ag,
+		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
+		ext.WithModelManager(newModelMgr(rt, app)),
+	)
+
+	return &shellBundle{
+		sh:      sh,
+		sess:    sess,
+		cleanup: extCleanup,
+	}
 }

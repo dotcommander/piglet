@@ -92,13 +92,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	rt, debugCleanup, err := loadRuntime(flags.debug, flags.model, resolvedBaseURL)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	rt, debugCleanup, err := loadRuntime(ctx, flags.debug, flags.model, resolvedBaseURL)
 	if err != nil {
 		return err
 	}
 	defer debugCleanup()
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	if interactive {
 		if flags.repl {
@@ -107,39 +107,19 @@ func run() error {
 		return runInteractive(ctx, rt)
 	}
 
-	app, system, extCleanup := setupApp(ctx, rt, false)
-	defer extCleanup()
-
-	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
-		rt.prov = p
+	b := buildShell(ctx, rt, false)
+	defer b.cleanup()
+	if b.sess != nil {
+		defer b.sess.Close()
 	}
-
-	sess := openSession(rt)
-	if sess != nil {
-		defer sess.Close()
-	}
-
-	ag := buildAgent(app, rt, system)
-
-	sessPtr := &sess
-	sh := shell.New(ctx, shell.Config{
-		App:      app,
-		Agent:    ag,
-		Session:  sess,
-		Settings: &rt.settings,
-	})
-	sh.SetAgent(ag,
-		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-		ext.WithModelManager(newModelMgr(rt, app)),
-	)
 
 	if flags.json {
 		if flags.result != "" {
 			fmt.Fprintf(os.Stderr, "warning: --result is ignored with --json\n")
 		}
-		return runJSON(ctx, sh, userPrompt)
+		return runJSON(ctx, b.sh, userPrompt)
 	}
-	return runPrint(ctx, sh, userPrompt, flags.result)
+	return runPrint(ctx, b.sh, userPrompt, flags.result)
 }
 
 // cliFlags holds parsed command-line flags.
