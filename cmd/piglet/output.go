@@ -13,6 +13,12 @@ import (
 	"github.com/dotcommander/piglet/shell"
 )
 
+// toolLabel formats a tool call for display in print mode.
+func toolLabel(e core.EventToolStart) string {
+	summary := shell.ToolSummary(e.ToolName, e.Args)
+	return "[tool: " + summary + "]"
+}
+
 // requireAgentStarted checks that a Submit response started the agent.
 func requireAgentStarted(resp shell.Response) error {
 	if resp.Kind != shell.ResponseAgentStarted {
@@ -64,7 +70,7 @@ loop:
 					}
 				}
 			case core.EventToolStart:
-				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", e.ToolName)
+				fmt.Fprintf(os.Stderr, "\n%s\n", toolLabel(e))
 			case core.EventToolEnd:
 				if e.IsError {
 					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", e.ToolName)

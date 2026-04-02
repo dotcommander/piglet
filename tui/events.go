@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/shell"
 )
 
 // handleEvent processes a single agent event. When batch is true, the caller
@@ -34,8 +35,9 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		m.streamThink.Reset()
 
 	case core.EventToolStart:
-		m.activeTool = e.ToolName
-		m.spinnerVerb = "running " + e.ToolName + "..."
+		summary := shell.ToolSummary(e.ToolName, e.Args)
+		m.activeTool = summary
+		m.spinnerVerb = "running " + summary + "..."
 
 	case core.EventToolEnd:
 		m.activeTool = ""
