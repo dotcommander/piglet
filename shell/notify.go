@@ -20,6 +20,7 @@ const (
 	NotifySendMessage                          // content should be submitted as user input
 	NotifySessionTitle                         // session title changed
 	NotifyClearDisplay                         // frontend should clear conversation display
+	NotifyQueuedSubmit                         // queued user message was submitted to agent
 )
 
 // Notification is a frontend-relevant side-effect from Shell processing.

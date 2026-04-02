@@ -41,6 +41,7 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 					Timestamp: time.Now(),
 				}
 				s.persistMessage(userMsg)
+				s.notify(Notification{Kind: NotifyQueuedSubmit, Text: content})
 				agent.Steer(userMsg)
 			}
 		}
@@ -297,6 +298,7 @@ func (s *Shell) drainAndSubmitQueued() {
 		content := mergePrompts(prompts)
 		userMsg := &core.UserMessage{Content: content, Timestamp: time.Now()}
 		s.persistMessage(userMsg)
+		s.notify(Notification{Kind: NotifyQueuedSubmit, Text: content})
 		s.startAgent(content)
 	}
 

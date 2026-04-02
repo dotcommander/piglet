@@ -214,6 +214,11 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 			}
 		}
 
+	case shell.NotifyQueuedSubmit:
+		m.followOutput = true
+		m.appendDisplayMessage(&core.UserMessage{Content: n.Text, Timestamp: time.Now()})
+		m.refreshAndFollow()
+
 	case shell.NotifyClearDisplay:
 		m.messages = nil
 		m.msgCache = nil
