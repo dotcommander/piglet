@@ -178,13 +178,14 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 
 // streamCache holds cached glamour output during streaming to avoid re-rendering every tick.
 type streamCache struct {
-	len      int
 	render   string
-	newlines int // cached newline count at len
+	newlines int // newline count at last render
 }
 
 // RenderStreaming renders a partial assistant response being streamed.
-// Uses glamour with caching — only re-renders when text grows by 100+ chars or gains a newline.
+// Uses glamour with caching — only re-renders when newline count changes.
+// Newline-only triggering avoids mid-line re-renders during code blocks,
+// where incomplete syntax causes glamour to produce unstable output (flicker).
 func (v *MessageView) RenderStreaming(text string, thinking string, cache *streamCache) string {
 	var b strings.Builder
 	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
@@ -201,14 +202,12 @@ func (v *MessageView) RenderStreaming(text string, thinking string, cache *strea
 	}
 
 	if text != "" {
-		tl := len(text)
 		nl := strings.Count(text, "\n")
-		needsRender := tl-cache.len > 100 || nl != cache.newlines
+		needsRender := nl != cache.newlines
 
 		if v.renderer != nil && needsRender {
 			if rendered, err := v.renderer.Render(text); err == nil {
 				cache.render = rendered
-				cache.len = tl
 				cache.newlines = nl
 			}
 		}
