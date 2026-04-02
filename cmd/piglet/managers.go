@@ -16,6 +16,14 @@ type sessionMgr struct {
 	current **session.Session // pointer to the active session pointer (swappable)
 }
 
+// active returns the current session or an error if none is set.
+func (m *sessionMgr) active() (*session.Session, error) {
+	if *m.current == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+	return *m.current, nil
+}
+
 func (m *sessionMgr) List() ([]ext.SessionSummary, error) {
 	if m.dir == "" {
 		return nil, fmt.Errorf("sessions not configured")
@@ -49,42 +57,45 @@ func (m *sessionMgr) Load(path string) (any, error) {
 }
 
 func (m *sessionMgr) Fork() (string, any, int, error) {
-	if *m.current == nil {
-		return "", nil, 0, fmt.Errorf("no active session")
-	}
-	forked, err := (*m.current).Fork(0)
+	sess, err := m.active()
 	if err != nil {
 		return "", nil, 0, err
 	}
-	parentID := (*m.current).ID()
-	return parentID, forked, len(forked.Messages()), nil
+	forked, err := sess.Fork(0)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	return sess.ID(), forked, len(forked.Messages()), nil
 }
 
 func (m *sessionMgr) Branch(entryID string) (any, error) {
-	if *m.current == nil {
-		return nil, fmt.Errorf("no active session")
-	}
-	if err := (*m.current).Branch(entryID); err != nil {
+	sess, err := m.active()
+	if err != nil {
 		return nil, err
 	}
-	return *m.current, nil
+	if err := sess.Branch(entryID); err != nil {
+		return nil, err
+	}
+	return sess, nil
 }
 
 func (m *sessionMgr) BranchWithSummary(entryID, summary string) (any, error) {
-	if *m.current == nil {
-		return nil, fmt.Errorf("no active session")
-	}
-	if err := (*m.current).BranchWithSummary(entryID, summary); err != nil {
+	sess, err := m.active()
+	if err != nil {
 		return nil, err
 	}
-	return *m.current, nil
+	if err := sess.BranchWithSummary(entryID, summary); err != nil {
+		return nil, err
+	}
+	return sess, nil
 }
 
 func (m *sessionMgr) EntryInfos() []ext.EntryInfo {
-	if *m.current == nil {
+	sess, err := m.active()
+	if err != nil {
 		return nil
 	}
-	raw := (*m.current).EntryInfos()
+	raw := sess.EntryInfos()
 	out := make([]ext.EntryInfo, len(raw))
 	for i, e := range raw {
 		out[i] = ext.EntryInfo{
@@ -99,45 +110,51 @@ func (m *sessionMgr) EntryInfos() []ext.EntryInfo {
 }
 
 func (m *sessionMgr) SetTitle(title string) error {
-	if *m.current == nil {
-		return fmt.Errorf("no active session")
+	sess, err := m.active()
+	if err != nil {
+		return err
 	}
-	return (*m.current).SetTitle(title)
+	return sess.SetTitle(title)
 }
 
 func (m *sessionMgr) Title() string {
-	if *m.current == nil {
+	sess, err := m.active()
+	if err != nil {
 		return ""
 	}
-	return (*m.current).Meta().Title
+	return sess.Meta().Title
 }
 
 func (m *sessionMgr) AppendEntry(kind string, data any) error {
-	if *m.current == nil {
-		return fmt.Errorf("no active session")
+	sess, err := m.active()
+	if err != nil {
+		return err
 	}
-	return (*m.current).AppendCustom(kind, data)
+	return sess.AppendCustom(kind, data)
 }
 
 func (m *sessionMgr) AppendCustomMessage(role, content string) error {
-	if *m.current == nil {
-		return fmt.Errorf("no active session")
+	sess, err := m.active()
+	if err != nil {
+		return err
 	}
-	return (*m.current).AppendCustomMessage(role, content)
+	return sess.AppendCustomMessage(role, content)
 }
 
 func (m *sessionMgr) AppendLabel(targetID, label string) error {
-	if *m.current == nil {
-		return fmt.Errorf("no active session")
+	sess, err := m.active()
+	if err != nil {
+		return err
 	}
-	return (*m.current).AppendLabel(targetID, label)
+	return sess.AppendLabel(targetID, label)
 }
 
 func (m *sessionMgr) FullTree() []ext.TreeNode {
-	if *m.current == nil {
+	sess, err := m.active()
+	if err != nil {
 		return nil
 	}
-	raw := (*m.current).FullTree()
+	raw := sess.FullTree()
 	out := make([]ext.TreeNode, len(raw))
 	for i, n := range raw {
 		out[i] = ext.TreeNode{
