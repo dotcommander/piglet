@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,9 @@ func writeLastBuildHash(hash string) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(p, []byte(hash+"\n"), 0644)
+	if err := config.AtomicWrite(p, []byte(hash+"\n"), 0644); err != nil {
+		slog.Warn("write build hash", "err", err)
+	}
 }
 
 func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {

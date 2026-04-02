@@ -93,6 +93,34 @@ func registerSession(app *ext.App) {
 	})
 }
 
+type sessionTree struct {
+	summaries []ext.SessionSummary
+	byID      map[string]int   // session ID → index
+	children  map[string][]int // parent ID → child indices
+	roots     []int            // indices with no parent (or orphaned parent)
+}
+
+func buildSessionTree(summaries []ext.SessionSummary) sessionTree {
+	t := sessionTree{
+		summaries: summaries,
+		byID:      make(map[string]int, len(summaries)),
+		children:  make(map[string][]int),
+	}
+	for i, s := range summaries {
+		t.byID[s.ID] = i
+	}
+	for i, s := range summaries {
+		if s.ParentID != "" {
+			if _, ok := t.byID[s.ParentID]; ok {
+				t.children[s.ParentID] = append(t.children[s.ParentID], i)
+				continue
+			}
+		}
+		t.roots = append(t.roots, i)
+	}
+	return t
+}
+
 func showSessionTree(a *ext.App) error {
 	summaries, err := a.Sessions()
 	if err != nil {
@@ -104,30 +132,14 @@ func showSessionTree(a *ext.App) error {
 		return nil
 	}
 
-	// Build tree structure
-	byID := make(map[string]int, len(summaries))
-	children := make(map[string][]int)
-	var roots []int
-
-	for i, s := range summaries {
-		byID[s.ID] = i
-	}
-	for i, s := range summaries {
-		if s.ParentID != "" {
-			if _, ok := byID[s.ParentID]; ok {
-				children[s.ParentID] = append(children[s.ParentID], i)
-				continue
-			}
-		}
-		roots = append(roots, i)
-	}
+	tree := buildSessionTree(summaries)
 
 	var b strings.Builder
 	b.WriteString("Session tree:\n\n")
 
 	var walk func(idx int, prefix, connector string)
 	walk = func(idx int, prefix, connector string) {
-		s := summaries[idx]
+		s := tree.summaries[idx]
 		label := s.Title
 		if label == "" {
 			if len(s.ID) > 8 {
@@ -139,7 +151,7 @@ func showSessionTree(a *ext.App) error {
 		ts := s.CreatedAt.Format("01-02 15:04")
 		fmt.Fprintf(&b, "%s%s%s  %s  %d msgs\n", prefix, connector, label, ts, s.Messages)
 
-		kids := children[s.ID]
+		kids := tree.children[s.ID]
 		for i, childIdx := range kids {
 			childPrefix := prefix + "│   "
 			childConnector := "├── "
@@ -151,7 +163,7 @@ func showSessionTree(a *ext.App) error {
 		}
 	}
 
-	for _, rootIdx := range roots {
+	for _, rootIdx := range tree.roots {
 		walk(rootIdx, "", "")
 	}
 
@@ -197,34 +209,13 @@ func registerBranch(app *ext.App) {
 }
 
 func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
-	// Build tree: index by ID, group children under parents
-	byID := make(map[string]int, len(summaries))
-	children := make(map[string][]int) // parentID → child indices
-	var roots []int
-
-	for i, s := range summaries {
-		byID[s.ID] = i
-		if s.ParentID != "" {
-			children[s.ParentID] = append(children[s.ParentID], i)
-		} else {
-			roots = append(roots, i)
-		}
-	}
-
-	// Orphaned forks (parent deleted) become roots
-	for i, s := range summaries {
-		if s.ParentID != "" {
-			if _, ok := byID[s.ParentID]; !ok {
-				roots = append(roots, i)
-			}
-		}
-	}
+	tree := buildSessionTree(summaries)
 
 	// Walk tree depth-first, building picker items with indentation
 	var items []ext.PickerItem
 	var walk func(idx, depth int)
 	walk = func(idx, depth int) {
-		s := summaries[idx]
+		s := tree.summaries[idx]
 		label := s.Title
 		if label == "" {
 			if len(s.ID) > 8 {
@@ -248,12 +239,12 @@ func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 			Label: label,
 			Desc:  desc,
 		})
-		for _, childIdx := range children[s.ID] {
+		for _, childIdx := range tree.children[s.ID] {
 			walk(childIdx, depth+1)
 		}
 	}
 
-	for _, rootIdx := range roots {
+	for _, rootIdx := range tree.roots {
 		walk(rootIdx, 0)
 	}
 

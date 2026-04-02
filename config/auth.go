@@ -212,6 +212,10 @@ func resolveValue(value string) string {
 		if cmd == "" {
 			return ""
 		}
+		// Security: The !command credential helper executes arbitrary shell commands
+		// specified by the user in auth.json. This is an intentional design choice
+		// (analogous to git's credential.helper) but means auth.json contents are
+		// trusted as code. The file permissions (0600) should be verified on read.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var c *exec.Cmd

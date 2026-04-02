@@ -177,7 +177,7 @@ func TestSaveToAndLoadFrom_NestedStructs(t *testing.T) {
 		},
 		Shortcuts:   map[string]string{"model": "ctrl+p"},
 		PromptOrder: map[string]int{"repomap": 10, "memory": 50},
-		ProjectDocs: []config.ProjectDoc{
+		ProjectDocs: &[]config.ProjectDoc{
 			{Name: "README.md", Title: "Project readme"},
 		},
 	}
@@ -466,7 +466,7 @@ func TestProjectDoc_Roundtrip(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	s := config.Settings{
-		ProjectDocs: []config.ProjectDoc{
+		ProjectDocs: &[]config.ProjectDoc{
 			{Name: "ARCHITECTURE.md", Title: "Architecture"},
 			{Name: "CONTRIBUTING.md", Title: "Contributing guide"},
 		},
