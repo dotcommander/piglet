@@ -136,14 +136,21 @@ func (m *Model) renderMessages() string {
 
 	for i, msg := range m.messages {
 		if i < len(m.msgCache) && m.msgCache[i] != "" {
-			b.WriteString(m.msgCache[i])
+			if m.msgCache[i] != "\x00" { // sentinel: cached empty render
+				b.WriteString(m.msgCache[i])
+			}
 		} else {
-			rendered := m.msgView.RenderMessage(msg) + "\n\n"
+			rendered := m.msgView.RenderMessage(msg)
 			if len(m.msgCache) <= i {
 				m.msgCache = append(m.msgCache, make([]string, i+1-len(m.msgCache))...)
 			}
-			m.msgCache[i] = rendered
-			b.WriteString(rendered)
+			if rendered == "" {
+				m.msgCache[i] = "\x00" // cache the empty result to avoid re-rendering
+			} else {
+				rendered += "\n\n"
+				m.msgCache[i] = rendered
+				b.WriteString(rendered)
+			}
 		}
 	}
 
@@ -154,8 +161,7 @@ func (m *Model) renderMessages() string {
 
 	// Active tool indicator
 	if m.activeTool != "" {
-		b.WriteString(m.styles.ToolName.Render(fmt.Sprintf("running: %s", m.activeTool)))
-		b.WriteByte('\n')
+		b.WriteString(m.styles.Muted.Render("▸ "+m.activeTool+"…") + "\n")
 	}
 
 	return b.String()

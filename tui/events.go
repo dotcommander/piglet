@@ -50,11 +50,13 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 			prompts := m.drainPromptQueue()
 			if len(prompts) > 0 {
 				content := mergePrompts(prompts)
-				m.followOutput = true
-				m.cfg.Agent.Steer(&core.UserMessage{
+				userMsg := &core.UserMessage{
 					Content:   content,
 					Timestamp: time.Now(),
-				})
+				}
+				m.appendMessage(userMsg)
+				m.followOutput = true
+				m.cfg.Agent.Steer(userMsg)
 			}
 		}
 

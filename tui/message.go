@@ -86,6 +86,26 @@ func (v *MessageView) renderUser(m *core.UserMessage) string {
 }
 
 func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
+	// Classify content to decide header visibility
+	hasText, hasThinking := false, false
+	for _, c := range m.Content {
+		switch block := c.(type) {
+		case core.TextContent:
+			if strings.TrimSpace(block.Text) != "" {
+				hasText = true
+			}
+		case core.ThinkingContent:
+			if block.Thinking != "" {
+				hasThinking = true
+			}
+		}
+	}
+
+	// Tool-call-only messages: skip entirely — results follow immediately
+	if !hasText && !hasThinking {
+		return ""
+	}
+
 	var b strings.Builder
 	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
 	b.WriteString(v.separator() + "\n")
@@ -109,7 +129,7 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 			preview := truncateRunes(block.Thinking, 80)
 			b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
 		case core.ToolCall:
-			b.WriteString(v.styles.ToolName.Render("tool: "+block.Name) + "\n")
+			b.WriteString(v.styles.Muted.Render("▸ "+block.Name) + "\n")
 		}
 	}
 
@@ -119,12 +139,12 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 	var prefix string
 	if m.IsError {
-		prefix = v.styles.ToolError.Render("✗ ")
+		prefix = v.styles.ToolError.Render("✗")
 	} else {
-		prefix = v.styles.Success.Render("✓ ")
+		prefix = v.styles.Success.Render("✓")
 	}
 
-	label := prefix + v.styles.ToolName.Render(fmt.Sprintf("[%s]", m.ToolName))
+	name := v.styles.Muted.Render(m.ToolName)
 
 	var content string
 	for _, c := range m.Content {
@@ -134,7 +154,17 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 		}
 	}
 
-	// Truncate long tool output
+	trimmed := strings.TrimSpace(content)
+
+	// Single-line: compact inline format
+	if !strings.Contains(trimmed, "\n") {
+		if trimmed == "" {
+			return prefix + " " + name + "\n"
+		}
+		return prefix + " " + name + "  " + v.styles.Muted.Render(trimmed) + "\n"
+	}
+
+	// Multi-line: truncate long output
 	lines := strings.Split(content, "\n")
 	if len(lines) > 10 {
 		content = strings.Join(lines[:5], "\n") +
@@ -143,7 +173,7 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 			strings.Join(lines[len(lines)-5:], "\n")
 	}
 
-	return label + "\n" + v.styles.Muted.Render(content) + "\n"
+	return prefix + " " + name + "\n" + v.styles.Muted.Render(content) + "\n"
 }
 
 // streamCache holds cached glamour output during streaming to avoid re-rendering every tick.
