@@ -69,6 +69,10 @@ func DiscoverExtensions(baseDir string) ([]*Manifest, error) {
 			continue
 		}
 		dir := filepath.Join(baseDir, entry.Name())
+		// Skip directories without a manifest (stale leftovers from pack consolidation)
+		if _, err := os.Stat(filepath.Join(dir, "manifest.yaml")); err != nil {
+			continue
+		}
 		m, err := LoadManifest(dir)
 		if err != nil {
 			slog.Warn("skip invalid extension", "dir", dir, "err", err)
