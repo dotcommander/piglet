@@ -32,6 +32,7 @@ type Settings struct {
 	AllowProjectExtensions *bool             `yaml:"allowProjectExtensions,omitempty"` // default false; must opt-in for security
 	SubAgent               SubAgentSettings  `yaml:"subagent,omitempty"`
 	ExtInstall             ExtensionSettings `yaml:"extInstall,omitempty"`
+	LocalServers           []string          `yaml:"localServers,omitempty"` // URLs of local model servers to probe on startup
 	LocalDefaults          LocalDefaults     `yaml:"localDefaults,omitempty"`
 	DeferredToolsNote      string            `yaml:"deferredToolsNote,omitempty"` // instruction shown when deferred tools are present
 }

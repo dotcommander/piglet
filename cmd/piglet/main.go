@@ -24,7 +24,6 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/internal/deploy"
 	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/session"
@@ -152,44 +151,8 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("config: %w", err)
 		}
-		var installOpts []command.InstallOption
-		for i := 1; i < len(promptArgs); i++ {
-			switch promptArgs[i] {
-			case "--local":
-				localDir := ""
-				if i+1 < len(promptArgs) && !strings.HasPrefix(promptArgs[i+1], "-") {
-					i++
-					localDir = promptArgs[i]
-				}
-				if localDir == "" {
-					resolved, err := command.ResolveGoWorkExtPath()
-					if err != nil {
-						return fmt.Errorf("local source detection: %w", err)
-					}
-					localDir = resolved
-				}
-				installOpts = append(installOpts, command.WithLocalDir(localDir))
-			default:
-				return fmt.Errorf("unknown flag for update: %s", promptArgs[i])
-			}
-		}
-		return command.RunUpdate(os.Stderr, settings, resolveVersion(), installOpts...)
+		return command.RunUpdate(os.Stderr, settings, resolveVersion())
 	}
-	if len(promptArgs) >= 1 && promptArgs[0] == "deploy" {
-		var dryRun, skipSDK bool
-		for i := 1; i < len(promptArgs); i++ {
-			switch promptArgs[i] {
-			case "--dry-run":
-				dryRun = true
-			case "--skip-sdk":
-				skipSDK = true
-			default:
-				return fmt.Errorf("unknown flag for deploy: %s", promptArgs[i])
-			}
-		}
-		return deploy.RunDeploy(os.Stderr, dryRun, skipSDK)
-	}
-
 	// Determine prompt: args after flags or stdin
 	userPrompt := strings.Join(promptArgs, " ")
 	interactive := userPrompt == ""
@@ -237,7 +200,7 @@ func run() error {
 	sessPtr := &sess
 	app.Bind(ag,
 		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-		ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
+		ext.WithModelManager(newModelMgr(rt, app)),
 	)
 
 	if jsonFlag {
@@ -297,6 +260,13 @@ func loadRuntime(debugFlag bool, modelOverride, baseURLOverride string) (*runtim
 	}
 
 	registry := provider.NewRegistry()
+
+	// Probe configured local servers and register any models they serve.
+	if len(settings.LocalServers) > 0 {
+		ctxWin := config.IntOr(settings.LocalDefaults.ContextWindow, provider.LocalDefaultContextWindow())
+		maxTok := config.IntOr(settings.LocalDefaults.MaxTokens, provider.LocalDefaultMaxTokens())
+		registry.RegisterLocalServers(settings.LocalServers, ctxWin, maxTok)
+	}
 
 	if selfupdate.CheckStale() {
 		go func() {
@@ -575,7 +545,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 		// Bind domain managers so commands work through ext.App.
 		app.Bind(ag,
 			ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-			ext.WithModelManager(&modelMgr{registry: rt.registry, auth: rt.auth, app: app}),
+			ext.WithModelManager(newModelMgr(rt, app)),
 		)
 
 		return tui.AgentReadyMsg{Agent: ag}
@@ -833,12 +803,7 @@ Usage:
   piglet <prompt>         Single-shot mode (prints response and exits)
   piglet init             Run first-time setup (config, models, API key detection)
   piglet update           Upgrade piglet and rebuild extensions
-  piglet update --local           Build extensions from local go.work source
-  piglet update --local <path>    Build extensions from explicit local path
   piglet upgrade          Alias for update
-  piglet deploy           Deploy piglet + extensions (tag, push, release)
-  piglet deploy --dry-run           Show deployment plan without executing
-  piglet deploy --skip-sdk          Skip SDK tag even if SDK changed
   piglet --help           Show this help
   piglet --version        Show version
   piglet --debug          Log all request/response payloads

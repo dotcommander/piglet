@@ -20,43 +20,11 @@ type ProbeResult struct {
 // ProbeServer contacts baseURL + "/v1/models" and returns the first
 // available model along with the detected server type.
 func ProbeServer(baseURL string) (ProbeResult, error) {
-	client := &http.Client{Timeout: 3 * time.Second}
-	baseURL = strings.TrimRight(baseURL, "/")
-	endpoint := baseURL + "/v1/models"
-
-	resp, err := client.Get(endpoint)
+	results, err := ProbeModels(baseURL)
 	if err != nil {
-		return ProbeResult{}, fmt.Errorf("probe %s: %w", endpoint, err)
+		return ProbeResult{}, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return ProbeResult{}, fmt.Errorf("probe %s: unexpected status %d", endpoint, resp.StatusCode)
-	}
-
-	var body struct {
-		Data []struct {
-			ID      string `json:"id"`
-			OwnedBy string `json:"owned_by"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return ProbeResult{}, fmt.Errorf("probe %s: decode response: %w", endpoint, err)
-	}
-
-	if len(body.Data) == 0 {
-		return ProbeResult{}, fmt.Errorf("probe %s: no models in response", endpoint)
-	}
-
-	first := body.Data[0]
-	result := ProbeResult{
-		ModelID:       first.ID,
-		ContextWindow: 0,
-	}
-
-	result.ServerType = detectServerType(resp, first.OwnedBy)
-
-	return result, nil
+	return results[0], nil
 }
 
 // detectServerType inspects response headers and the owned_by field to
@@ -76,6 +44,48 @@ func detectServerType(resp *http.Response, ownedBy string) string {
 	}
 
 	return "unknown"
+}
+
+// ProbeModels contacts baseURL + "/v1/models" and returns all available models.
+func ProbeModels(baseURL string) ([]ProbeResult, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	baseURL = strings.TrimRight(baseURL, "/")
+	endpoint := baseURL + "/v1/models"
+
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("probe %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("probe %s: unexpected status %d", endpoint, resp.StatusCode)
+	}
+
+	var body struct {
+		Data []struct {
+			ID      string `json:"id"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("probe %s: decode response: %w", endpoint, err)
+	}
+
+	if len(body.Data) == 0 {
+		return nil, fmt.Errorf("probe %s: no models in response", endpoint)
+	}
+
+	serverType := detectServerType(resp, body.Data[0].OwnedBy)
+
+	results := make([]ProbeResult, len(body.Data))
+	for i, m := range body.Data {
+		results[i] = ProbeResult{
+			ModelID:    m.ID,
+			ServerType: serverType,
+		}
+	}
+	return results, nil
 }
 
 // isLoopbackURL reports whether rawURL points to a loopback or local address.

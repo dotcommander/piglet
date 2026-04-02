@@ -157,9 +157,23 @@ func (m *sessionMgr) FullTree() []ext.TreeNode {
 
 // modelMgr implements ext.ModelManager using the provider registry.
 type modelMgr struct {
-	registry *provider.Registry
-	auth     *config.Auth
-	app      *ext.App
+	registry     *provider.Registry
+	auth         *config.Auth
+	app          *ext.App
+	localServers []string
+	localCtxWin  int
+	localMaxTok  int
+}
+
+func newModelMgr(rt *runtime, app *ext.App) *modelMgr {
+	return &modelMgr{
+		registry:     rt.registry,
+		auth:         rt.auth,
+		app:          app,
+		localServers: rt.settings.LocalServers,
+		localCtxWin:  config.IntOr(rt.settings.LocalDefaults.ContextWindow, provider.LocalDefaultContextWindow()),
+		localMaxTok:  config.IntOr(rt.settings.LocalDefaults.MaxTokens, provider.LocalDefaultMaxTokens()),
+	}
 }
 
 func (m *modelMgr) Available() []core.Model {
@@ -176,7 +190,6 @@ func (m *modelMgr) Switch(id string) (core.Model, core.StreamProvider, error) {
 					return mod, p, nil
 				}
 			}
-			// Fall back to compiled-in provider
 			apiKeyFn := func() string {
 				return m.auth.GetAPIKey(mod.Provider)
 			}
@@ -191,5 +204,9 @@ func (m *modelMgr) Switch(id string) (core.Model, core.StreamProvider, error) {
 }
 
 func (m *modelMgr) Sync() (int, error) {
-	return m.registry.ReloadModels()
+	n, err := m.registry.ReloadModels()
+	if len(m.localServers) > 0 {
+		n += m.registry.RegisterLocalServers(m.localServers, m.localCtxWin, m.localMaxTok)
+	}
+	return n, err
 }

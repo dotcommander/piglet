@@ -137,6 +137,52 @@ func (r *Registry) Create(m core.Model, apiKeyFn func() string) (core.StreamProv
 	}
 }
 
+// RegisterLocalServers probes each URL concurrently for available models and
+// registers them. Returns the number of models discovered. Errors are silently
+// skipped (servers may be offline).
+func (r *Registry) RegisterLocalServers(urls []string, contextWindow, maxTokens int) int {
+	type result struct {
+		baseURL string
+		models  []ProbeResult
+	}
+
+	ch := make(chan result, len(urls))
+	var wg sync.WaitGroup
+	for _, u := range urls {
+		wg.Add(1)
+		go func(baseURL string) {
+			defer wg.Done()
+			models, err := ProbeModels(baseURL)
+			if err != nil {
+				return
+			}
+			ch <- result{baseURL: baseURL, models: models}
+		}(u)
+	}
+	go func() { wg.Wait(); close(ch) }()
+
+	var total int
+	for res := range ch {
+		for _, pm := range res.models {
+			providerName := pm.ServerType
+			if providerName == "unknown" {
+				providerName = "local"
+			}
+			r.Register(core.Model{
+				ID:            pm.ModelID,
+				Name:          pm.ModelID,
+				API:           core.APIOpenAI,
+				Provider:      providerName,
+				BaseURL:       res.baseURL,
+				ContextWindow: contextWindow,
+				MaxTokens:     maxTokens,
+			})
+			total++
+		}
+	}
+	return total
+}
+
 func modelKey(provider, id string) string {
 	return strings.ToLower(provider) + "/" + strings.ToLower(id)
 }

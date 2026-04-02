@@ -13,53 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// installConfig holds options for InstallOfficialExtensions.
-type installConfig struct {
-	localDir string
-}
-
-// InstallOption configures extension installation behavior.
-type InstallOption func(*installConfig)
-
-// WithLocalDir builds extensions from a local directory instead of cloning.
-func WithLocalDir(dir string) InstallOption {
-	return func(c *installConfig) { c.localDir = dir }
-}
-
-// ResolveGoWorkExtPath finds a piglet-extensions directory in the active Go workspace.
-func ResolveGoWorkExtPath() (string, error) {
-	out, err := exec.Command("go", "env", "GOWORK").Output()
-	if err != nil {
-		return "", fmt.Errorf("go env GOWORK: %w", err)
-	}
-	goworkPath := strings.TrimSpace(string(out))
-	if goworkPath == "" {
-		return "", fmt.Errorf("no active go.work workspace")
-	}
-	data, err := os.ReadFile(goworkPath)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", goworkPath, err)
-	}
-	workDir := filepath.Dir(goworkPath)
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if idx := strings.Index(line, "//"); idx >= 0 {
-			line = line[:idx]
-		}
-		line = strings.TrimSpace(line)
-		cleaned := strings.TrimPrefix(line, "use ")
-		cleaned = strings.TrimSpace(cleaned)
-		cleaned = strings.TrimRight(cleaned, "/")
-		if strings.HasSuffix(cleaned, "piglet-extensions") {
-			abs := filepath.Join(workDir, cleaned)
-			if info, serr := os.Stat(abs); serr == nil && info.IsDir() {
-				return abs, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("piglet-extensions not found in %s", goworkPath)
-}
-
 // lastBuildHashPath returns the path to the cached commit hash file.
 func lastBuildHashPath() (string, error) {
 	dir, err := external.ExtensionsDir()
@@ -91,12 +44,7 @@ func writeLastBuildHash(hash string) {
 	_ = os.WriteFile(p, []byte(hash+"\n"), 0644)
 }
 
-func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...InstallOption) error {
-	var cfg installConfig
-	for _, o := range opts {
-		o(&cfg)
-	}
-
+func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		fmt.Fprintln(w, "go not found in PATH — skipping extension install")
 		return nil
@@ -109,52 +57,44 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 
 	extensions := settings.ExtInstall.Official
 
-	var srcDir string
+	if _, err := exec.LookPath("git"); err != nil {
+		fmt.Fprintln(w, "git not found in PATH — skipping extension install")
+		return nil
+	}
+
+	repoURL := settings.ExtInstall.RepoURL
+
 	var remoteHash string
-	if cfg.localDir != "" {
-		srcDir = cfg.localDir
-		fmt.Fprintf(w, "Building from local source: %s\n", srcDir)
-	} else {
-		if _, err := exec.LookPath("git"); err != nil {
-			fmt.Fprintln(w, "git not found in PATH — skipping extension install")
-			return nil
-		}
-
-		repoURL := settings.ExtInstall.RepoURL
-
-		// Check remote HEAD and compare with cached hash.
-		if out, err := exec.Command("git", "ls-remote", repoURL, "HEAD").Output(); err == nil {
-			fields := strings.Fields(strings.TrimSpace(string(out)))
-			if len(fields) > 0 {
-				remoteHash = fields[0]
-				if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
-					fmt.Fprintln(w, "Extensions already up to date.")
-					return nil
-				}
+	// Check remote HEAD and compare with cached hash.
+	if out, err := exec.Command("git", "ls-remote", repoURL, "HEAD").Output(); err == nil {
+		fields := strings.Fields(strings.TrimSpace(string(out)))
+		if len(fields) > 0 {
+			remoteHash = fields[0]
+			if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
+				fmt.Fprintln(w, "Extensions already up to date.")
+				return nil
 			}
 		}
+	}
 
-		fmt.Fprintf(w, "Cloning piglet-extensions...\n")
+	fmt.Fprintf(w, "Cloning piglet-extensions...\n")
 
-		tmpDir, err := os.MkdirTemp("", "piglet-extensions-*")
-		if err != nil {
-			return fmt.Errorf("create temp dir: %w", err)
-		}
-		defer os.RemoveAll(tmpDir)
+	srcDir, err := os.MkdirTemp("", "piglet-extensions-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(srcDir)
 
-		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", repoURL, tmpDir)
-		if out, err := cloneCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
-			return nil
-		}
+	cloneCmd := exec.Command("git", "clone", "--depth", "1", "--quiet", repoURL, srcDir)
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "Failed to clone extensions repo:\n%s\n", string(out))
+		return nil
+	}
 
-		tidyCmd := exec.Command("go", "mod", "tidy")
-		tidyCmd.Dir = tmpDir
-		if out, err := tidyCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
-		}
-
-		srcDir = tmpDir
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd.Dir = srcDir
+	if out, err := tidyCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
 	}
 
 	var built, failed int
@@ -259,50 +199,5 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 		}
 	}
 
-	cliBuilt, cliFailed := installCLIs(w, srcDir)
-	if cliBuilt+cliFailed > 0 {
-		fmt.Fprintf(w, "CLIs: %d built, %d failed\n", cliBuilt, cliFailed)
-	}
-
 	return nil
-}
-
-// installCLIs discovers and builds standalone CLI tools from cmd/*/ in the
-// cloned extensions repo, installing them to GOBIN.
-func installCLIs(w io.Writer, repoDir string) (built, failed int) {
-	cmdDir := filepath.Join(repoDir, "cmd")
-	entries, err := os.ReadDir(cmdDir)
-	if err != nil {
-		return 0, 0 // no cmd/ directory — nothing to build
-	}
-
-	gobin := os.Getenv("GOBIN")
-	if gobin == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			fmt.Fprintf(w, "Warning: cannot determine GOBIN: %v\n", err)
-			return 0, 0
-		}
-		gobin = filepath.Join(home, "go", "bin")
-	}
-
-	fmt.Fprintln(w, "Building CLIs...")
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		fmt.Fprintf(w, "  %-20s ", name)
-
-		buildCmd := exec.Command("go", "build", "-o", filepath.Join(gobin, name), "./cmd/"+name+"/")
-		buildCmd.Dir = repoDir
-		if out, err := buildCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
-			failed++
-			continue
-		}
-		fmt.Fprintln(w, "ok")
-		built++
-	}
-	return built, failed
 }
