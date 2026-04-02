@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,11 +14,7 @@ import (
 // handleEvent processes a single agent event. When batch is true, the caller
 // is responsible for returning pollEvents — this function will not include it.
 func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
-	// Dispatch event to registered handlers (event bus)
-	if m.cfg.App != nil {
-		m.cfg.App.DispatchEvent(m.ctx, evt)
-	}
-
+	// --- TUI-specific rendering updates (Shell does NOT handle these) ---
 	switch e := evt.(type) {
 	case core.EventStreamDelta:
 		if e.Kind == "text" {
@@ -46,24 +41,9 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		m.activeTool = ""
 		m.spinnerVerb = "thinking..."
 
-		if m.streaming && len(m.inputQueue) > 0 {
-			prompts := m.drainPromptQueue()
-			if len(prompts) > 0 {
-				content := mergePrompts(prompts)
-				userMsg := &core.UserMessage{
-					Content:   content,
-					Timestamp: time.Now(),
-				}
-				m.appendMessage(userMsg)
-				m.followOutput = true
-				m.cfg.Agent.Steer(userMsg)
-			}
-		}
-
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
-			m.appendMessage(e.Assistant)
-			// InputTokens is the full context size (not incremental), so assign rather than accumulate
+			m.appendDisplayMessage(e.Assistant)
 			m.totalIn = e.Assistant.Usage.InputTokens
 			m.totalOut += e.Assistant.Usage.OutputTokens
 			m.totalCost += e.Assistant.Usage.Cost
@@ -73,21 +53,19 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 			m.status.Set(ext.StatusKeyCost, m.styles.Muted.Render(formatCost(m.totalCost)))
 		}
 		for _, tr := range e.ToolResults {
-			m.appendMessage(tr)
+			m.appendDisplayMessage(tr)
 		}
 
 	case core.EventAgentEnd:
-		// If background agent is still running, hold back the idle transition
-		if m.bgAgent != nil && m.bgAgent.IsRunning() {
-			m.heldBackEnd = true
+		// Check if shell held back the end (bg agent still running)
+		if m.shell != nil && m.shell.IsRunning() {
+			// Shell decided to hold back — update UI to show waiting state
 			m.activeTool = ""
 			m.spinnerVerb = "waiting for background..."
 			m.refreshAndFollow()
-			break
+		} else {
+			m.stopStreaming()
 		}
-		m.stopStreaming()
-
-		return m.drainAndSubmitQueued()
 
 	case core.EventMaxTurns:
 		m.messages = append(m.messages, systemNote(fmt.Sprintf("Stopped: max turns reached (%d)", e.Max)))
@@ -97,26 +75,39 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 
 	case core.EventCompact:
 		m.messages = append(m.messages, systemNote(fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)))
-		// Rough estimate until the next EventTurnEnd corrects it
 		if e.Before > 0 {
 			m.totalIn = (m.totalIn * e.After) / e.Before
 			m.updateTokenStatus()
 		}
-		// Persist compacted state so session reload skips original messages
-		if m.cfg.Session != nil && m.cfg.Agent != nil {
-			_ = m.cfg.Session.AppendCompact(m.cfg.Agent.Messages())
-		}
 	}
 
-	// Apply actions after event types that may produce them
+	// --- Delegate to Shell for persistence, event dispatch, action drain ---
+	var done bool
+	if m.shell != nil {
+		done = m.shell.ProcessEvent(evt)
+	}
+
+	// Apply shell notifications to TUI state
 	var actionCmd tea.Cmd
 	switch evt.(type) {
 	case core.EventAgentEnd, core.EventTurnEnd, core.EventToolEnd, core.EventCompact:
-		actionCmd = m.applyActions()
+		actionCmd = m.applyShellNotifications()
 	}
 
-	// When called from a batch loop, the caller handles pollEvents.
-	// For non-batch calls (single eventMsg), return pollEvents here.
+	// Check if shell restarted the agent with queued input
+	if m.shell != nil {
+		if ch := m.shell.EventChannel(); ch != nil && ch != m.eventCh {
+			m.eventCh = ch
+			m.streaming = true
+			m.spinnerVerb = "thinking..."
+			// Will be polled by the batch or non-batch logic below
+		}
+	}
+
+	if done {
+		m.stopStreaming()
+	}
+
 	if !batch && m.eventCh != nil && m.streaming {
 		if actionCmd != nil {
 			return m, tea.Batch(pollEvents(m.eventCh), actionCmd)
@@ -127,8 +118,6 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 }
 
 // systemNote creates a synthetic assistant message for status/error display.
-// These are appended directly to m.messages (not via appendMessage) so they
-// are NOT persisted to the session JSONL.
 func systemNote(text string) *core.AssistantMessage {
 	return &core.AssistantMessage{
 		Content: []core.AssistantContent{core.TextContent{Text: text}},
@@ -143,13 +132,12 @@ func (m *Model) updateTokenStatus() {
 // drains up to 9 more for batched processing.
 func pollEvents(ch <-chan core.Event) tea.Cmd {
 	return func() tea.Msg {
-		// Blocking wait for first event
 		first, ok := <-ch
 		if !ok {
 			return eventsBatchMsg{events: nil}
 		}
-		events := []core.Event{first}
-		// Non-blocking drain of up to 9 more
+		events := make([]core.Event, 1, 10)
+		events[0] = first
 		for i := 0; i < 9; i++ {
 			select {
 			case evt, ok := <-ch:
@@ -171,84 +159,33 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-// drainAndSubmitQueued drains the input queue, executes queued slash commands,
-// merges queued prompts into one turn, and starts the agent loop.
-// Returns (model, cmd) — cmd is non-nil if a new agent loop was started.
-func (m *Model) drainAndSubmitQueued() (Model, tea.Cmd) {
-	var batchCmds []tea.Cmd
-
-	if items := m.drainInputQueue(); len(items) > 0 {
-		cmds := drainCommands(slices.Clone(items))
-		prompts := drainPrompts(items)
-
-		// Execute queued slash commands (collect all, don't early-return)
-		for _, c := range cmds {
-			name, args := parseSlashCommand(c.content)
-			model, cmd := m.runCommand(name, args)
-			*m = model.(Model)
-			if cmd != nil {
-				batchCmds = append(batchCmds, cmd)
-			}
-		}
-
-		// Merge and submit queued prompts as one turn
-		if len(prompts) > 0 {
-			content := mergePrompts(prompts)
-			userMsg := &core.UserMessage{Content: content, Timestamp: time.Now()}
-			m.appendMessage(userMsg)
-			m.followOutput = true
-			m.refreshAndFollow()
-			actionCmd := m.applyActions()
-			return *m, tea.Batch(append(batchCmds, actionCmd, m.startAgentLoop(content))...)
-		}
-	}
-
-	// Apply pending actions even when no prompts were queued (EventAgentEnd
-	// early-returns through this function, skipping the post-switch applyActions
-	// block in handleEvent — extensions may have queued actions during dispatch).
-	if actionCmd := m.applyActions(); actionCmd != nil {
-		batchCmds = append(batchCmds, actionCmd)
-	}
-	if len(batchCmds) > 0 {
-		return *m, tea.Batch(batchCmds...)
-	}
-	return *m, nil
-}
-
 func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
-	switch e := evt.(type) {
-	case core.EventStreamDelta:
-		if e.Kind == "text" {
-			m.bgResult.WriteString(e.Delta)
-		}
-
-	case core.EventAgentEnd:
-		result := strings.TrimSpace(m.bgResult.String())
-		if result == "" {
-			result = "(background task produced no output)"
-		}
-		m.messages = append(m.messages, systemNote(fmt.Sprintf("Background task: %s\n\n%s", m.bgTask, result)))
-		m.bgAgent = nil
-		m.bgEventCh = nil
-		m.bgTask = ""
-		m.bgResult.Reset()
-		m.status.Set(ext.StatusKeyBg, "")
-
-		// Complete held-back main agent end if needed
-		if m.heldBackEnd {
-			m.heldBackEnd = false
-			m.stopStreaming()
-
-			return m.drainAndSubmitQueued()
-		}
-
+	if m.shell == nil {
 		return m, nil
 	}
 
-	if m.bgEventCh != nil {
-		return m, pollBgEvents(m.bgEventCh)
+	done := m.shell.ProcessBgEvent(evt)
+	notifyCmd := m.applyShellNotifications()
+
+	if done {
+		m.bgEventCh = nil
+		// Check if shell restarted the main agent (held-back end completed)
+		if ch := m.shell.EventChannel(); ch != nil && ch != m.eventCh {
+			m.eventCh = ch
+			m.streaming = true
+			m.spinnerVerb = "thinking..."
+			return m, tea.Batch(pollEvents(ch), tickCmd(), m.spinner.Tick, notifyCmd)
+		}
+		if !m.shell.IsRunning() {
+			m.stopStreaming()
+		}
+		return m, notifyCmd
 	}
-	return m, nil
+
+	if m.bgEventCh != nil {
+		return m, tea.Batch(pollBgEvents(m.bgEventCh), notifyCmd)
+	}
+	return m, notifyCmd
 }
 
 // pollBgEvents reads the next event from the background agent channel.

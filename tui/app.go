@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -17,10 +15,12 @@ import (
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/session"
+	"github.com/dotcommander/piglet/shell"
 )
 
 // Config configures the TUI app.
 type Config struct {
+	Shell    *shell.Shell
 	Agent    *core.Agent
 	Session  *session.Session
 	Model    core.Model
@@ -64,15 +64,11 @@ type notifyTickMsg struct{}
 // notifyDuration is how many ticks a toast notification stays visible.
 const notifyDuration = 15 // ~3 seconds at 200ms tick
 
-// bgStartResult is set by the background agent callback when it starts polling.
-type bgStartResult struct {
-	ch <-chan core.Event
-}
-
 // Model is the Bubble Tea model for the TUI.
 type Model struct {
-	cfg Config
-	ctx context.Context
+	cfg   Config
+	ctx   context.Context
+	shell *shell.Shell
 
 	// Layout
 	width  int
@@ -91,7 +87,6 @@ type Model struct {
 	// State
 	messages        []core.Message
 	streaming       bool
-	inputQueue      []queuedItem
 	streamText      *strings.Builder
 	streamThink     *strings.Builder
 	activeTool      string
@@ -104,18 +99,11 @@ type Model struct {
 	quitting        bool
 	pickerCallback  func(ext.PickerItem)
 
-	// Background start channel (set by bind callback, read after command)
-	pendingBgStart *bgStartResult
-
-	// Event channel
+	// Event channel (mirrors shell.EventChannel for polling)
 	eventCh <-chan core.Event
 
-	// Background agent state
-	bgAgent     *core.Agent
-	bgEventCh   <-chan core.Event
-	bgTask      string
-	bgResult    *strings.Builder
-	heldBackEnd bool // main agent ended but bg agent still running
+	// Background event channel (mirrors shell.BgEventChannel for polling)
+	bgEventCh <-chan core.Event
 
 	// Streaming glamour cache
 	streamCache streamCache
@@ -154,7 +142,13 @@ type widgetState struct {
 // New creates a TUI model.
 func New(ctx context.Context, cfg Config) Model {
 	styles := NewStyles(cfg.Theme)
-	commands := commandNames(cfg.App)
+
+	var commands []string
+	if cfg.Shell != nil {
+		commands = cfg.Shell.CommandNames()
+	} else {
+		commands = commandNames(cfg.App)
+	}
 
 	status := NewStatusBar(styles)
 	if cfg.App != nil {
@@ -177,6 +171,7 @@ func New(ctx context.Context, cfg Config) Model {
 	m := Model{
 		cfg:          cfg,
 		ctx:          ctx,
+		shell:        cfg.Shell,
 		styles:       styles,
 		input:        NewInputModel(styles, commands),
 		viewport:     vp,
@@ -186,7 +181,6 @@ func New(ctx context.Context, cfg Config) Model {
 		spinner:      sp,
 		streamText:   &strings.Builder{},
 		streamThink:  &strings.Builder{},
-		bgResult:     &strings.Builder{},
 		focused:      true,
 		followOutput: true,
 		widgets:      make(map[string]widgetState),
@@ -280,14 +274,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pickerCallback != nil {
 			cb := m.pickerCallback
 			m.pickerCallback = nil
-			// Set up a fresh result for the callback to write into
-			m.bindApp()
 			cb(ext.PickerItem{
 				ID:    msg.Item.ID,
 				Label: msg.Item.Label,
 				Desc:  msg.Item.Desc,
 			})
-			bgCmd := m.applyActions()
+			if m.shell != nil {
+				m.shell.DrainActions()
+			}
+			bgCmd := m.applyShellNotifications()
 			if bgCmd != nil {
 				return m, bgCmd
 			}
@@ -314,9 +309,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case asyncActionMsg:
 		// Re-enqueue the result action from an ActionRunAsync and apply it
-		if m.cfg.App != nil && msg.action != nil {
-			m.cfg.App.EnqueueAction(msg.action)
-			bgCmd := m.applyActions()
+		if m.shell != nil && msg.action != nil {
+			m.shell.EnqueueResult(msg.action)
+			m.shell.DrainActions()
+			bgCmd := m.applyShellNotifications()
 			if bgCmd != nil {
 				return m, bgCmd
 			}
@@ -332,10 +328,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentReadyMsg:
 		m.cfg.Agent = msg.Agent
 		m.cfg.SetupFn = nil
+		if m.shell != nil {
+			m.shell.SetAgent(msg.Agent)
+		}
 		m.status.Set(ext.StatusKeyApp, m.styles.Muted.Render("piglet"))
 		if m.cfg.App != nil {
 			m.status.SetRegistry(m.cfg.App.StatusSections())
-			m.input.SetCommands(commandNames(m.cfg.App))
+			m.input.SetCommands(m.shell.CommandNames())
 		}
 		return m, m.notifyAndTick("Extensions loaded")
 
@@ -378,12 +377,14 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 
 	switch {
 	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
-		if m.streaming && m.cfg.Agent != nil {
-			m.cfg.Agent.Stop()
+		if m.streaming && m.shell != nil {
+			m.shell.Abort()
 			m.stopStreaming()
 			return m, nil, true
 		}
-		m.stopBgAgent()
+		if m.shell != nil {
+			m.shell.StopBackground()
+		}
 		m.quitting = true
 		return m, tea.Quit, true
 
@@ -512,14 +513,10 @@ func (m Model) notificationStyle() lipgloss.Style {
 	}
 }
 
-// appendMessage adds a message to conversation history and persists to session.
-func (m *Model) appendMessage(msg core.Message) {
+// appendDisplayMessage adds a message to the TUI display list.
+// Persistence is handled by shell.ProcessEvent.
+func (m *Model) appendDisplayMessage(msg core.Message) {
 	m.messages = append(m.messages, msg)
-	if m.cfg.Session != nil {
-		if err := m.cfg.Session.Append(msg); err != nil {
-			slog.Warn("session: failed to persist message", "error", err)
-		}
-	}
 }
 
 // notifyAndTick shows a notification and returns the tick command to dismiss it.
@@ -532,53 +529,4 @@ func notifyTick() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return notifyTickMsg{}
 	})
-}
-
-const maxQueueSize = 50
-
-// enqueueInput appends a message to the input queue and updates the status bar.
-func (m *Model) enqueueInput(content string, lowPriority bool) {
-	if len(m.inputQueue) >= maxQueueSize {
-		return
-	}
-	priority := priorityNext
-	if lowPriority {
-		priority = priorityLater
-	}
-	enqueueItem(&m.inputQueue, queuedItem{
-		content:  content,
-		priority: priority,
-	})
-	m.updateQueueStatus()
-}
-
-func (m *Model) updateQueueStatus() {
-	if count := len(m.inputQueue); count > 0 {
-		m.status.Set(ext.StatusKeyQueue, fmt.Sprintf("queued: %d", count))
-	} else {
-		m.status.Set(ext.StatusKeyQueue, "")
-	}
-}
-
-// drainInputQueue returns all queued items and clears the queue.
-func (m *Model) drainInputQueue() []queuedItem {
-	m.status.Set(ext.StatusKeyQueue, "")
-	return drainQueue(&m.inputQueue)
-}
-
-// drainPromptQueue returns only non-command items from the queue.
-func (m *Model) drainPromptQueue() []queuedItem {
-	var prompts []queuedItem
-	j := 0
-	for _, it := range m.inputQueue {
-		if it.priority == priorityLater {
-			m.inputQueue[j] = it
-			j++
-		} else {
-			prompts = append(prompts, it)
-		}
-	}
-	m.inputQueue = m.inputQueue[:j]
-	m.updateQueueStatus()
-	return prompts
 }
