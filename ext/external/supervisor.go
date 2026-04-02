@@ -108,7 +108,6 @@ func (s *Supervisor) watch(ctx context.Context) {
 		h := s.host
 		s.mu.Unlock()
 
-		// Determine what triggered the restart cycle.
 		var crash bool
 		if h == nil {
 			// No live host (previous restart failed) — wait for reload signal.
@@ -122,7 +121,6 @@ func (s *Supervisor) watch(ctx context.Context) {
 		} else {
 			startedAt := time.Now()
 
-			// Block until crash, reload, manual stop, or context cancellation.
 			select {
 			case <-h.Closed():
 				// Stop() closes s.stopped then calls h.Stop() which closes h.closed.
@@ -134,7 +132,6 @@ func (s *Supervisor) watch(ctx context.Context) {
 				}
 				crash = true
 			case <-s.reloadCh:
-				// Intentional reload — gracefully stop old host.
 				s.mu.Lock()
 				s.host = nil
 				s.mu.Unlock()
@@ -171,10 +168,8 @@ func (s *Supervisor) watch(ctx context.Context) {
 			}
 		}
 
-		// Remove stale registrations.
 		s.app.UnregisterExtension(s.manifest.Name)
 
-		// Backoff before restart (crash only — reloads are immediate).
 		if crash {
 			t := time.NewTimer(backoff)
 			select {
@@ -189,29 +184,15 @@ func (s *Supervisor) watch(ctx context.Context) {
 			backoff = min(backoff*2, maxBackoff)
 		}
 
-		// Attempt restart.
-		newHost := NewHost(s.manifest, s.cwd)
-		if err := newHost.Start(ctx); err != nil {
-			slog.Error("extension restart failed",
-				"name", s.manifest.Name,
-				"err", err)
+		if err := s.restart(ctx, crash); err != nil {
 			if !crash {
 				s.app.Notify(s.manifest.Name + " reload failed: " + err.Error())
 			}
 			s.mu.Lock()
 			s.host = nil
 			s.mu.Unlock()
-			continue // loop back — nil host waits for next signal
+			continue
 		}
-		newHost.SetApp(s.app)
-		newHost.SetProviderResolver(s.resolverFn)
-		newHost.SetUndoSnapshots(s.undoSnapshotsFn)
-
-		s.mu.Lock()
-		s.host = newHost
-		s.mu.Unlock()
-
-		bridge(s.app, newHost)
 
 		if crash {
 			slog.Info("extension restarted successfully", "name", s.manifest.Name)
@@ -220,4 +201,26 @@ func (s *Supervisor) watch(ctx context.Context) {
 			s.app.Notify(s.manifest.Name + " reloaded")
 		}
 	}
+}
+
+// restart creates a new Host, starts it, wires it into the app, and sets it as
+// the live host. crash is false for intentional reloads (used only for error logging).
+func (s *Supervisor) restart(ctx context.Context, crash bool) error {
+	newHost := NewHost(s.manifest, s.cwd)
+	if err := newHost.Start(ctx); err != nil {
+		slog.Error("extension restart failed",
+			"name", s.manifest.Name,
+			"err", err)
+		return err
+	}
+	newHost.SetApp(s.app)
+	newHost.SetProviderResolver(s.resolverFn)
+	newHost.SetUndoSnapshots(s.undoSnapshotsFn)
+
+	s.mu.Lock()
+	s.host = newHost
+	s.mu.Unlock()
+
+	bridge(s.app, newHost)
+	return nil
 }

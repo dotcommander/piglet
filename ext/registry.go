@@ -190,13 +190,6 @@ func (a *App) RegisterStatusSection(s StatusSection) {
 	a.statusSections = append(a.statusSections, s)
 }
 
-// RegisterProvider adds a custom LLM provider.
-func (a *App) RegisterProvider(name string, cfg *ProviderConfig) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.providers[name] = cfg
-}
-
 // StreamProviderFactory creates a StreamProvider configured for a specific model.
 // Registered per API type; called each time the agent selects a model served by that API.
 type StreamProviderFactory func(model core.Model) core.StreamProvider

@@ -259,23 +259,6 @@ func TestRegisterRenderer(t *testing.T) {
 	assert.Equal(t, "rendered diff", renderers["diff"](nil, true))
 }
 
-func TestRegisterProvider(t *testing.T) {
-	t.Parallel()
-
-	app := ext.NewApp("/tmp")
-	app.RegisterProvider("custom", &ext.ProviderConfig{
-		BaseURL: "https://custom.ai/v1",
-		API:     core.APIOpenAI,
-		Models: []core.Model{
-			{ID: "custom-1", Name: "Custom Model"},
-		},
-	})
-
-	providers := app.Providers()
-	assert.Contains(t, providers, "custom")
-	assert.Equal(t, "https://custom.ai/v1", providers["custom"].BaseURL)
-}
-
 func TestExtensionFunction(t *testing.T) {
 	t.Parallel()
 

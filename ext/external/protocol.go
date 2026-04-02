@@ -186,6 +186,7 @@ type CommandExecuteResult struct {
 
 // InterceptorBeforeParams is sent when a tool is about to execute.
 type InterceptorBeforeParams struct {
+	Name     string         `json:"name"` // interceptor discriminator
 	ToolName string         `json:"toolName"`
 	Args     map[string]any `json:"args"`
 }
@@ -198,6 +199,7 @@ type InterceptorBeforeResult struct {
 
 // InterceptorAfterParams is sent after tool execution.
 type InterceptorAfterParams struct {
+	Name     string `json:"name"` // interceptor discriminator
 	ToolName string `json:"toolName"`
 	Details  any    `json:"details,omitempty"`
 }

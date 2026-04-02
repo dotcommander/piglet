@@ -116,24 +116,31 @@ func LoadAll(ctx context.Context, app *ext.App, undoFn UndoSnapshotsFn, disabled
 
 // bridge wires a single host's registrations into ext.App.
 func bridge(app *ext.App, h *Host) {
-	tools := h.Tools()
-	commands := h.Commands()
+	h.bridge(app)
+}
 
-	// Record extension metadata
+func (h *Host) bridge(app *ext.App) {
 	info := ext.ExtInfo{
 		Name:    h.Name(),
 		Kind:    "external",
 		Runtime: h.manifest.Runtime,
 		Version: h.manifest.Version,
 	}
-	for _, t := range tools {
-		info.Tools = append(info.Tools, t.Name)
-	}
-	for _, c := range commands {
-		info.Commands = append(info.Commands, c.Name)
-	}
-	// Register tools
-	for _, t := range tools {
+	h.bridgeTools(app, &info)
+	h.bridgeCommands(app, &info)
+	h.bridgePromptSections(app, &info)
+	h.bridgeInterceptors(app, &info)
+	h.bridgeEventHandlers(app, &info)
+	h.bridgeShortcuts(app, &info)
+	h.bridgeMessageHooks(app, &info)
+	h.bridgeInputTransformers(app, &info)
+	h.bridgeCompactor(app, &info)
+	h.bridgeStreamProviders(app, &info)
+	app.RegisterExtInfo(info)
+}
+
+func (h *Host) bridgeTools(app *ext.App, info *ext.ExtInfo) {
+	for _, t := range h.Tools() {
 		def := &ext.ToolDef{
 			ToolSchema: core.ToolSchema{
 				Name:        t.Name,
@@ -148,19 +155,23 @@ func bridge(app *ext.App, h *Host) {
 			def.InterruptBehavior = ext.InterruptBlock
 		}
 		app.RegisterTool(def)
+		info.Tools = append(info.Tools, t.Name)
 	}
+}
 
-	// Register commands
-	for _, c := range commands {
+func (h *Host) bridgeCommands(app *ext.App, info *ext.ExtInfo) {
+	for _, c := range h.Commands() {
 		app.RegisterCommand(&ext.Command{
 			Name:        c.Name,
 			Description: c.Description,
 			Immediate:   c.Immediate,
 			Handler:     proxyCommandExecute(h, c.Name),
 		})
+		info.Commands = append(info.Commands, c.Name)
 	}
+}
 
-	// Register prompt sections
+func (h *Host) bridgePromptSections(app *ext.App, info *ext.ExtInfo) {
 	for _, ps := range h.PromptSections() {
 		app.RegisterPromptSection(ext.PromptSection{
 			Title:     ps.Title,
@@ -170,19 +181,21 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.PromptSections = append(info.PromptSections, ps.Title)
 	}
+}
 
-	// Register interceptors
+func (h *Host) bridgeInterceptors(app *ext.App, info *ext.ExtInfo) {
 	for _, ic := range h.Interceptors() {
 		app.RegisterInterceptor(ext.Interceptor{
 			Name:     ic.Name,
 			Priority: ic.Priority,
-			Before:   proxyInterceptorBefore(h),
-			After:    proxyInterceptorAfter(h),
+			Before:   proxyInterceptorBefore(h, ic.Name),
+			After:    proxyInterceptorAfter(h, ic.Name),
 		})
 		info.Interceptors = append(info.Interceptors, ic.Name)
 	}
+}
 
-	// Register event handlers
+func (h *Host) bridgeEventHandlers(app *ext.App, info *ext.ExtInfo) {
 	for _, eh := range h.EventHandlers() {
 		app.RegisterEventHandler(ext.EventHandler{
 			Name:     eh.Name,
@@ -192,8 +205,9 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.EventHandlers = append(info.EventHandlers, eh.Name)
 	}
+}
 
-	// Register shortcuts
+func (h *Host) bridgeShortcuts(app *ext.App, info *ext.ExtInfo) {
 	for _, sc := range h.Shortcuts() {
 		app.RegisterShortcut(&ext.Shortcut{
 			Key:         sc.Key,
@@ -202,8 +216,9 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.Shortcuts = append(info.Shortcuts, sc.Key)
 	}
+}
 
-	// Register message hooks
+func (h *Host) bridgeMessageHooks(app *ext.App, info *ext.ExtInfo) {
 	for _, mh := range h.MessageHooks() {
 		app.RegisterMessageHook(ext.MessageHook{
 			Name:      mh.Name,
@@ -212,8 +227,9 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.MessageHooks = append(info.MessageHooks, mh.Name)
 	}
+}
 
-	// Register input transformers
+func (h *Host) bridgeInputTransformers(app *ext.App, info *ext.ExtInfo) {
 	for _, it := range h.InputTransformers() {
 		app.RegisterInputTransformer(ext.InputTransformer{
 			Name:      it.Name,
@@ -222,18 +238,22 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.InputTransformers = append(info.InputTransformers, it.Name)
 	}
+}
 
-	// Register compactor
-	if cp := h.Compactor(); cp != nil {
-		app.RegisterCompactor(ext.Compactor{
-			Name:      cp.Name,
-			Threshold: cp.Threshold,
-			Compact:   proxyCompactExecute(h),
-		})
-		info.Compactor = cp.Name
+func (h *Host) bridgeCompactor(app *ext.App, info *ext.ExtInfo) {
+	cp := h.Compactor()
+	if cp == nil {
+		return
 	}
+	app.RegisterCompactor(ext.Compactor{
+		Name:      cp.Name,
+		Threshold: cp.Threshold,
+		Compact:   proxyCompactExecute(h),
+	})
+	info.Compactor = cp.Name
+}
 
-	// Register stream providers
+func (h *Host) bridgeStreamProviders(app *ext.App, info *ext.ExtInfo) {
 	for _, p := range h.Providers() {
 		api := p.API
 		app.RegisterStreamProvider(api, func(model core.Model) core.StreamProvider {
@@ -241,9 +261,6 @@ func bridge(app *ext.App, h *Host) {
 		})
 		info.StreamProviders = append(info.StreamProviders, api)
 	}
-
-	// Register extension metadata after all fields are populated
-	app.RegisterExtInfo(info)
 }
 
 // proxyToolExecute returns a ToolExecuteFn that proxies to the extension process.
@@ -266,26 +283,26 @@ func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App
 }
 
 // proxyInterceptorBefore returns a Before function that proxies to the extension.
-func proxyInterceptorBefore(h *Host) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+func proxyInterceptorBefore(h *Host, name string) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 		select {
 		case <-h.Closed():
 			return true, args, nil // host dead — allow tool to proceed
 		default:
 		}
-		return h.InterceptBefore(ctx, toolName, args)
+		return h.InterceptBefore(ctx, name, toolName, args)
 	}
 }
 
 // proxyInterceptorAfter returns an After function that proxies to the extension.
-func proxyInterceptorAfter(h *Host) func(ctx context.Context, toolName string, details any) (any, error) {
+func proxyInterceptorAfter(h *Host, name string) func(ctx context.Context, toolName string, details any) (any, error) {
 	return func(ctx context.Context, toolName string, details any) (any, error) {
 		select {
 		case <-h.Closed():
 			return details, nil // host dead — pass through
 		default:
 		}
-		return h.InterceptAfter(ctx, toolName, details)
+		return h.InterceptAfter(ctx, name, toolName, details)
 	}
 }
 
@@ -530,52 +547,35 @@ func (p *proxyStreamProvider) Stream(ctx context.Context, req core.StreamRequest
 	return ch
 }
 
-func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest, ch chan core.StreamEvent) {
-	defer close(ch)
-
-	// Bail out if the host has been stopped (supervisor restart/crash).
-	select {
-	case <-p.host.Closed():
-		ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("extension %s stopped", p.host.Name())}
-		return
-	default:
+// marshalStreamRequest marshals all serializable fields of a StreamRequest into
+// a ProviderStreamParams ready for wire transport. Returns (params, true) on
+// success, or emits a StreamError on ch and returns (_, false) on failure.
+// requestID must already be allocated and registered in deltaChans before calling.
+func (p *proxyStreamProvider) marshalStreamRequest(
+	req core.StreamRequest,
+	requestID int,
+	ch chan core.StreamEvent,
+) (ProviderStreamParams, bool) {
+	failf := func(label string, err error) (ProviderStreamParams, bool) {
+		p.host.releaseDeltaChan(requestID)
+		ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("marshal %s: %w", label, err)}
+		return ProviderStreamParams{}, false
 	}
 
-	// Allocate a request ID for correlating provider/delta notifications.
-	requestID := int(p.host.nextID.Add(1))
-
-	// Register delta channel BEFORE sending the request so no deltas are lost.
-	deltaCh := make(chan ProviderDeltaParams, 256)
-	p.host.deltaMu.Lock()
-	p.host.deltaChans[requestID] = deltaCh
-	p.host.deltaMu.Unlock()
-
-	// Build params — marshal each field that goes over the wire.
-	// marshalOrFail marshals v and emits a StreamError on failure.
-	marshalOrFail := func(v any, label string) (json.RawMessage, bool) {
-		data, err := json.Marshal(v)
-		if err != nil {
-			p.host.releaseDeltaChan(requestID)
-			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("marshal %s: %w", label, err)}
-			return nil, false
-		}
-		return data, true
+	modelJSON, err := json.Marshal(p.model)
+	if err != nil {
+		return failf("model", err)
 	}
-
-	modelJSON, ok := marshalOrFail(p.model, "model")
-	if !ok {
-		return
-	}
-	messagesJSON, ok := marshalOrFail(req.Messages, "messages")
-	if !ok {
-		return
+	messagesJSON, err := json.Marshal(req.Messages)
+	if err != nil {
+		return failf("messages", err)
 	}
 
 	var toolsJSON json.RawMessage
 	if len(req.Tools) > 0 {
-		toolsJSON, ok = marshalOrFail(req.Tools, "tools")
-		if !ok {
-			return
+		toolsJSON, err = json.Marshal(req.Tools)
+		if err != nil {
+			return failf("tools", err)
 		}
 	}
 
@@ -586,23 +586,47 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 		Thinking    core.ThinkingLevel `json:"thinking,omitempty"`
 		Headers     map[string]string  `json:"headers,omitempty"`
 	}
-	optJSON, ok := marshalOrFail(wireOptions{
+	optJSON, err := json.Marshal(wireOptions{
 		Temperature: req.Options.Temperature,
 		MaxTokens:   req.Options.MaxTokens,
 		Thinking:    req.Options.Thinking,
 		Headers:     req.Options.Headers,
-	}, "options")
-	if !ok {
-		return
+	})
+	if err != nil {
+		return failf("options", err)
 	}
 
-	params := ProviderStreamParams{
+	return ProviderStreamParams{
 		RequestID: requestID,
 		Model:     modelJSON,
 		System:    req.System,
 		Messages:  messagesJSON,
 		Tools:     toolsJSON,
 		Options:   optJSON,
+	}, true
+}
+
+func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest, ch chan core.StreamEvent) {
+	defer close(ch)
+
+	select {
+	case <-p.host.Closed():
+		ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("extension %s stopped", p.host.Name())}
+		return
+	default:
+	}
+
+	requestID := int(p.host.nextID.Add(1))
+
+	// Register delta channel BEFORE sending the request so no deltas are lost.
+	deltaCh := make(chan ProviderDeltaParams, 256)
+	p.host.deltaMu.Lock()
+	p.host.deltaChans[requestID] = deltaCh
+	p.host.deltaMu.Unlock()
+
+	params, ok := p.marshalStreamRequest(req, requestID, ch)
+	if !ok {
+		return
 	}
 
 	// Send the request in a goroutine — it blocks until the extension responds.
@@ -627,8 +651,6 @@ func (p *proxyStreamProvider) stream(ctx context.Context, req core.StreamRequest
 
 		case resp := <-respCh:
 			p.host.releaseDeltaChan(requestID)
-
-			// Drain any deltas that arrived before we removed the channel.
 			drainDeltas(deltaCh, ch)
 			if resp.err != nil {
 				ch <- core.StreamEvent{Type: core.StreamError, Error: resp.err}

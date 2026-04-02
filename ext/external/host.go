@@ -201,10 +201,13 @@ func (h *Host) Stop() {
 			close(exited)
 		}()
 
+		killTimer := time.NewTimer(200 * time.Millisecond)
+		defer killTimer.Stop()
 		select {
 		case <-exited:
+			killTimer.Stop()
 			slog.Debug("stop: clean exit", "ext", name)
-		case <-time.After(200 * time.Millisecond):
+		case <-killTimer.C:
 			slog.Debug("stop: force kill", "ext", name)
 			if h.cmd.Process != nil {
 				_ = h.cmd.Process.Kill()
@@ -312,8 +315,9 @@ func (h *Host) ExecuteCommand(ctx context.Context, name, args string) error {
 // ---------------------------------------------------------------------------
 
 // InterceptBefore sends an interceptor/before request to the extension.
-func (h *Host) InterceptBefore(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+func (h *Host) InterceptBefore(ctx context.Context, name, toolName string, args map[string]any) (bool, map[string]any, error) {
 	resp, err := h.request(ctx, MethodInterceptorBefore, InterceptorBeforeParams{
+		Name:     name,
 		ToolName: toolName,
 		Args:     args,
 	})
@@ -334,8 +338,9 @@ func (h *Host) InterceptBefore(ctx context.Context, toolName string, args map[st
 }
 
 // InterceptAfter sends an interceptor/after request to the extension.
-func (h *Host) InterceptAfter(ctx context.Context, toolName string, details any) (any, error) {
+func (h *Host) InterceptAfter(ctx context.Context, name, toolName string, details any) (any, error) {
 	resp, err := h.request(ctx, MethodInterceptorAfter, InterceptorAfterParams{
+		Name:     name,
 		ToolName: toolName,
 		Details:  details,
 	})

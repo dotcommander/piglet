@@ -132,6 +132,11 @@ func (h *Host) handleMessage(msg *Message) {
 	}
 
 	// Notification from extension (no ID)
+	h.handleNotification(msg)
+}
+
+// handleNotification dispatches a notification (no ID) from the extension.
+func (h *Host) handleNotification(msg *Message) {
 	switch msg.Method {
 	case MethodRegisterTool:
 		var p RegisterToolParams

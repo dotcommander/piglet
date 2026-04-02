@@ -228,11 +228,14 @@ func (a *App) ToggleStepMode() bool {
 }
 
 // WaitForIdle blocks until SignalIdle is called or the context is cancelled.
-// Returns immediately if there are no pending waiters (caller should check
-// whether the agent is active before calling, to avoid blocking forever).
+// Returns immediately if the agent is already idle (missed-signal safe).
 func (a *App) WaitForIdle(ctx context.Context) error {
-	ch := make(chan struct{}, 1)
 	a.mu.Lock()
+	if a.idle {
+		a.mu.Unlock()
+		return nil
+	}
+	ch := make(chan struct{}, 1)
 	a.idleWaiters = append(a.idleWaiters, ch)
 	a.mu.Unlock()
 
@@ -247,14 +250,23 @@ func (a *App) WaitForIdle(ctx context.Context) error {
 	}
 }
 
-// SignalIdle wakes all pending WaitForIdle callers.
-// Called by the TUI when the agent finishes a turn.
+// SignalIdle marks the agent as idle and wakes all pending WaitForIdle callers.
+// Called by the shell/TUI when the agent finishes a turn.
 func (a *App) SignalIdle() {
 	a.mu.Lock()
+	a.idle = true
 	waiters := a.idleWaiters
 	a.idleWaiters = nil
 	a.mu.Unlock()
 	for _, ch := range waiters {
 		close(ch)
 	}
+}
+
+// ClearIdle marks the agent as no longer idle.
+// Must be called when the agent starts a new run, before any WaitForIdle callers register.
+func (a *App) ClearIdle() {
+	a.mu.Lock()
+	a.idle = false
+	a.mu.Unlock()
 }

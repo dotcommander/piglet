@@ -246,12 +246,3 @@ type ExtInfo struct {
 	PromptSections    []string // prompt section titles
 	StreamProviders   []string // stream provider API types (e.g. "openai")
 }
-
-// ProviderConfig registers a custom LLM provider from an extension.
-type ProviderConfig struct {
-	BaseURL string
-	APIKey  string
-	API     core.API
-	Models  []core.Model
-	Headers map[string]string
-}

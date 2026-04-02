@@ -152,17 +152,6 @@ func (a *App) PromptSections() []PromptSection {
 	return out
 }
 
-// Providers returns all registered provider configs.
-func (a *App) Providers() map[string]*ProviderConfig {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	out := make(map[string]*ProviderConfig, len(a.providers))
-	for k, v := range a.providers {
-		out[k] = v
-	}
-	return out
-}
-
 // StreamProvider returns a provider for the given API type and model, if a factory is registered.
 func (a *App) StreamProvider(api string, model core.Model) (core.StreamProvider, bool) {
 	a.mu.RLock()

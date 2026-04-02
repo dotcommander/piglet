@@ -36,7 +36,6 @@ type App struct {
 	messageHooks      []MessageHook
 	inputTransformers []InputTransformer
 	renderers         map[string]Renderer
-	providers         map[string]*ProviderConfig
 	streamProviders   map[string]StreamProviderFactory // key = API type string ("openai", "anthropic", "google")
 	promptSections    []PromptSection
 	compactor         *Compactor
@@ -60,6 +59,7 @@ type App struct {
 	isBackgroundRunning func() bool
 
 	// Idle signaling
+	idle        bool            // true when agent is not running
 	idleWaiters []chan struct{} // pending WaitForIdle callers
 }
 
@@ -99,7 +99,6 @@ func NewApp(cwd string) *App {
 		commands:        make(map[string]*Command),
 		shortcuts:       make(map[string]*Shortcut),
 		renderers:       make(map[string]Renderer),
-		providers:       make(map[string]*ProviderConfig),
 		streamProviders: make(map[string]StreamProviderFactory),
 		eventBus:        make(map[string][]eventSub),
 	}
