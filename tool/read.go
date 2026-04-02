@@ -3,13 +3,14 @@ package tool
 import (
 	"context"
 	"fmt"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"os"
 	"strings"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
 )
 
-func readTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
+func readTool(app *ext.App, cfg ToolConfig, ft *fileTracker) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "read",
@@ -48,7 +49,7 @@ func readTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 			}
 
 			// Track mtime for TOCTOU staleness detection in edit/write tools.
-			tracker.RecordRead(path, info.ModTime())
+			ft.RecordRead(path, info.ModTime())
 
 			lines := strings.Split(string(data), "\n")
 

@@ -2,7 +2,11 @@
 // All tools register through the ext API, same as external extensions.
 package tool
 
-import "github.com/dotcommander/piglet/ext"
+import (
+	"time"
+
+	"github.com/dotcommander/piglet/ext"
+)
 
 // ToolConfig holds configurable defaults for built-in tools.
 type ToolConfig struct {
@@ -27,9 +31,10 @@ func (c ToolConfig) grepLimit() int {
 // RegisterBuiltins registers all built-in tools via the extension API.
 func RegisterBuiltins(app *ext.App, bash BashConfig, tools ToolConfig) {
 	bash = bash.withDefaults()
-	app.RegisterTool(readTool(app, tools))
-	app.RegisterTool(writeTool(app))
-	app.RegisterTool(editTool(app))
+	ft := &fileTracker{reads: make(map[string]time.Time)}
+	app.RegisterTool(readTool(app, tools, ft))
+	app.RegisterTool(writeTool(app, ft))
+	app.RegisterTool(editTool(app, ft))
 	app.RegisterTool(bashTool(app, bash))
 	app.RegisterTool(grepTool(app, tools))
 	app.RegisterTool(findTool(app))

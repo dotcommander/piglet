@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/dotcommander/piglet/core"
@@ -70,10 +69,7 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 
 			cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
 			cmd.Dir = app.CWD()
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			cmd.Cancel = func() error {
-				return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
+			configureSysProcAttr(cmd)
 			cmd.WaitDelay = 3 * time.Second
 
 			stdout := &boundedWriter{limit: cfg.MaxStdout}

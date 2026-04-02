@@ -14,8 +14,6 @@ type fileTracker struct {
 	reads map[string]time.Time // path → mtime at last read
 }
 
-var tracker = &fileTracker{reads: make(map[string]time.Time)}
-
 // RecordRead saves the mtime of a file after a successful read.
 func (t *fileTracker) RecordRead(path string, mtime time.Time) {
 	t.mu.Lock()

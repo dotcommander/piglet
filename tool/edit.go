@@ -3,13 +3,14 @@ package tool
 import (
 	"context"
 	"fmt"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"os"
 	"strings"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
 )
 
-func editTool(app *ext.App) *ext.ToolDef {
+func editTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "edit",
@@ -36,7 +37,7 @@ func editTool(app *ext.App) *ext.ToolDef {
 			}
 
 			// TOCTOU staleness check — catch concurrent modifications.
-			if msg := tracker.CheckStale(path); msg != "" {
+			if msg := ft.CheckStale(path); msg != "" {
 				return textResult("error: " + msg), nil
 			}
 
@@ -73,7 +74,7 @@ func editTool(app *ext.App) *ext.ToolDef {
 
 			// Re-record mtime so subsequent edits don't trigger false staleness.
 			if info, err := os.Stat(path); err == nil {
-				tracker.RecordRead(path, info.ModTime())
+				ft.RecordRead(path, info.ModTime())
 			}
 
 			return textResult(fmt.Sprintf("edited %s", path)), nil

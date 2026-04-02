@@ -3,13 +3,14 @@ package tool
 import (
 	"context"
 	"fmt"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"os"
 	"path/filepath"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
 )
 
-func writeTool(app *ext.App) *ext.ToolDef {
+func writeTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{
 			Name:        "write",
@@ -31,7 +32,7 @@ func writeTool(app *ext.App) *ext.ToolDef {
 			content, _ := args["content"].(string)
 
 			// TOCTOU staleness check — catch concurrent modifications.
-			if msg := tracker.CheckStale(path); msg != "" {
+			if msg := ft.CheckStale(path); msg != "" {
 				return textResult("error: " + msg), nil
 			}
 
@@ -49,7 +50,7 @@ func writeTool(app *ext.App) *ext.ToolDef {
 
 			// Re-record mtime so subsequent writes don't trigger false staleness.
 			if info, err := os.Stat(path); err == nil {
-				tracker.RecordRead(path, info.ModTime())
+				ft.RecordRead(path, info.ModTime())
 			}
 
 			return textResult(fmt.Sprintf("wrote %d bytes to %s", len(content), path)), nil
