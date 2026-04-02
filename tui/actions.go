@@ -53,10 +53,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		// Add user message to display
 		m.appendDisplayMessage(&core.UserMessage{Content: text, Timestamp: time.Now()})
 		m.refreshAndFollow()
-		m.eventCh = resp.Events
-		m.streaming = true
-		m.spinnerVerb = "thinking..."
-		return m, tea.Batch(pollEvents(resp.Events), tickCmd(), m.spinner.Tick, notifyCmd)
+		return m, tea.Batch(m.startStreaming(resp), notifyCmd)
 
 	case shell.ResponseQueued:
 		return m, tea.Batch(m.notifyAndTick("Queued"), notifyCmd)
@@ -213,10 +210,7 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 			m.refreshAndFollow()
 			resp := m.shell.Submit(content)
 			if resp.Kind == shell.ResponseAgentStarted {
-				m.eventCh = resp.Events
-				m.streaming = true
-				m.spinnerVerb = "thinking..."
-				return tea.Batch(pollEvents(resp.Events), tickCmd(), m.spinner.Tick)
+				return m.startStreaming(resp)
 			}
 		}
 
@@ -229,6 +223,15 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 	}
 
 	return nil
+}
+
+// startStreaming transitions the model into streaming state for the given response
+// and returns the batch of commands needed to drive the streaming loop.
+func (m *Model) startStreaming(resp shell.Response) tea.Cmd {
+	m.eventCh = resp.Events
+	m.streaming = true
+	m.spinnerVerb = "thinking..."
+	return tea.Batch(pollEvents(resp.Events), tickCmd(), m.spinner.Tick)
 }
 
 // runShortcut checks if the key matches a registered shortcut and runs it.

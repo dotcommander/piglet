@@ -67,7 +67,6 @@ const notifyDuration = 15 // ~3 seconds at 200ms tick
 // Model is the Bubble Tea model for the TUI.
 type Model struct {
 	cfg   Config
-	ctx   context.Context
 	shell *shell.Shell
 
 	// Layout
@@ -140,7 +139,7 @@ type widgetState struct {
 }
 
 // New creates a TUI model.
-func New(ctx context.Context, cfg Config) Model {
+func New(cfg Config) Model {
 	styles := NewStyles(cfg.Theme)
 
 	var commands []string
@@ -170,7 +169,6 @@ func New(ctx context.Context, cfg Config) Model {
 
 	m := Model{
 		cfg:          cfg,
-		ctx:          ctx,
 		shell:        cfg.Shell,
 		styles:       styles,
 		input:        NewInputModel(styles, commands),
@@ -228,13 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spinner.TickMsg:
-		if m.streaming {
-			var cmd tea.Cmd
-			m.spinner, cmd = m.spinner.Update(msg)
-			m.status.SetSpinnerView(m.spinner.View() + " " + m.spinnerVerb)
-			return m, cmd
-		}
-		return m, nil
+		return m.handleSpinnerTick(msg)
 
 	case tea.MouseWheelMsg:
 		m.viewport, _ = m.viewport.Update(msg)
@@ -245,24 +237,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleEvent(msg.event, false)
 
 	case eventsBatchMsg:
-		var cmds []tea.Cmd
-		var model tea.Model = m
-		for _, evt := range msg.events {
-			var cmd tea.Cmd
-			model, cmd = m.handleEvent(evt, true)
-			m = model.(Model)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		// Single pollEvents for the entire batch
-		if m.eventCh != nil && m.streaming {
-			cmds = append(cmds, pollEvents(m.eventCh))
-		}
-		if len(cmds) > 0 {
-			return m, tea.Batch(cmds...)
-		}
-		return m, nil
+		return m.handleEventsBatch(msg)
 
 	case tickMsg:
 		if m.streaming {
@@ -271,23 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ModalSelectMsg:
-		if m.pickerCallback != nil {
-			cb := m.pickerCallback
-			m.pickerCallback = nil
-			cb(ext.PickerItem{
-				ID:    msg.Item.ID,
-				Label: msg.Item.Label,
-				Desc:  msg.Item.Desc,
-			})
-			if m.shell != nil {
-				m.shell.DrainActions()
-			}
-			bgCmd := m.applyShellNotifications()
-			if bgCmd != nil {
-				return m, bgCmd
-			}
-		}
-		return m, nil
+		return m.handleModalSelect(msg)
 
 	case ModalCloseMsg:
 		m.pickerCallback = nil
@@ -297,27 +256,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBgEvent(msg.event)
 
 	case notifyTickMsg:
-		if m.notificationTimer > 0 {
-			m.notificationTimer--
-			if m.notificationTimer > 0 {
-				cmds = append(cmds, notifyTick())
-			} else {
-				m.notification = ""
-			}
-		}
-		return m, tea.Batch(cmds...)
+		return m.handleNotifyTick()
 
 	case asyncActionMsg:
-		// Re-enqueue the result action from an ActionRunAsync and apply it
-		if m.shell != nil && msg.action != nil {
-			m.shell.EnqueueResult(msg.action)
-			m.shell.DrainActions()
-			bgCmd := m.applyShellNotifications()
-			if bgCmd != nil {
-				return m, bgCmd
-			}
-		}
-		return m, nil
+		return m.handleAsyncAction(msg)
 
 	case execDoneMsg:
 		if msg.err != nil {
@@ -326,18 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case AgentReadyMsg:
-		m.cfg.Agent = msg.Agent
-		m.cfg.SetupFn = nil
-		if m.shell != nil {
-			m.shell.SetAgent(msg.Agent)
-		}
-		m.status.Set(ext.StatusKeyApp, m.styles.Muted.Render("piglet"))
-		if m.cfg.App != nil {
-			m.status.SetRegistry(m.cfg.App.StatusSections())
-			m.input.SetCommands(m.shell.CommandNames())
-		}
-		return m, m.notifyAndTick("Extensions loaded")
-
+		return m.handleAgentReady(msg)
 	}
 
 	// Update input
@@ -348,6 +279,100 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// handleSpinnerTick advances the spinner animation during streaming.
+func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
+	if m.streaming {
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		m.status.SetSpinnerView(m.spinner.View() + " " + m.spinnerVerb)
+		return m, cmd
+	}
+	return m, nil
+}
+
+// handleEventsBatch processes a batch of agent events, emitting a single
+// pollEvents at the end rather than one per event.
+func (m Model) handleEventsBatch(msg eventsBatchMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var model tea.Model = m
+	for _, evt := range msg.events {
+		var cmd tea.Cmd
+		model, cmd = m.handleEvent(evt, true)
+		m = model.(Model)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	// Single pollEvents for the entire batch
+	if m.eventCh != nil && m.streaming {
+		cmds = append(cmds, pollEvents(m.eventCh))
+	}
+	if len(cmds) > 0 {
+		return m, tea.Batch(cmds...)
+	}
+	return m, nil
+}
+
+// handleModalSelect fires the picker callback and drains shell actions.
+func (m Model) handleModalSelect(msg ModalSelectMsg) (tea.Model, tea.Cmd) {
+	if m.pickerCallback != nil {
+		cb := m.pickerCallback
+		m.pickerCallback = nil
+		cb(ext.PickerItem{
+			ID:    msg.Item.ID,
+			Label: msg.Item.Label,
+			Desc:  msg.Item.Desc,
+		})
+		if m.shell != nil {
+			m.shell.DrainActions()
+		}
+		if bgCmd := m.applyShellNotifications(); bgCmd != nil {
+			return m, bgCmd
+		}
+	}
+	return m, nil
+}
+
+// handleNotifyTick decrements the notification countdown and clears when done.
+func (m Model) handleNotifyTick() (tea.Model, tea.Cmd) {
+	if m.notificationTimer > 0 {
+		m.notificationTimer--
+		if m.notificationTimer > 0 {
+			return m, notifyTick()
+		}
+		m.notification = ""
+	}
+	return m, nil
+}
+
+// handleAsyncAction re-enqueues the result from an ActionRunAsync and applies it.
+func (m Model) handleAsyncAction(msg asyncActionMsg) (tea.Model, tea.Cmd) {
+	if m.shell != nil && msg.action != nil {
+		m.shell.EnqueueResult(msg.action)
+		m.shell.DrainActions()
+		if bgCmd := m.applyShellNotifications(); bgCmd != nil {
+			return m, bgCmd
+		}
+	}
+	return m, nil
+}
+
+// handleAgentReady wires the fully-initialized agent into the model after
+// background setup completes.
+func (m Model) handleAgentReady(msg AgentReadyMsg) (tea.Model, tea.Cmd) {
+	m.cfg.Agent = msg.Agent
+	m.cfg.SetupFn = nil
+	if m.shell != nil {
+		m.shell.SetAgent(msg.Agent)
+	}
+	m.status.Set(ext.StatusKeyApp, m.styles.Muted.Render("piglet"))
+	if m.cfg.App != nil {
+		m.status.SetRegistry(m.cfg.App.StatusSections())
+		m.input.SetCommands(m.shell.CommandNames())
+	}
+	return m, m.notifyAndTick("Extensions loaded")
 }
 
 // handleKeyPress processes keyboard input. Returns handled=true if the key
@@ -423,7 +448,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 
 // Run starts the TUI.
 func Run(ctx context.Context, cfg Config) error {
-	m := New(ctx, cfg)
+	m := New(cfg)
 	p := tea.NewProgram(m,
 		tea.WithColorProfile(colorprofile.TrueColor),
 		tea.WithFilter(messageFilter),

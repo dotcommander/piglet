@@ -41,9 +41,7 @@ type Styles struct {
 	Header         lipgloss.Style
 	Footer         lipgloss.Style
 	UserMsg        lipgloss.Style
-	AssistantMsg   lipgloss.Style
 	AssistantLabel lipgloss.Style
-	ToolName       lipgloss.Style
 	ToolError      lipgloss.Style
 	Thinking       lipgloss.Style
 	Spinner        lipgloss.Style
@@ -70,13 +68,8 @@ func NewStyles(t Theme) Styles {
 		UserMsg: lipgloss.NewStyle().
 			Foreground(t.Primary).
 			Bold(true),
-		AssistantMsg: lipgloss.NewStyle().
-			Foreground(t.Foreground),
 		AssistantLabel: lipgloss.NewStyle().
 			Foreground(t.Secondary),
-		ToolName: lipgloss.NewStyle().
-			Foreground(t.Secondary).
-			Bold(true),
 		ToolError: lipgloss.NewStyle().
 			Foreground(t.Error),
 		Thinking: lipgloss.NewStyle().

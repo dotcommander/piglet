@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/dotcommander/piglet/shell"
 )
 
 // View implements tea.Model.
@@ -114,13 +115,9 @@ func (m *Model) refreshViewport() {
 	m.viewport.SetContent(content)
 }
 
-// truncateRunes truncates a string to n runes, appending "..." if truncated.
+// truncateRunes truncates s to n runes. Delegates to shell.TruncateRunes.
 func truncateRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n]) + "..."
-	}
-	return s
+	return shell.TruncateRunes(s, n)
 }
 
 // refreshAndFollow updates viewport content and scrolls to bottom if following output.
