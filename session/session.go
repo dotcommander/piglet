@@ -217,6 +217,10 @@ func Open(path string) (*Session, error) {
 		s.replayEntry(entry)
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read session %s: %w", path, err)
+	}
+
 	if s.id == "" {
 		return nil, fmt.Errorf("session file has no metadata")
 	}
@@ -266,27 +270,14 @@ func (s *Session) Append(msg core.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := generateEntryID()
 	data, err := marshalJSON(msg)
 	if err != nil {
 		return err
 	}
 
-	entry := Entry{
-		Type:      messageEntryType(msg),
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      data,
-	}
-
-	if err := s.appendEntry(entry); err != nil {
-		return err
-	}
-
-	s.nodes[id] = &node{parentID: s.leafID, typ: entry.Type, ts: entry.Timestamp, message: msg}
-	s.leafID = id
-	return nil
+	typ := messageEntryType(msg)
+	_, err = s.commitNode(typ, data, &node{typ: typ, message: msg})
+	return err
 }
 
 // AppendCompact writes a compact checkpoint at the current leaf. On context build,
@@ -294,8 +285,6 @@ func (s *Session) Append(msg core.Message) error {
 func (s *Session) AppendCompact(msgs []core.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	id := generateEntryID()
 
 	entries := make([]Entry, 0, len(msgs))
 	for _, msg := range msgs {
@@ -311,24 +300,11 @@ func (s *Session) AppendCompact(msgs []core.Message) error {
 		return err
 	}
 
-	entry := Entry{
-		Type:      entryTypeCompact,
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      data,
-	}
-
-	if err := s.appendEntry(entry); err != nil {
-		return err
-	}
-
 	compactMsgs := make([]core.Message, len(msgs))
 	copy(compactMsgs, msgs)
 
-	s.nodes[id] = &node{parentID: s.leafID, typ: entryTypeCompact, ts: entry.Timestamp, compact: compactMsgs}
-	s.leafID = id
-	return nil
+	_, err = s.commitNode(entryTypeCompact, data, &node{typ: entryTypeCompact, compact: compactMsgs})
+	return err
 }
 
 // AppendCustom writes a custom extension entry to the session at the current leaf.
@@ -338,28 +314,14 @@ func (s *Session) AppendCustom(kind string, data any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := generateEntryID()
 	raw, err := marshalJSON(data)
 	if err != nil {
 		return err
 	}
 
-	entry := Entry{
-		Type:      kind,
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      raw,
-	}
-
-	if err := s.appendEntry(entry); err != nil {
-		return err
-	}
-
 	// Custom entries have no message — they're metadata, like branch_summary.
-	s.nodes[id] = &node{parentID: s.leafID, typ: kind, ts: entry.Timestamp}
-	s.leafID = id
-	return nil
+	_, err = s.commitNode(kind, raw, &node{typ: kind})
+	return err
 }
 
 // AppendCustomMessage writes a message entry that persists AND appears in Messages().
@@ -368,29 +330,18 @@ func (s *Session) AppendCustomMessage(role, content string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := generateEntryID()
 	cm := CustomMessageData{Role: role, Content: content}
 	raw, err := marshalJSON(cm)
 	if err != nil {
 		return err
 	}
 
-	entry := Entry{
-		Type:      entryTypeCustomMessage,
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      raw,
-	}
-
-	if err := s.appendEntry(entry); err != nil {
+	// message timestamp is set by commitNode; use zero time here and patch after commit.
+	n := &node{typ: entryTypeCustomMessage}
+	if _, err := s.commitNode(entryTypeCustomMessage, raw, n); err != nil {
 		return err
 	}
-
-	n := &node{parentID: s.leafID, typ: entryTypeCustomMessage, ts: entry.Timestamp}
-	n.message = customMessageToCore(role, content, entry.Timestamp)
-	s.nodes[id] = n
-	s.leafID = id
+	n.message = customMessageToCore(role, content, n.ts)
 	return nil
 }
 
@@ -417,22 +368,13 @@ func (s *Session) AppendLabel(targetID, label string) error {
 		return fmt.Errorf("entry %s not found", targetID)
 	}
 
-	id := generateEntryID()
 	ld := LabelData{TargetID: targetID, Label: label}
 	raw, err := marshalJSON(ld)
 	if err != nil {
 		return err
 	}
 
-	entry := Entry{
-		Type:      entryTypeLabel,
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      raw,
-	}
-
-	if err := s.appendEntry(entry); err != nil {
+	if _, err := s.commitNode(entryTypeLabel, raw, &node{typ: entryTypeLabel}); err != nil {
 		return err
 	}
 
@@ -442,8 +384,6 @@ func (s *Session) AppendLabel(targetID, label string) error {
 		delete(s.labels, targetID)
 	}
 
-	s.nodes[id] = &node{parentID: s.leafID, typ: entryTypeLabel, ts: entry.Timestamp}
-	s.leafID = id
 	return nil
 }
 
@@ -480,28 +420,42 @@ func (s *Session) BranchWithSummary(entryID, summary string) error {
 // writeBranchEntry writes a branch_summary entry and moves the leaf.
 // Must be called with s.mu held.
 func (s *Session) writeBranchEntry(parentID, summary string) error {
-	id := generateEntryID()
 	bs := BranchSummaryData{Summary: summary, FromID: s.leafID}
 	data, err := marshalJSON(bs)
 	if err != nil {
 		return err
 	}
 
+	// Branch target is parentID, not the current leaf. Temporarily set leafID
+	// so that commitNode attaches the entry to the correct parent.
+	prevLeaf := s.leafID
+	s.leafID = parentID
+	_, err = s.commitNode(entryTypeBranchSummary, data, &node{typ: entryTypeBranchSummary})
+	if err != nil {
+		s.leafID = prevLeaf // restore on failure
+	}
+	return err
+}
+
+// commitNode appends an entry, registers the node in the tree, and advances the leaf.
+// Caller must hold s.mu.
+func (s *Session) commitNode(typ string, data json.RawMessage, n *node) (string, error) {
+	id := generateEntryID()
 	entry := Entry{
-		Type:      entryTypeBranchSummary,
+		Type:      typ,
 		ID:        id,
-		ParentID:  parentID,
+		ParentID:  s.leafID,
 		Timestamp: time.Now(),
 		Data:      data,
 	}
-
 	if err := s.appendEntry(entry); err != nil {
-		return err
+		return "", err
 	}
-
-	s.nodes[id] = &node{parentID: parentID, typ: entryTypeBranchSummary, ts: entry.Timestamp}
+	n.parentID = s.leafID
+	n.ts = entry.Timestamp
+	s.nodes[id] = n
 	s.leafID = id
-	return nil
+	return id, nil
 }
 
 // SetTitle updates the session title.
@@ -551,10 +505,10 @@ func (s *Session) Close() error {
 // Fork creates a new session file with messages from the current branch.
 // keepMessages limits how many messages to copy (0 = all).
 func (s *Session) Fork(keepMessages int) (*Session, error) {
-	s.mu.Lock()
+	s.mu.RLock()
 	msgs := s.buildBranch()
 	meta := s.meta
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	limit := len(msgs)
 	if keepMessages > 0 && keepMessages < limit {
@@ -770,7 +724,11 @@ func List(dir string) ([]Summary, error) {
 		}
 
 		path := filepath.Join(dir, e.Name())
-		summary := scanSummary(path)
+		summary, err := scanSummary(path)
+		if err != nil {
+			slog.Warn("session: scan summary failed", "path", path, "err", err)
+			continue
+		}
 		if summary.ID != "" {
 			summaries = append(summaries, summary)
 		}
@@ -783,10 +741,10 @@ func List(dir string) ([]Summary, error) {
 	return summaries, nil
 }
 
-func scanSummary(path string) Summary {
+func scanSummary(path string) (Summary, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return Summary{}
+		return Summary{}, fmt.Errorf("open session file: %w", err)
 	}
 	defer f.Close()
 
@@ -825,7 +783,11 @@ func scanSummary(path string) Summary {
 		}
 	}
 
-	return s
+	if err := scanner.Err(); err != nil {
+		return Summary{}, fmt.Errorf("scan session %s: %w", path, err)
+	}
+
+	return s, nil
 }
 
 // ---------------------------------------------------------------------------
