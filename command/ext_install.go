@@ -243,12 +243,14 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings, opts ...In
 	}
 
 	// Update this list when pack contents change.
+	// Includes former standalone extensions that were consolidated into packs.
 	packMembers := []string{
 		"admin", "export", "extensions-list", "undo", "scaffold", "background",
 		"safeguard", "rtk", "autotitle", "clipboard", "subagent", "provider", "loop",
 		"memory", "skill", "gitcontext", "behavior", "prompts", "session-tools", "inbox",
 		"lsp", "repomap", "sift", "plan", "suggest",
 		"pipeline", "bulk", "webfetch", "cache", "usage", "modelsdev",
+		"prompt", "recall", "session-handoff",
 	}
 	for _, old := range packMembers {
 		oldDir := filepath.Join(extDir, old)
