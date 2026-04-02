@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> · <a href="#extensions">Extensions</a> · <a href="#models">Models</a> · <a href="docs/extensions.md">Write Your Own</a>
+  <a href="#install">Install</a> · <a href="#extensions">Extensions</a> · <a href="#models">Models</a> · <a href="docs/getting-started.md">Getting Started</a> · <a href="docs/building-extensions.md">Write Your Own</a>
 </p>
 
 ---
@@ -106,7 +106,8 @@ tool/       7 built-in tools (read, write, edit, bash, grep, find, ls).
 command/    14 slash commands, 2 keyboard shortcuts, 6 status sections.
 prompt/     System prompt builder + 2 prompt sections.
 provider/   OpenAI, Anthropic, Google streaming providers.
-tui/        Bubble Tea v2 terminal UI.
+shell/      Agent lifecycle — submit, events, notifications (frontend-agnostic).
+tui/        Bubble Tea v2 terminal UI (consumes shell/).
 sdk/        Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk).
 ```
 
@@ -219,7 +220,7 @@ Scaffold a new extension:
 
 Or build one from scratch in Go, TypeScript, or Python. Extensions communicate via JSON-RPC over stdin/stdout — no linking, no shared memory, any language works.
 
-See [docs/extensions.md](docs/extensions.md) for the full guide, SDK reference, and examples.
+See [docs/building-extensions.md](docs/building-extensions.md) for the SDK reference and examples.
 
 ## Configuration
 

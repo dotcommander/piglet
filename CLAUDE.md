@@ -28,6 +28,7 @@ Piglet's core is deliberately minimal — an agent loop, streaming, and types. *
 core/       → imports NOTHING from piglet (agent loop, streaming, types)
 ext/        → core/ only (registration surface)
 tool/, command/, prompt/ → ext/, core/ (extensions — same API as external)
+shell/      → ext/, core/, session/ (agent lifecycle — shared between frontends)
 tui/, cmd/  → anything (wiring layer)
 ```
 
@@ -134,7 +135,8 @@ prompt/        System prompt builder + compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
 provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
 session/       Tree-structured JSONL persistence, in-place branching, compaction (see docs/sessions.md)
-tui/           Bubble Tea v2 UI
+shell/         Agent lifecycle — submit, process events, drain actions (frontend-agnostic)
+tui/           Bubble Tea v2 UI (consumes shell/)
 
 # External extensions live in separate repo: dotcommander/piglet-extensions
 # Build: /extensions install (from inside piglet)
@@ -153,6 +155,7 @@ tui/           Bubble Tea v2 UI
 | `MessageHook` | ext | Before-message hooks, priority-sorted, ephemeral context injection |
 | `PromptSection` | ext | System prompt injection (title, content, order) |
 | `EventHandler` | ext | Agent lifecycle event observer (Observe primitive) |
+| `Shell` | shell | Agent lifecycle manager — submit, events, notifications |
 
 ## Build & Test
 

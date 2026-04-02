@@ -1,220 +1,415 @@
 # Configuration
 
-Piglet stores configuration in `~/.config/piglet/`.
+- [Config File Location](#config-file-location)
+- [File Overview](#file-overview)
+- [General Settings](#general-settings)
+- [Agent Settings](#agent-settings)
+- [Tool Settings](#tool-settings)
+- [Bash Settings](#bash-settings)
+- [Git Settings](#git-settings)
+- [Shortcuts](#shortcuts)
+- [Prompt Order](#prompt-order)
+- [Project Docs](#project-docs)
+- [Local Servers](#local-servers)
+- [Extension Settings](#extension-settings)
+- [Sub-Agent Settings](#sub-agent-settings)
+- [Debug Mode](#debug-mode)
+- [Environment Variables](#environment-variables)
+- [Full Example](#full-example)
 
-## Settings
+## Config File Location
 
-**File:** `~/.config/piglet/config.yaml`
+All configuration lives under `~/.config/piglet/` (respects `XDG_CONFIG_HOME`):
 
-```yaml
-defaultProvider: openai
-defaultModel: gpt-5
-smallModel: anthropic/claude-haiku-4-5
-systemPrompt: "You are piglet, a helpful coding assistant."
-theme: dark
-providers:
-  openai: https://my-proxy.example.com   # override base URL for proxies
+```
+~/.config/piglet/
+├── config.yaml          # Main settings
+├── auth.json            # API keys
+├── models.yaml          # Model catalog
+├── prompt.md            # System prompt (identity)
+├── behavior.md          # Behavioral guidelines
+├── history              # Input history
+├── skills/              # Markdown skill files
+├── sessions/            # Conversation history (JSONL)
+└── extensions/          # Extension binaries and configs
 ```
 
-### Settings Reference
+## File Overview
+
+| File | Format | Purpose |
+|------|--------|---------|
+| `config.yaml` | YAML | All settings documented on this page |
+| `auth.json` | JSON | API keys per provider (see [Providers](providers.md)) |
+| `models.yaml` | YAML | Model catalog — names, costs, context windows |
+| `prompt.md` | Markdown | System prompt identity text; overrides `systemPrompt` in config |
+| `behavior.md` | Markdown | Behavioral guidelines injected into the prompt |
+
+Piglet creates `config.yaml` and `models.yaml` automatically on first run. The other files are optional.
+
+## General Settings
+
+```yaml
+defaultModel: claude-opus-4-6      # Model ID used by default
+defaultProvider: anthropic          # Provider name (usually inferred from model)
+smallModel: claude-haiku-4-5       # Model for lightweight tasks (auto-title, compaction)
+systemPrompt: "You are piglet..."  # Base identity (prompt.md overrides this)
+theme: ""                          # Reserved for future use
+rtk: null                          # RTK token optimization: null=auto, true/false=explicit
+debug: false                       # Log all request/response payloads
+safeguard: null                    # Dangerous command blocking: null/true=enabled, false=disabled
+deferredToolsNote: ""              # Custom instruction shown when deferred tools are present
+```
+
+### Model Resolution
+
+The default model is resolved in this order:
+
+1. `--model` flag (highest priority)
+2. `PIGLET_DEFAULT_MODEL` environment variable
+3. `defaultModel` in `config.yaml`
+
+The small model follows a similar cascade:
+
+1. `PIGLET_SMALL_MODEL` environment variable
+2. `smallModel` in `config.yaml`
+3. Falls back to the default model
+
+## Agent Settings
+
+Control how the agent loop behaves:
+
+```yaml
+agent:
+  maxTurns: 10             # Max LLM calls per prompt (0 = unlimited)
+  bgMaxTurns: 5            # Max turns for background agent
+  autoTitle: true          # Auto-generate session titles after first exchange
+  compactKeepRecent: 6     # Messages to preserve during compaction
+  compactAt: 0             # Token threshold for auto-compaction (0 = disabled)
+  maxMessages: 0           # Hard cap on conversation length (0 = unlimited)
+  maxTokens: 0             # Output token limit (0 = model default)
+  maxRetries: 3            # Retry attempts on transient errors
+  toolConcurrency: 10      # Max parallel tool executions
+```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `defaultProvider` | string | `""` | Preferred provider |
-| `defaultModel` | string | `""` | Model ID or `provider/model-id` |
-| `smallModel` | string | `""` | Cheaper model for background tasks (autotitle, compaction) |
-| `systemPrompt` | string | `""` | Base identity (overridden by `prompt.md`) |
-| `theme` | string | `""` | Color theme |
-| `extensions` | list | `[]` | Extension paths to load |
-| `providers` | map | `{}` | Base URL overrides per provider |
-| `shortcuts` | map | `{}` | Action → keybind (e.g. `model: ctrl+p`) |
-| `promptOrder` | map | `{}` | Prompt section title → order override |
-| `projectDocs` | list | `[]` | Files to auto-read for context (see below) |
-| `rtk` | *bool | `nil` (auto-detect) | RTK token optimization: `nil` = auto-detect, `true` = force enable, `false` = disable |
-| `debug` | bool | `false` | Log all request/response payloads |
-| `safeguard` | *bool | `nil` (enabled) | Dangerous command blocking: `nil`/`true` = enabled, `false` = disabled |
-| `disabled_extensions` | list | `[]` | Extension names to skip during loading |
-| `deferredToolsNote` | string | `""` | Instruction shown when deferred tools are present |
+| `maxTurns` | int | `10` | Maximum LLM calls per user prompt. Each tool-use round counts as one turn. Set to `0` for unlimited |
+| `bgMaxTurns` | int | `5` | Maximum turns for the background agent (`/bg`) |
+| `autoTitle` | bool | `true` | Automatically generate a session title after the first exchange |
+| `compactKeepRecent` | int | `6` | Number of recent messages to preserve when compacting |
+| `compactAt` | int | `0` | Token threshold for auto-compaction. When input tokens exceed this value, piglet compacts the history. `0` disables auto-compaction |
+| `compactKeepRecent` | int | `6` | Messages to keep during compaction |
+| `maxMessages` | int | `0` | Hard cap on conversation length. When exceeded, oldest messages (except the first) are dropped. `0` = unlimited |
+| `maxTokens` | int | `0` | Output token limit sent to the provider. `0` uses the model's default |
+| `maxRetries` | int | `3` | Number of retry attempts on transient provider errors (rate limits, timeouts) |
+| `toolConcurrency` | int | `10` | Maximum number of tool calls executed in parallel |
 
-#### Agent Settings (`agent:`)
+### Auto-Compaction
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `maxTurns` | int | `10` | Max agent turns per interaction |
-| `bgMaxTurns` | int | `5` | Max turns for background agents |
-| `autoTitle` | *bool | `nil` (true) | Auto-generate session titles: `nil`/`true` = enabled, `false` = disabled |
-| `compactKeepRecent` | int | `6` | Messages to keep after compaction |
-| `compactAt` | int | `0` | Token threshold for auto-compact (0 = disabled) |
-| `maxMessages` | int | `0` (unlimited) | Hard cap on conversation messages (0 = unlimited) |
-| `maxTokens` | int | model default | Output token limit |
-| `maxRetries` | int | `3` | Retry attempts on error |
-| `toolConcurrency` | int | `10` | Max parallel tool calls |
+When `compactAt` is set, piglet automatically compacts the conversation when input tokens exceed the threshold. This keeps long sessions from hitting context limits. The `compactKeepRecent` most recent messages are always preserved.
 
-#### Git Context Settings (`git:`)
+```yaml
+agent:
+  compactAt: 100000        # Compact when input tokens exceed 100k
+  compactKeepRecent: 8     # Keep 8 most recent messages
+```
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `maxDiffStatFiles` | int | `30` | Max files in diff stat |
-| `maxLogLines` | int | `5` | Recent commit lines in prompt |
-| `maxDiffHunkLines` | int | `50` | Max diff hunk lines |
-| `commandTimeout` | int | `5` | Git command timeout (seconds) |
+If an extension registers a compactor (e.g., the context pack's LLM-based compactor), it produces an intelligent summary. Otherwise, piglet falls back to a static summary that preserves the first message plus the most recent ones.
 
-#### Tool Settings (`tools:`)
+## Tool Settings
+
+Configure built-in tool behavior:
+
+```yaml
+tools:
+  readLimit: 2000          # Max lines per file read (default: 2000)
+  grepLimit: 100           # Max grep matches returned (default: 100)
+```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `readLimit` | int | `2000` | Max lines per read |
-| `grepLimit` | int | `100` | Max grep matches |
+| `readLimit` | int | `2000` | Maximum number of lines returned by the `read` tool per invocation |
+| `grepLimit` | int | `100` | Maximum number of matches returned by the `grep` tool |
 
-#### Bash Settings (`bash:`)
+## Bash Settings
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `defaultTimeout` | int | `30` | Default command timeout (seconds) |
-| `maxTimeout` | int | `300` | Maximum allowed timeout (seconds) |
-| `maxStdout` | int | `100000` | Max stdout bytes |
-| `maxStderr` | int | `50000` | Max stderr bytes |
+Control the shell tool's limits:
 
-#### Sub-Agent Settings (`subagent:`)
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `maxTurns` | int | `10` | Max turns for sub-agents |
-
-#### Extension Install Settings (`extInstall:`)
+```yaml
+bash:
+  defaultTimeout: 30       # Default command timeout in seconds
+  maxTimeout: 300           # Maximum allowed timeout in seconds
+  maxStdout: 100000         # Max stdout capture in bytes
+  maxStderr: 50000          # Max stderr capture in bytes
+```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `repoUrl` | string | `https://github.com/dotcommander/piglet-extensions.git` | Git URL for extension source |
-| `official` | list | `[pack-core, pack-agent, ...]` | Official extension/pack names to install |
+| `defaultTimeout` | int | `30` | Default timeout for shell commands in seconds |
+| `maxTimeout` | int | `300` | Maximum timeout the model can request (hard cap at 5 minutes) |
+| `maxStdout` | int | `100000` | Maximum bytes captured from stdout (~100KB) |
+| `maxStderr` | int | `50000` | Maximum bytes captured from stderr (~50KB) |
 
-#### Local Model Defaults (`localDefaults:`)
+## Git Settings
+
+Control git context injected into the system prompt (requires the git context extension):
+
+```yaml
+git:
+  maxDiffStatFiles: 30     # Max files shown in diff stat
+  maxLogLines: 5           # Recent commits shown
+  maxDiffHunkLines: 50     # Max lines per diff hunk
+  commandTimeout: 5        # Git command timeout in seconds
+```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `contextWindow` | int | `0` | Fallback context window for local models (0 = auto-detect) |
-| `maxTokens` | int | `0` | Fallback max output tokens for local models (0 = auto-detect) |
+| `maxDiffStatFiles` | int | `30` | Maximum files shown in the diff stat summary |
+| `maxLogLines` | int | `5` | Number of recent commits included in the prompt |
+| `maxDiffHunkLines` | int | `50` | Maximum lines per diff hunk |
+| `commandTimeout` | int | `5` | Timeout for individual git commands in seconds |
 
-#### Project Docs (`projectDocs:`)
+## Shortcuts
 
-Auto-read files into the system prompt as context:
+Override the default keyboard shortcuts:
+
+```yaml
+shortcuts:
+  model: ctrl+p            # Open model selector (default: ctrl+p)
+  session: ctrl+s          # Open session picker (default: ctrl+s)
+```
+
+Values use the format recognized by Bubble Tea: `ctrl+x`, `alt+x`, `shift+tab`, etc.
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `model` | `ctrl+p` | Open the model selector |
+| `session` | `ctrl+s` | Open the session picker |
+
+Extensions may register additional shortcuts. Use `/help` to see all active shortcuts.
+
+## Prompt Order
+
+Override the display order of system prompt sections. Lower numbers appear earlier:
+
+```yaml
+promptOrder:
+  "Self-Knowledge": 10
+  "Project Instructions": 20
+  "Git Context": 30
+  "Memory": 50
+  "Skills": 60
+  "Behavior": 70
+```
+
+This is useful when extensions inject prompt sections and you want to control their relative position.
+
+## Project Docs
+
+Auto-read files from the working directory and inject them as prompt sections:
 
 ```yaml
 projectDocs:
   - name: CLAUDE.md
-    title: Project Instructions
+    title: "Project Instructions"
   - name: agents.md
-    title: Agents
+    title: "Agents"
 ```
 
-The defaults above are applied when no `projectDocs` are configured. Override to customize which files are auto-read.
+By default, piglet reads `CLAUDE.md` and `agents.md` if they exist in the current directory. Add entries to include additional files. Each file's content becomes a prompt section with the given title.
 
-### Environment Variables
+## Local Servers
 
-| Variable | Effect |
-|----------|--------|
-| `PIGLET_DEFAULT_MODEL` | Override default model |
+Probe local model servers on startup and register their models:
+
+```yaml
+localServers:
+  - http://localhost:1234     # LM Studio
+  - http://localhost:11434    # Ollama
+
+localDefaults:
+  contextWindow: 8192         # Default context window for local models
+  maxTokens: 4096             # Default max output tokens for local models
+```
+
+Piglet probes each URL's `/v1/models` endpoint, auto-detects the server type (LM Studio, Ollama, etc.), and registers discovered models. See [Providers — Local Models](providers.md#local-models) for details.
+
+## Extension Settings
+
+### Disabling Extensions
+
+Skip specific extensions during loading:
+
+```yaml
+disabled_extensions:
+  - pack-workflow
+  - pack-cron
+```
+
+Extensions are disabled by name. Use the `/extensions` command to see loaded extension names. Changes take effect on the next launch. For a full guide, see [Extensions — Disabling Extensions](extensions.md#disabling-extensions).
+
+### Project-Local Extensions
+
+Allow extensions from the current project's `.piglet/extensions/` directory:
+
+```yaml
+allowProjectExtensions: true   # Default: false
+```
+
+This is disabled by default for security — project-local extensions execute code. Only enable this for trusted projects.
+
+### Installation Source
+
+Override the extension repository or limit which packs to install:
+
+```yaml
+extInstall:
+  repoUrl: https://github.com/dotcommander/piglet-extensions.git
+  official:
+    - pack-core
+    - pack-agent
+    - pack-context
+    - pack-code
+    - pack-workflow
+    - pack-cron
+    - mcp
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `repoUrl` | string | `https://github.com/dotcommander/piglet-extensions.git` | Git repository for official extensions |
+| `official` | list | All packs + mcp | Extension pack names to install |
+
+### Provider Base URL Overrides
+
+Point a provider at a custom endpoint (proxy, gateway, self-hosted):
+
+```yaml
+providers:
+  openai: https://my-proxy.example.com/v1
+  anthropic: https://anthropic-proxy.internal
+```
+
+## Sub-Agent Settings
+
+Control sub-agents dispatched by the `dispatch` tool:
+
+```yaml
+subagent:
+  maxTurns: 10             # Max turns per sub-agent (default: 10)
+```
+
+## Debug Mode
+
+Enable full payload logging:
+
+```yaml
+debug: true
+```
+
+When enabled, piglet writes all LLM request and response payloads to `~/.config/piglet/debug.log`. Useful for diagnosing provider issues or inspecting prompt construction.
+
+You can also enable debug mode per-session with the `--debug` flag:
+
+```bash
+piglet --debug
+```
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `PIGLET_DEFAULT_MODEL` | Override default model (takes precedence over config) |
 | `PIGLET_SMALL_MODEL` | Override small model for background tasks |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `GOOGLE_API_KEY` | Google API key |
+| `GEMINI_API_KEY` | Google API key (alias) |
+| `XAI_API_KEY` | xAI (Grok) API key |
+| `GROQ_API_KEY` | Groq API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `ZAI_API_KEY` | Z.AI API key |
+| `XDG_CONFIG_HOME` | Override config directory base (default: `~/.config`) |
 
-**Resolution cascade:** `PIGLET_SMALL_MODEL` env → `smallModel` config → `PIGLET_DEFAULT_MODEL` env → `defaultModel` config. The `--model` CLI flag takes highest precedence for the default model.
+## Full Example
 
-## Prompt Templates
+A complete `config.yaml` showing all available settings:
 
-**Directories:** `~/.config/piglet/prompts/` (global), `.piglet/prompts/` (project-local)
+```yaml
+defaultModel: claude-opus-4-6
+smallModel: claude-haiku-4-5
+debug: false
+safeguard: true
+rtk: null
 
-Prompt templates are markdown files that register as slash commands. The filename (minus `.md`) becomes the command name.
+agent:
+  maxTurns: 15
+  bgMaxTurns: 5
+  autoTitle: true
+  compactAt: 120000
+  compactKeepRecent: 8
+  maxMessages: 0
+  maxTokens: 0
+  maxRetries: 3
+  toolConcurrency: 10
 
-**Example** — create `~/.config/piglet/prompts/review.md`:
+tools:
+  readLimit: 2000
+  grepLimit: 100
 
-```markdown
----
-description: Review code for issues
----
-Review the following code for bugs, security issues, and style problems:
+bash:
+  defaultTimeout: 30
+  maxTimeout: 300
+  maxStdout: 100000
+  maxStderr: 50000
 
-$@
+git:
+  maxDiffStatFiles: 30
+  maxLogLines: 5
+  maxDiffHunkLines: 50
+  commandTimeout: 5
+
+shortcuts:
+  model: ctrl+p
+  session: ctrl+s
+
+promptOrder:
+  "Self-Knowledge": 10
+  "Project Instructions": 20
+  "Git Context": 30
+
+projectDocs:
+  - name: CLAUDE.md
+    title: "Project Instructions"
+  - name: agents.md
+    title: "Agents"
+
+localServers:
+  - http://localhost:1234
+
+localDefaults:
+  contextWindow: 8192
+  maxTokens: 4096
+
+disabled_extensions:
+  - pack-cron
+
+allowProjectExtensions: false
+
+subagent:
+  maxTurns: 10
+
+providers:
+  openai: https://my-proxy.example.com/v1
+
+extInstall:
+  repoUrl: https://github.com/dotcommander/piglet-extensions.git
+  official:
+    - pack-core
+    - pack-agent
+    - pack-context
+    - pack-code
+    - pack-workflow
+    - pack-cron
+    - mcp
 ```
-
-Now `/review fix the auth bug` expands the template with your args and sends it.
-
-### Arg Substitution
-
-| Placeholder | Meaning |
-|-------------|---------|
-| `$1`, `$2`, ... `$9` | Positional args |
-| `$@` | All args joined by space |
-| `${@:N}` | Args from position N onward (1-indexed) |
-| `${@:N:L}` | L args starting from position N |
-
-Project-local templates (`.piglet/prompts/`) override global templates when names collide. Missing args resolve to empty strings.
-
-### YAML Frontmatter
-
-Optional. Only `description` is recognized — it appears in `/help` output.
-
-## System Prompt
-
-The system prompt controls how the LLM behaves. It's built from multiple sources in priority order:
-
-1. **`~/.config/piglet/prompt.md`** — full custom prompt file (highest priority)
-2. **`systemPrompt` in config.yaml** — one-liner identity
-3. **Built-in default** — "You are piglet, a helpful coding assistant."
-
-After the base identity, the prompt builder appends:
-- Extension-registered prompt sections (via `ext.RegisterPromptSection`)
-- Tool hints and guidelines from all registered tools
-
-**Example `~/.config/piglet/prompt.md`:**
-
-```markdown
-You are piglet, a senior Go developer assistant.
-
-# Rules
-- Always write table-driven tests
-- Use errgroup over sync.WaitGroup
-- Prefer slog for logging
-- Follow the project's CLAUDE.md conventions
-```
-
-## Authentication
-
-**File:** `~/.config/piglet/auth.json`
-
-API keys are stored as a JSON object mapping provider names to keys:
-
-```json
-{
-  "openai": "sk-...",
-  "anthropic": "sk-ant-...",
-  "google": "AIza..."
-}
-```
-
-### Key Resolution Order
-
-1. Direct value in `auth.json`
-2. Environment variable reference: `"$OPENAI_API_KEY"`
-3. Shell command: `"!op read op://vault/anthropic/key"`
-4. Auto-detected environment variables (e.g., `OPENAI_API_KEY`)
-
-### Supported Provider Keys
-
-| Provider | Env Variable |
-|----------|-------------|
-| `openai` | `OPENAI_API_KEY` |
-| `anthropic` | `ANTHROPIC_API_KEY` |
-| `google` | `GOOGLE_API_KEY` |
-| `xai` | `XAI_API_KEY` |
-| `groq` | `GROQ_API_KEY` |
-| `openrouter` | `OPENROUTER_API_KEY` |
-| `zai` | `ZAI_API_KEY` |
-
-Local model servers (LM Studio, Ollama, etc.) do not require API keys. Piglet auto-detects localhost URLs and sends a placeholder token. See [Local Models](models.md#local-models) for details.
-
-## Sessions
-
-**Directory:** `~/.config/piglet/sessions/`
-
-Sessions are stored as JSONL files, one per conversation. Each line is a JSON object with `type`, `ts`, and `data` fields.
-
-Sessions are created automatically when you start piglet. Use `/session` or `Ctrl+S` to switch between sessions.

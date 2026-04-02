@@ -43,7 +43,7 @@ Configure MCP servers in `~/.config/piglet/mcp.yaml`. They appear as `mcp__<serv
 - You need streaming (provider protocol)
 - You want deep piglet integration with auto-restart on crash
 
-See [extensions.md](extensions.md) for the full extension development guide.
+See [Building Extensions](building-extensions.md) for the full extension development guide.
 
 ## Examples
 

@@ -1,153 +1,221 @@
-# Session Architecture
+# Sessions
 
-## Design
+- [Overview](#overview)
+- [Session Lifecycle](#session-lifecycle)
+- [Switching Sessions](#switching-sessions)
+- [Branching](#branching)
+- [Forking](#forking)
+- [Session Tree](#session-tree)
+- [Compaction](#compaction)
+- [Labels](#labels)
+- [Searching](#searching)
+- [Auto-Titling](#auto-titling)
+- [Storage Format](#storage-format)
 
-Piglet sessions use tree-structured JSONL files. Each session is a single `.jsonl` file in `~/.config/piglet/sessions/`. Entries form a tree via `ID`/`ParentID` linking, enabling in-place branching within a single file. Fork creates a new file for project-specific continuations.
+## Overview
 
-### Prior Art
+Every conversation in piglet is a session. Sessions persist to disk as JSONL files in `~/.config/piglet/sessions/`, so you can close piglet and resume exactly where you left off.
 
-This design draws from [pi-mono's session format](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/session.md), which pioneered tree-structured JSONL sessions for coding agents. Pi-mono uses per-entry `id`/`parentId` linking within a single file for in-place branching. Piglet adopts the same data model.
+Sessions support **tree-structured branching** — you can go back to any point in a conversation and try a different approach without losing the original path. This is essential for exploratory coding workflows.
 
-### Why Tree-Structured Sessions
+## Session Lifecycle
 
-Linear session history breaks down in real coding workflows:
+A new session is created automatically when you start piglet. Each session records:
 
-1. **Exploratory branching** — "Try approach A, then try approach B from the same starting point." Without trees, the user must manually create a new session and re-establish context.
+- A unique ID
+- The working directory where it was started
+- The model used
+- All messages (user, assistant, tool results)
+- A title (auto-generated or manually set)
 
-2. **Branch-and-resume** — Move the leaf to an earlier entry, leave a `branch_summary` capturing the abandoned path. The LLM sees the active branch without the dead-end conversation polluting context.
+Sessions are append-only — messages are never deleted, only compacted or branched away from.
 
-3. **Fork-and-specialize** — Start a general session, then fork into project-specific continuations. The parent session's context is preserved, and each fork carries only the divergent work.
+## Switching Sessions
 
-4. **Compaction within branches** — Each branch compacts independently. A compaction entry replaces all ancestor messages on the branch path, so different branches can have different compaction states.
+### Session Picker
 
-5. **Session navigation** — `/session tree` renders the parent/child structure across files. `/branch` shows the in-session tree for branching to earlier points.
+Press `Ctrl+S` or type `/session` to open the session picker. Sessions are listed newest-first with their title, model, and message count. Filter by typing, navigate with arrow keys, select with Enter.
 
-### Piglet vs Pi-mono
+### Creating a New Session
 
-| Capability | pi-mono | piglet |
-|-----------|---------|--------|
-| Storage | Single file, per-entry `id`/`parentId` | Single file, per-entry `ID`/`ParentID` |
-| In-place branching | Yes | Yes |
-| Branch summaries | `BranchSummaryEntry` with LLM-generated summaries | `branch_summary` entries with summary text |
-| Context building | Walk `parentId` chain from leaf to root | Walk `ParentID` chain from leaf to root |
-| Compaction | `CompactionEntry` with `firstKeptEntryId` | `compact` entry resets branch messages |
-| Fork to new file | `parentSession` in header | `ParentID` + `ForkPoint` in meta |
-| Entry types | 10+ (message, model change, label, custom, etc.) | 8 (meta, user, assistant, tool_result, compact, branch_summary, custom_message, label) |
-| Legacy migration | Version field, auto-upgrade | Deterministic ID assignment on load |
-
-Piglet supports custom_message and label entries for extension-driven annotations and bookmarks, while keeping the tree mechanics unchanged.
-
-## File Format
-
-Each line is a JSON object. Entries (except `meta`) have `id` and `parentId` fields forming the tree.
-
-```jsonl
-{"type":"meta","ts":"...","data":{"id":"uuid","cwd":"/path","createdAt":"..."}}
-{"type":"user","id":"a1b2c3d4","parentId":"","ts":"...","data":{"content":"hello"}}
-{"type":"assistant","id":"e5f6a7b8","parentId":"a1b2c3d4","ts":"...","data":{...}}
-{"type":"user","id":"c9d0e1f2","parentId":"e5f6a7b8","ts":"...","data":{"content":"try X"}}
+```
+/session new
 ```
 
-### Branching Example
+This creates a new blank session linked to the current one. The new session starts empty but retains a reference to its parent for navigation.
 
-```jsonl
-{"type":"user","id":"01","parentId":"","ts":"...","data":{"content":"start"}}
-{"type":"assistant","id":"02","parentId":"01","ts":"...","data":{...}}
-{"type":"user","id":"03","parentId":"02","ts":"...","data":{"content":"approach A"}}
-{"type":"assistant","id":"04","parentId":"03","ts":"...","data":{...}}
-{"type":"branch_summary","id":"05","parentId":"02","ts":"...","data":{"summary":"tried A, didn't work","fromId":"04"}}
-{"type":"user","id":"06","parentId":"05","ts":"...","data":{"content":"approach B"}}
+### Resuming a Session
+
+Select any session from the picker to switch to it. The conversation history is fully restored, including all messages and tool results.
+
+## Branching
+
+Branching lets you go back to an earlier point in the conversation and try a different approach — without losing the work you've already done.
+
+### How to Branch
+
+Type `/branch` to open the branch picker. It shows all entries on the current branch with their content preview. Select an entry to branch from that point.
+
+After branching, the conversation rewinds to that entry. New messages continue from there, creating a new path in the tree. The old path is preserved and can be navigated back to.
+
+### Branch Summaries
+
+When you branch, piglet writes a `branch_summary` entry that captures what the abandoned branch was about. This context is visible in the tree view but doesn't pollute the active conversation.
+
+### Example
+
+```
+Start → Assistant → "Try approach A" → Assistant (A didn't work)
+                  ↘
+                    "Try approach B" → Assistant (B works!) ← you are here
 ```
 
-Tree structure:
+The LLM only sees: Start → Assistant → "Try approach B" → Assistant. The failed approach A is preserved in the tree but doesn't consume context.
+
+## Forking
+
+Forking creates a **new session file** that starts with a copy of the current conversation:
+
 ```
-[01: start] ─── [02: assistant] ─┬─ [03: approach A] ─── [04: assistant]
-                                  │
-                                  └─ [05: summary] ─── [06: approach B] ← leaf
+/fork
 ```
 
-Context at leaf `06`: `[01, 02, 06]` — the branch summary is metadata, not a conversation message.
+Use fork when you want to:
+
+- Explore a tangent without affecting the main session
+- Create project-specific continuations from a general setup session
+- Preserve a checkpoint before a risky operation
+
+The forked session records its parent session ID and how many messages were copied, so the relationship is traceable.
+
+### Fork vs Branch
+
+| | Branch | Fork |
+|-|--------|------|
+| **Creates** | New path in same file | New session file |
+| **Use when** | Trying alternatives from same point | Diverging into separate work |
+| **History** | Shared tree structure | Independent after fork point |
+| **Navigation** | `/branch` picker | `/session` picker |
+
+## Session Tree
+
+View the tree structure of your sessions:
+
+```
+/tree
+```
+
+This shows the parent/child structure within the current session:
+
+```
+[01] user: "explain the auth flow"
+  [02] assistant: "The auth flow starts with..."
+    [03] user: "refactor it to use JWT"
+      [04] assistant: "Here's the refactored version..."
+    [05] (branch) tried JWT, switching to OAuth
+      [06] user: "refactor it to use OAuth instead"  ← current
+```
+
+Entries on the active path are highlighted. Branch summaries and labels are shown inline.
+
+## Compaction
+
+Long conversations accumulate tokens. Compaction summarizes older messages to keep the context within the model's window.
+
+### Auto-Compaction
+
+When configured, piglet automatically compacts when input tokens exceed the threshold:
+
+```yaml
+# ~/.config/piglet/config.yaml
+agent:
+  compactAt: 100000        # Compact at 100k input tokens
+  compactKeepRecent: 8     # Always keep 8 most recent messages
+```
+
+If an extension registers a compactor (the context pack provides an LLM-based one), it generates an intelligent summary. Otherwise, piglet uses a static fallback that keeps the first message plus the most recent ones.
+
+### Manual Compaction
+
+```
+/compact
+```
+
+Manually trigger compaction at any time. Requires at least 4 messages.
+
+### How It Works
+
+Compaction writes a checkpoint entry to the session file. The checkpoint contains the summarized conversation up to that point. When the session is loaded, messages before the checkpoint are replaced by the summary. Messages after the checkpoint are preserved as-is.
+
+Each branch compacts independently — different branches can have different compaction states.
+
+## Labels
+
+Labels are bookmarks you can attach to any entry in the session tree. They appear in the tree view and branch picker for easy navigation.
+
+Labels are set via extensions (the session-tools extension provides this capability). Labels are last-write-wins per entry — setting a new label replaces the old one, and an empty label clears it.
+
+## Searching
+
+Search across all sessions:
+
+```
+/search query
+```
+
+This searches session titles and content for matches. Select a result to switch to that session.
+
+## Auto-Titling
+
+After the first exchange in a new session, piglet automatically generates a title based on the conversation content. This requires:
+
+- The auto-title extension (part of pack-agent)
+- `autoTitle: true` in config (the default)
+
+To set a title manually:
+
+```
+/title My Custom Title
+```
+
+## Storage Format
+
+Sessions are stored as line-delimited JSON (JSONL) files. Each line is an entry with a type, timestamp, ID, and parent ID forming a tree structure.
 
 ### Entry Types
 
-| Type | Tree participant | Purpose |
-|------|:---:|---------|
-| `meta` | No | Session metadata (ID, CWD, model, title, parent, fork point). Rewritten on updates. |
-| `user` | Yes | User message |
-| `assistant` | Yes | Assistant response with content blocks |
-| `tool_result` | Yes | Tool execution result |
-| `compact` | Yes | Compaction checkpoint — contains a JSON array of replacement entries. On context build, resets all ancestor messages. |
-| `branch_summary` | Yes | Marks a branch point. Contains summary text and the `fromId` of the abandoned leaf. Not included in conversation messages. |
-| `custom_message` | Yes | Extension-written message that persists AND appears in `Messages()` on reload. Data: `{role, content}`. |
-| `label` | Yes | Bookmark label on a target entry. Data: `{targetId, label}`. Empty label = clear. Last-write-wins. |
+| Type | Purpose |
+|------|---------|
+| `meta` | Session metadata (ID, CWD, model, title, timestamps) |
+| `user` | User message |
+| `assistant` | Assistant response |
+| `tool_result` | Tool execution result |
+| `compact` | Compaction checkpoint (contains summarized messages) |
+| `branch_summary` | Branch point marker (captures abandoned path context) |
+| `custom_message` | Extension-written message (appears in conversation on reload) |
+| `label` | Bookmark label on a target entry |
 
-### Legacy Compatibility
+### Example File
 
-Sessions created before tree support (entries without `id`/`parentId` fields) are transparently upgraded in memory on load. Deterministic sequential IDs (`L0`, `L1`, ...) are assigned, and each entry is chained linearly. New entries written to the session will have proper random IDs and chain from the legacy entries.
-
-### Fork Metadata
-
-When a session is forked to a new file, the meta entry includes:
-
-```json
-{"parentId": "parent-session-uuid", "forkPoint": 5}
+```jsonl
+{"type":"meta","ts":"2026-04-01T10:00:00Z","data":{"id":"abc123","cwd":"/project","model":"claude-opus-4-6","createdAt":"2026-04-01T10:00:00Z"}}
+{"type":"user","id":"a1b2c3d4","parentId":"","ts":"2026-04-01T10:00:01Z","data":{"content":"explain the auth flow"}}
+{"type":"assistant","id":"e5f6a7b8","parentId":"a1b2c3d4","ts":"2026-04-01T10:00:05Z","data":{"content":[{"type":"text","text":"The auth flow..."}],"model":"claude-opus-4-6","usage":{"inputTokens":500,"outputTokens":200}}}
 ```
 
-- `parentId` — UUID of the source session
-- `forkPoint` — number of messages copied from the parent (0 for a blank fork via `/session new`)
+### Tree Structure
 
-### Compaction
+Entries link via `id` and `parentId` fields. The session tracks a leaf pointer — the most recent entry on the active branch. Building the conversation for the LLM means walking from the leaf to the root, collecting messages along the path.
 
-`AppendCompact` writes a `compact` entry whose `data` is a JSON array of sub-entries. During context building (leaf-to-root walk), encountering a compact entry resets the message list to the compact's content. Messages after the compact on the branch path are appended normally.
+Sessions created before tree support (without `id`/`parentId` fields) are transparently upgraded in memory with sequential IDs on load.
 
-Multiple compactions are valid; each one on the active branch replaces everything before it.
+### File Location
 
-## Commands
+```
+~/.config/piglet/sessions/
+├── abc123.jsonl
+├── def456.jsonl
+└── ...
+```
 
-| Command | Effect |
-|---------|--------|
-| `/session` | Open session picker (tree-indented) |
-| `/session new` | Fork with 0 messages — blank branch linked to current session |
-| `/session tree` | ASCII tree display of all sessions with parent/child relationships |
-| `/branch` | Picker showing current branch entries — select one to branch in-place |
-| `/fork` | Fork current session to a new file (copies all messages) |
-
-## API
-
-### Session
-
-| Method | Purpose |
-|--------|---------|
-| `New(dir, cwd)` | Create new session |
-| `Open(path)` | Load existing session from JSONL |
-| `Append(msg)` | Add message at current leaf |
-| `AppendCompact(msgs)` | Write compaction checkpoint at current leaf |
-| `Branch(entryID)` | Move leaf to earlier entry (in-place branching) |
-| `BranchWithSummary(entryID, summary)` | Move leaf and write branch_summary entry |
-| `Fork(keepMessages)` | Create new session file linked to this one |
-| `Messages()` | Build message list by walking current branch (leaf to root) |
-| `LeafID()` | Current leaf entry ID |
-| `EntryInfos()` | Entry info for current branch (for display/picker) |
-| `SetTitle(title)` | Update session title |
-| `SetModel(model)` | Update model in metadata |
-| `AppendCustomMessage(role, content)` | Write a message that persists and appears in Messages() on reload |
-| `AppendLabel(targetID, label)` | Set or clear a bookmark label on an entry |
-| `Label(entryID)` | Get the label for an entry |
-| `FullTree()` | Full DAG view of all entries for tree rendering |
-| `List(dir)` | List all sessions, newest first |
-| `Close()` | Close session file |
-
-### ext.App (extension-facing)
-
-| Method | Purpose |
-|--------|---------|
-| `BranchSession(entryID)` | In-place branch, refreshes agent + TUI |
-| `BranchSessionWithSummary(entryID, summary)` | Branch with summary, refreshes agent + TUI |
-| `SessionEntryInfos()` | Entry info for current branch |
-| `ForkSession()` | Fork to new file |
-| `LoadSession(path)` | Switch to different session |
-| `Sessions()` | List all sessions |
-| `SessionFullTree()` | Full DAG for tree rendering |
-| `AppendCustomMessage(role, content)` | Write persistent message to session |
-| `SetSessionLabel(targetID, label)` | Set or clear bookmark label |
-| `AppendSessionEntry(kind, data)` | Write custom extension entry |
+Each file is a single session. Files are named by the session's UUID. The session directory can be overridden via `XDG_CONFIG_HOME`.
