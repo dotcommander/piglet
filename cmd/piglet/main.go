@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -86,7 +87,26 @@ func run() error {
 	}
 
 	userPrompt := strings.Join(flags.promptArgs, " ")
+
+	// Read piped stdin when available (not a terminal).
+	stdinPiped := false
+	if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice == 0 {
+		stdinPiped = true
+		if data, err := io.ReadAll(os.Stdin); err == nil {
+			if piped := strings.TrimSpace(string(data)); piped != "" {
+				if userPrompt == "" {
+					userPrompt = piped
+				} else {
+					userPrompt = userPrompt + "\n\n" + piped
+				}
+			}
+		}
+	}
+
 	interactive := userPrompt == ""
+	if interactive && stdinPiped {
+		return fmt.Errorf("no input: stdin pipe was empty and no prompt given")
+	}
 
 	resolvedBaseURL, err := resolveBaseURL(flags.baseURL, flags.port)
 	if err != nil {
@@ -266,6 +286,8 @@ func printHelp() {
 	p("%s\n", heading.Render("MODES"))
 	p("  piglet                       Interactive TUI session\n")
 	p("  piglet \"fix the tests\"       Single-shot — print response and exit\n")
+	p("  cat f.go | piglet \"review\"   Piped context with prompt\n")
+	p("  echo \"hello\" | piglet        Piped input as prompt\n")
 	p("  piglet init                  First-time setup (config, models, API keys)\n")
 	p("  piglet update                Self-update and rebuild extensions\n\n")
 
