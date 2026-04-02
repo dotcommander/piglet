@@ -100,6 +100,10 @@ func (s *Shell) startAgent(content string) Response {
 
 	ch := agent.Start(s.ctx, content)
 
+	if s.app != nil {
+		s.app.ClearIdle()
+	}
+
 	s.mu.Lock()
 	s.eventCh = ch
 	s.running = true

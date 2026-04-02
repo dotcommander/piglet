@@ -43,7 +43,7 @@ func (s *Shell) startBackground(prompt string) error {
 	s.bgTask = prompt
 	s.bgResult.Reset()
 
-	task := truncateRunes(prompt, 20)
+	task := TruncateRunes(prompt, 20)
 	s.notifications = append(s.notifications, Notification{
 		Kind: NotifyStatus,
 		Key:  ext.StatusKeyBg,
@@ -78,7 +78,8 @@ func (s *Shell) isBackgroundRunning() bool {
 	return s.bgAgent != nil && s.bgAgent.IsRunning()
 }
 
-func truncateRunes(s string, max int) string {
+// TruncateRunes truncates s to max runes, appending "…" (U+2026) if truncated.
+func TruncateRunes(s string, max int) string {
 	runes := []rune(s)
 	if len(runes) <= max {
 		return s
