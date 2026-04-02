@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/dotcommander/piglet/core"
 )
@@ -413,7 +414,7 @@ func mapStopReason(reason string) core.StopReason {
 	return mapStopReasonFromTable(reason, oaiStopReasons)
 }
 
-func maxCompletionTokensSet() map[string]bool {
+var maxCompletionTokensSet = sync.OnceValue(func() map[string]bool {
 	set := make(map[string]bool)
 	for _, m := range CuratedModels() {
 		if m.MaxCompletionTokens {
@@ -421,7 +422,7 @@ func maxCompletionTokensSet() map[string]bool {
 		}
 	}
 	return set
-}
+})
 
 // useMaxCompletionTokens returns true for models that require
 // max_completion_tokens instead of max_tokens.

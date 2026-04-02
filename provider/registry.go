@@ -3,6 +3,7 @@ package provider
 import (
 	"cmp"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -24,7 +25,7 @@ func NewRegistry() *Registry {
 	r := &Registry{models: make(map[string]core.Model)}
 	if _, err := r.loadModels(); err != nil {
 		// Non-fatal: registry starts empty, user gets "unknown model" errors
-		fmt.Fprintf(os.Stderr, "warning: load models: %v\n", err)
+		slog.Warn("load models", "err", err)
 	}
 	return r
 }
