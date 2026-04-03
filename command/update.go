@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -17,11 +19,31 @@ func RunUpdate(w io.Writer, settings config.Settings, currentVersion string) err
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	if _, err := selfupdate.CheckAndUpgrade(ctx, w, currentVersion); err != nil {
+	upgraded, err := selfupdate.CheckAndUpgrade(ctx, w, currentVersion)
+	if err != nil {
 		fmt.Fprintf(w, "CLI upgrade failed: %v\n", err)
 	}
 
+	// If the binary was replaced, re-exec the NEW binary for extension
+	// installation so its code runs instead of this (now stale) process.
+	if upgraded {
+		return reexecExtensions(w)
+	}
+
 	return InstallOfficialExtensions(w, settings)
+}
+
+// reexecExtensions runs the newly installed binary with "update --extensions-only"
+// so extension installation uses the new code, not the old in-process code.
+func reexecExtensions(w io.Writer) error {
+	bin, err := exec.LookPath("piglet")
+	if err != nil {
+		return fmt.Errorf("find new binary: %w", err)
+	}
+	cmd := exec.Command(bin, "update", "--extensions-only")
+	cmd.Stdout = w
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func registerUpdate(app *ext.App, version string) {

@@ -83,6 +83,11 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("config: %w", err)
 		}
+		// --extensions-only: called by the old binary after self-upgrade
+		// so the NEW binary's code handles extension installation.
+		if len(flags.promptArgs) >= 2 && flags.promptArgs[1] == "--extensions-only" {
+			return command.InstallOfficialExtensions(os.Stderr, settings)
+		}
 		return command.RunUpdate(os.Stderr, settings, resolveVersion())
 	}
 
