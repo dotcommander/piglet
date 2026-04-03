@@ -113,7 +113,7 @@ func applyDefaults(s *Settings) {
 		s.ProjectDocs = &docs
 	}
 	if s.ExtInstall.RepoURL == "" {
-		s.ExtInstall.RepoURL = "https://github.com/dotcommander/piglet-extensions.git"
+		s.ExtInstall.RepoURL = "https://github.com/dotcommander/piglet.git"
 	}
 	if len(s.ExtInstall.Official) == 0 {
 		s.ExtInstall.Official = []string{

@@ -80,9 +80,9 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		}
 	}
 
-	fmt.Fprintf(w, "Cloning piglet-extensions...\n")
+	fmt.Fprintf(w, "Cloning piglet...\n")
 
-	srcDir, err := os.MkdirTemp("", "piglet-extensions-*")
+	srcDir, err := os.MkdirTemp("", "piglet-src-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -115,13 +115,13 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		var buildPkg, manifestDir, srcRoot string
 		if strings.HasPrefix(name, "pack-") {
 			packName := strings.TrimPrefix(name, "pack-")
-			buildPkg = "./packs/" + packName + "/"
-			manifestDir = filepath.Join(srcDir, "packs", packName)
+			buildPkg = "./extensions/packs/" + packName + "/"
+			manifestDir = filepath.Join(srcDir, "extensions", "packs", packName)
 			srcRoot = manifestDir
 		} else {
-			buildPkg = "./" + name + "/cmd/"
-			manifestDir = filepath.Join(srcDir, name, "cmd")
-			srcRoot = filepath.Join(srcDir, name)
+			buildPkg = "./extensions/" + name + "/cmd/"
+			manifestDir = filepath.Join(srcDir, "extensions", name, "cmd")
+			srcRoot = filepath.Join(srcDir, "extensions", name)
 		}
 
 		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
