@@ -41,4 +41,6 @@ func Register(e *sdk.Extension) {
 			return true, args, nil
 		},
 	})
+
+	RegisterPreflight(e)
 }
