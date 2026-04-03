@@ -295,6 +295,12 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 // handleEventsBatch processes a batch of agent events, emitting a single
 // pollEvents at the end rather than one per event.
 func (m Model) handleEventsBatch(msg eventsBatchMsg) (tea.Model, tea.Cmd) {
+	// nil events means the channel was closed — stop streaming.
+	if msg.events == nil {
+		m.stopStreaming()
+		return m, nil
+	}
+
 	var cmds []tea.Cmd
 	var model tea.Model = m
 	for _, evt := range msg.events {
@@ -401,10 +407,16 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	}
 
 	switch {
+	case msg.Code == tea.KeyEscape:
+		if m.streaming && m.shell != nil {
+			m.shell.Abort()
+			return m, nil, true
+		}
+		return m, nil, false
+
 	case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
 		if m.streaming && m.shell != nil {
 			m.shell.Abort()
-			m.stopStreaming()
 			return m, nil, true
 		}
 		if m.shell != nil {

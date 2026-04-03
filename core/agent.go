@@ -144,16 +144,26 @@ func (a *Agent) Start(ctx context.Context, prompt string) <-chan Event {
 	return a.events
 }
 
-// Stop cancels the agent and waits for it to finish.
-func (a *Agent) Stop() {
+// Cancel signals the agent to stop without blocking. The agent goroutine
+// will finish asynchronously and close its event channel.
+func (a *Agent) Cancel() {
 	a.mu.RLock()
 	cancel := a.cancel
-	done := a.done
 	a.mu.RUnlock()
 
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// Stop cancels the agent and waits for it to finish.
+func (a *Agent) Stop() {
+	a.Cancel()
+
+	a.mu.RLock()
+	done := a.done
+	a.mu.RUnlock()
+
 	if done != nil {
 		<-done
 	}

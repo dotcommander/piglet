@@ -105,13 +105,15 @@ func (s *Shell) IsRunning() bool {
 	return s.running
 }
 
-// Abort stops the current agent run. No-op if not running.
+// Abort cancels the current agent run without blocking. The agent
+// goroutine finishes asynchronously and emits EventAgentEnd, which
+// the frontend uses to transition out of the streaming state.
 func (s *Shell) Abort() {
 	s.mu.Lock()
 	agent := s.agent
 	s.mu.Unlock()
 	if agent != nil {
-		agent.Stop()
+		agent.Cancel()
 	}
 }
 
