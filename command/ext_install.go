@@ -82,9 +82,13 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 
 	fmt.Fprintf(w, "Cloning piglet...\n")
 
-	srcDir, err := os.MkdirTemp("", "piglet-src-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
+	// Clone into a subdirectory of the extensions dir rather than the system
+	// temp root. Go 1.26+ ignores go.mod in system temp directories
+	// (/tmp, /var/folders) which breaks the build.
+	srcDir := filepath.Join(extDir, ".build-src")
+	_ = os.RemoveAll(srcDir)
+	if err := os.MkdirAll(filepath.Dir(srcDir), 0755); err != nil {
+		return fmt.Errorf("create build dir: %w", err)
 	}
 	defer os.RemoveAll(srcDir)
 
@@ -94,8 +98,13 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		return nil
 	}
 
+	// GOWORK=off ensures the cloned repo builds as a standalone module,
+	// not as part of any local workspace.
+	goEnv := append(os.Environ(), "GOWORK=off")
+
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = srcDir
+	tidyCmd.Env = goEnv
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(w, "Warning: go mod tidy failed: %s\n", strings.TrimSpace(string(out)))
 	}
@@ -113,8 +122,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		}
 
 		var buildPkg, manifestDir, srcRoot string
-		if strings.HasPrefix(name, "pack-") {
-			packName := strings.TrimPrefix(name, "pack-")
+		if packName, ok := strings.CutPrefix(name, "pack-"); ok {
 			buildPkg = "./extensions/packs/" + packName + "/"
 			manifestDir = filepath.Join(srcDir, "extensions", "packs", packName)
 			srcRoot = manifestDir
@@ -126,6 +134,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 
 		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
 		buildCmd.Dir = srcDir
+		buildCmd.Env = goEnv
 		if out, err := buildCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
 			failed++
