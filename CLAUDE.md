@@ -18,7 +18,7 @@ The core is frozen at 17 events and 5 primitives. The answer to "how do I add X?
 
 ## Architecture: Extension-First (Extension-Only If We Could)
 
-Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Additional extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions) and installed to `~/.config/piglet/extensions/`.
+Piglet's core is deliberately minimal — an agent loop, streaming, and types. **Everything else is an extension.** The binary ships with a small set of compiled-in extensions (`tool/`, `command/`, `prompt/`). Additional extensions run as standalone binaries via JSON-RPC over stdin/stdout, built from source in `extensions/` and installed to `~/.config/piglet/extensions/`.
 
 **The rule**: New functionality MUST register through `ext.App`. Never wire behavior directly into `core/` or `cmd/piglet/main.go`. The architecture test (`ext/architecture_test.go`) enforces dependency boundaries — violations break the build.
 
@@ -44,7 +44,7 @@ tui/, cmd/  → anything (wiring layer)
 | Status sections | 6 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
 
-**External** (consolidated packs — single Go binaries via JSON-RPC, source in [`piglet-extensions`](https://github.com/dotcommander/piglet-extensions)):
+**External** (consolidated packs — single Go binaries via JSON-RPC, source in `extensions/packs/`):
 
 | Pack | Contains | Registers |
 |------|----------|-----------|
@@ -56,7 +56,7 @@ tui/, cmd/  → anything (wiring layer)
 | `pack-cron` | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
 
-All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over FD 3/4 (with stdin/stdout fallback) using the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)).
+All extensions (compiled-in and external) use the same `ext.App` API. External extensions communicate via JSON-RPC v2 over FD 3/4 (with stdin/stdout fallback) using the Go SDK (`sdk/`).
 
 ### Five Primitives
 
@@ -101,10 +101,10 @@ func Register(app *ext.App) {
 }
 ```
 
-External extensions (in `piglet-extensions` repo) use the Go SDK ([`piglet/sdk`](https://github.com/dotcommander/piglet/sdk)):
+External extensions use the Go SDK (`sdk/`):
 
 ```go
-// Example: piglet-extensions/safeguard/cmd/main.go
+// Example: extensions/safeguard/cmd/main.go
 func main() {
     e := sdk.New("name", "0.1.0")
     e.RegisterTool(sdk.ToolDef{...})
@@ -119,6 +119,7 @@ func main() {
 
 ```
 cmd/piglet/    Wiring layer — creates ext.App, calls Register(), loads externals, runs TUI
+cmd/*/         Standalone CLI tools (repomap, pipeline, bulk, confirm, depgraph, etc.)
 core/          Agent loop, streaming, types. Imports nothing from piglet.
 ext/           Registration surface (ext.App) — the central API
   app.go       Struct, NewApp, Bind, action queue
@@ -128,7 +129,10 @@ ext/           Registration surface (ext.App) — the central API
   domain.go    Session/model domain methods
   events.go    Event handler dispatch (Observe primitive)
   external/    JSON-RPC v2 bridge for external extensions (Go/TypeScript/Python)
-sdk/           Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk)
+extensions/    External extension source (packs, standalone extensions)
+  packs/       Pack bundles (core, agent, context, code, workflow, cron, eval)
+  */           Individual extension packages (memory, safeguard, lsp, etc.)
+sdk/           Go Extension SDK (import as github.com/dotcommander/piglet/sdk)
 tool/          Compiled-in tools (see tool/register.go)
 command/       Compiled-in commands, status sections, shortcuts (see command/builtins.go)
 prompt/        System prompt builder + compiled-in prompt sections
@@ -137,9 +141,6 @@ provider/      OpenAI-compatible streaming (OpenRouter, xAI, Groq, LM Studio, Ol
 session/       Tree-structured JSONL persistence, in-place branching, compaction (see docs/sessions.md)
 shell/         Agent lifecycle — submit, process events, drain actions (frontend-agnostic)
 tui/           Bubble Tea v2 UI (consumes shell/)
-
-# External extensions live in separate repo: dotcommander/piglet-extensions
-# Build: /extensions install (from inside piglet)
 ```
 
 ## Key Types
@@ -173,59 +174,42 @@ go build -o piglet ./cmd/piglet/
 
 ## Extensions
 
-Extensions live in a separate repo: [`dotcommander/piglet-extensions`](https://github.com/dotcommander/piglet-extensions). Extensions are consolidated into packs — each pack is a single Go binary that bundles multiple related extensions.
+Extension source lives in `extensions/` within this repo. Extensions are consolidated into packs — each pack is a single Go binary that bundles multiple related extensions. Packs are built and installed to `~/.config/piglet/extensions/`.
 
 ```bash
-/extensions install          # From inside piglet — clones, builds all packs, installs all
+/extensions install          # Builds all packs from repo, installs to ~/.config/piglet/extensions/
 /extensions update           # Rebuild packs from latest source
+make extensions              # Build packs directly from local source
 ```
 
 Without extensions, piglet starts as a minimal agent with only compiled-in tools and commands. With extensions installed, full functionality is available (interceptors, shortcuts, event handlers, message hooks, additional tools/commands — plus dynamic MCP tools). Run `/extensions` for the live inventory.
 
-## Development Workflow (Two-Repo)
+## Development Workflow
 
-Piglet spans two repos linked by `go.work` at `~/go/src/go.work`:
-- **piglet** — core, SDK (`sdk/`), TUI, compiled-in extensions
-- **piglet-extensions** — external extension packs, standalone CLIs
+One repo, one module, one tag, one deploy.
 
-### Day-to-day development (local only)
-
-`go.work` resolves `piglet/sdk` to the local checkout — changes to the SDK are immediately visible to piglet-extensions without tagging or pushing.
+### Day-to-day development
 
 ```bash
-# Build and test locally (go.work handles cross-repo resolution)
-piglet update --local          # Builds packs from local piglet-extensions checkout
-                               # Auto-detects path from go.work — no args needed
-piglet update --local /path    # Explicit path override
+go build ./...                 # Build everything (core + extensions)
+go test -race ./...            # Run all tests
+make extensions                # Build packs to ~/.config/piglet/extensions/
 ```
 
-**Local mode**: skips git clone, skips `go mod tidy`, builds directly from source. Use this during development — it's instant and doesn't touch GitHub.
+### Deploying to GitHub
 
-### Deploying to GitHub (when ready to publish)
-
-When changes span both repos and involve the SDK, the order matters:
-
-```
-1. Commit piglet (includes sdk/ changes)
-2. Tag the SDK:  git tag sdk/vX.Y.Z  (in piglet repo)
-3. Push piglet:  git push origin main sdk/vX.Y.Z
-4. Wait for Go module proxy (verify: go list -m github.com/dotcommander/piglet/sdk@vX.Y.Z)
-5. Update piglet-extensions go.mod:  GOWORK=off go get github.com/dotcommander/piglet/sdk@vX.Y.Z
-6. Commit and push piglet-extensions
-7. Tag piglet:   git tag vX.Y.Z
-8. Push tag:     git push origin vX.Y.Z
-9. Create GitHub Release:  gh release create vX.Y.Z --title "vX.Y.Z" --notes "..."
+```bash
+just deploy                    # Preflight, build, test, tag, push, release
+just deploy-dry                # Preview deployment plan without executing
 ```
 
-**Why this order**: piglet-extensions' `go.mod` pins a specific SDK version. `go.work` masks this locally, but `piglet update` (remote mode) clones without `go.work` — so the pinned version must exist on the module proxy.
+The deploy recipe: checks working tree is clean, bumps patch version, runs full build+test, tags, pushes, creates GitHub release.
 
 **GitHub Release is mandatory**: `piglet update` self-update uses the GitHub Releases API (`/releases/latest`), NOT git tags. A tag without a release is invisible to self-update.
 
-When changes DON'T touch the SDK, skip steps 2-6 — just commit, push, tag, and create the release.
-
 ### Update caching
 
-`piglet update` (remote mode) caches the last successful build's commit hash in `~/.config/piglet/extensions/.last-build-hash`. If the remote HEAD matches, it prints "Extensions already up to date" and skips the clone+build cycle. Local mode always rebuilds (no caching).
+`piglet update` (remote mode) caches the last successful build's commit hash in `~/.config/piglet/extensions/.last-build-hash`. If the remote HEAD matches, it prints "Extensions already up to date" and skips the clone+build cycle. Local mode (`--local`) always rebuilds.
 
 ## Config
 
@@ -271,6 +255,9 @@ The memory extension injects a **compact index** (not full content) as a static 
 | bubbles | `charm.land/bubbles/v2` v2.1.0 |
 | lipgloss | `charm.land/lipgloss/v2` v2.0.2 |
 | glamour | `github.com/charmbracelet/glamour` v1.0.0 |
+| go-rod | `github.com/go-rod/rod` v0.116.2 |
+| colly | `github.com/gocolly/colly/v2` v2.3.0 |
+| mcp-go | `github.com/mark3labs/mcp-go` v0.46.0 |
 
 ## Core Freeze (BLOCKING)
 
@@ -346,8 +333,8 @@ Before EVERY commit:
 4. **Smoke test**: `go build -o piglet ./cmd/piglet/ && ./piglet --version`
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
-7. **Extensions compatible**: clone `piglet-extensions`, run `go build ./...` — extensions must build against the tagged version
-8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`, `pack-cron`) plus standalone extensions (`mcp`). Verify pack contents match `packs/*/main.go` imports.
+7. **Extensions build**: `for p in core agent context code workflow cron eval; do go build ./extensions/packs/$p/; done`
+8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`, `pack-cron`) plus standalone extensions (`mcp`). Verify pack contents match `extensions/packs/*/main.go` imports.
 
 ### Pre-Push Gate
 
