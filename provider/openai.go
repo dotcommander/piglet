@@ -14,20 +14,20 @@ import (
 
 // OpenAI implements core.StreamProvider for OpenAI-compatible APIs.
 type OpenAI struct {
-	baseProvider
+	BaseProvider
 }
 
 // NewOpenAI creates a provider for OpenAI-compatible APIs.
 func NewOpenAI(model core.Model, apiKeyFn func() string) *OpenAI {
-	return &OpenAI{baseProvider: newBaseProvider(model, apiKeyFn)}
+	return &OpenAI{BaseProvider: NewBaseProvider(model, apiKeyFn)}
 }
 
 // Stream implements core.StreamProvider.
 func (p *OpenAI) Stream(ctx context.Context, req core.StreamRequest) <-chan core.StreamEvent {
-	return runStream(ctx, req, p)
+	return RunStream(ctx, req, p)
 }
 
-func (p *OpenAI) streamModel() core.Model { return p.model }
+func (p *OpenAI) StreamModel() core.Model { return p.Model }
 
 // ---------------------------------------------------------------------------
 // Request building
@@ -79,8 +79,8 @@ type oaiFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
-func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
-	maxTokens := p.resolveMaxTokens(req)
+func (p *OpenAI) BuildRequest(req core.StreamRequest) ([]byte, error) {
+	maxTokens := p.ResolveMaxTokens(req)
 
 	msgs, err := p.convertMessages(req)
 	if err != nil {
@@ -88,14 +88,14 @@ func (p *OpenAI) buildRequest(req core.StreamRequest) ([]byte, error) {
 	}
 
 	oaiReq := oaiRequest{
-		Model:         p.model.ID,
+		Model:         p.Model.ID,
 		Messages:      msgs,
 		Stream:        true,
 		StreamOptions: &oaiStreamOptions{IncludeUsage: true},
 	}
 
 	// Newer OpenAI models use max_completion_tokens instead of max_tokens
-	if useMaxCompletionTokens(p.model.ID) {
+	if useMaxCompletionTokens(p.Model.ID) {
 		oaiReq.MaxCompletionTokens = &maxTokens
 	} else {
 		oaiReq.MaxTokens = &maxTokens
@@ -119,7 +119,7 @@ func (p *OpenAI) convertMessages(req core.StreamRequest) ([]oaiMessage, error) {
 	if req.System != "" {
 		msgs = append(msgs, oaiMessage{Role: "system", Content: req.System})
 	}
-	msgs = append(msgs, convertMessageList(req.Messages, messageConverters[oaiMessage]{
+	msgs = append(msgs, ConvertMessageList(req.Messages, MessageConverters[oaiMessage]{
 		User: p.convertUserMessage,
 		Assistant: func(msg *core.AssistantMessage) oaiMessage {
 			m, err := p.convertAssistantMessage(msg)
@@ -131,7 +131,7 @@ func (p *OpenAI) convertMessages(req core.StreamRequest) ([]oaiMessage, error) {
 		ToolResult: func(msg *core.ToolResultMessage) oaiMessage {
 			return oaiMessage{
 				Role:       "tool",
-				Content:    toolResultText(msg),
+				Content:    ToolResultText(msg),
 				ToolCallID: msg.ToolCallID,
 			}
 		},
@@ -144,7 +144,7 @@ func (p *OpenAI) convertUserMessage(msg *core.UserMessage) oaiMessage {
 		return oaiMessage{Role: "user", Content: msg.Content}
 	}
 
-	blocks := decodeUserBlocks(msg,
+	blocks := DecodeUserBlocks(msg,
 		func(text string) map[string]any {
 			return map[string]any{"type": "text", "text": text}
 		},
@@ -197,7 +197,7 @@ func (p *OpenAI) convertAssistantMessage(msg *core.AssistantMessage) (oaiMessage
 }
 
 func (p *OpenAI) convertTools(tools []core.ToolSchema) []oaiTool {
-	return convertToolSchemas(tools, func(name, desc string, params any) oaiTool {
+	return ConvertToolSchemas(tools, func(name, desc string, params any) oaiTool {
 		return oaiTool{
 			Type: "function",
 			Function: oaiFunction{
@@ -214,7 +214,7 @@ func (p *OpenAI) convertTools(tools []core.ToolSchema) []oaiTool {
 // ---------------------------------------------------------------------------
 
 func (p *OpenAI) endpoint() string {
-	base := strings.TrimSuffix(p.model.BaseURL, "/")
+	base := strings.TrimSuffix(p.Model.BaseURL, "/")
 	// If base URL already ends with a version path (e.g. /v4), skip /v1 prefix
 	if hasVersionSuffix(base) {
 		return base + "/chat/completions"
@@ -241,12 +241,12 @@ func hasVersionSuffix(url string) bool {
 	return true
 }
 
-func (p *OpenAI) sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
-	return p.doHTTPRequest(ctx, p.endpoint(), body, func(req *http.Request) {
+func (p *OpenAI) SendRequest(ctx context.Context, body []byte) (io.ReadCloser, error) {
+	return p.DoHTTPRequest(ctx, p.endpoint(), body, func(req *http.Request) {
 		req.Header.Set("Accept", "text/event-stream")
-		if apiKey := p.apiKeyFn(); apiKey != "" {
+		if apiKey := p.APIKeyFn(); apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+apiKey)
-		} else if isLoopbackURL(p.model.BaseURL) {
+		} else if isLoopbackURL(p.Model.BaseURL) {
 			req.Header.Set("Authorization", "Bearer local")
 		}
 	})
@@ -283,12 +283,12 @@ type oaiPromptTokensInfo struct {
 	CachedTokens int `json:"cached_tokens"`
 }
 
-func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
+func (p *OpenAI) ParseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage {
 	var msg core.AssistantMessage
 	toolArgs := make(map[int]*strings.Builder)
 	textBuilders := make(map[int]*strings.Builder)
 
-	scanSSE(ctx, reader, ch, func(data []byte) {
+	ScanSSE(ctx, reader, ch, func(data []byte) {
 		var evt oaiStreamEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
 			return
@@ -314,7 +314,7 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		// Text delta
 		if choice.Delta != nil && choice.Delta.Content != "" {
 			ch <- core.StreamEvent{Type: core.StreamTextDelta, Delta: choice.Delta.Content}
-			appendTextBuilder(&msg, choice.Delta.Content, textBuilders)
+			AppendTextBuilder(&msg, choice.Delta.Content, textBuilders)
 		}
 
 		// Tool call deltas
@@ -348,7 +348,7 @@ func (p *OpenAI) parseResponse(ctx context.Context, reader io.Reader, ch chan<- 
 		}
 	})
 
-	finalizeTextBuilders(&msg, textBuilders)
+	FinalizeTextBuilders(&msg, textBuilders)
 
 	// Finalize tool call arguments
 	for idx, builder := range toolArgs {
@@ -411,7 +411,7 @@ var oaiStopReasons = map[string]core.StopReason{
 }
 
 func mapStopReason(reason string) core.StopReason {
-	return mapStopReasonFromTable(reason, oaiStopReasons)
+	return MapStopReasonFromTable(reason, oaiStopReasons)
 }
 
 var maxCompletionTokensSet = sync.OnceValue(func() map[string]bool {

@@ -34,19 +34,19 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 
 func (w *limitedWriter) Truncated() bool { return w.buf.Len() >= w.cap }
 
-// baseProvider holds fields shared by all provider implementations.
-type baseProvider struct {
-	model      core.Model
-	apiKeyFn   func() string
-	httpClient *http.Client
-	logger     *slog.Logger // nil = no debug logging
+// BaseProvider holds fields shared by all provider implementations.
+type BaseProvider struct {
+	Model      core.Model
+	APIKeyFn   func() string
+	HTTPClient *http.Client
+	Logger     *slog.Logger // nil = no debug logging
 }
 
-func newBaseProvider(model core.Model, apiKeyFn func() string) baseProvider {
-	return baseProvider{
-		model:    model,
-		apiKeyFn: apiKeyFn,
-		httpClient: &http.Client{
+func NewBaseProvider(model core.Model, apiKeyFn func() string) BaseProvider {
+	return BaseProvider{
+		Model:    model,
+		APIKeyFn: apiKeyFn,
+		HTTPClient: &http.Client{
 			Timeout: 300 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 100,
@@ -55,23 +55,23 @@ func newBaseProvider(model core.Model, apiKeyFn func() string) baseProvider {
 	}
 }
 
-func (b *baseProvider) SetLogger(l *slog.Logger) {
-	b.logger = l
+func (b *BaseProvider) SetLogger(l *slog.Logger) {
+	b.Logger = l
 }
 
-func (b *baseProvider) debugLog() *slog.Logger {
-	return b.logger
+func (b *BaseProvider) DebugLog() *slog.Logger {
+	return b.Logger
 }
 
-func (b *baseProvider) resolveMaxTokens(req core.StreamRequest) int {
+func (b *BaseProvider) ResolveMaxTokens(req core.StreamRequest) int {
 	if req.Options.MaxTokens != nil {
 		return *req.Options.MaxTokens
 	}
-	return b.model.MaxTokens
+	return b.Model.MaxTokens
 }
 
-// doHTTPRequest handles the shared HTTP POST + status check logic.
-func (b *baseProvider) doHTTPRequest(ctx context.Context, url string, body []byte, setHeaders func(*http.Request)) (io.ReadCloser, error) {
+// DoHTTPRequest handles the shared HTTP POST + status check logic.
+func (b *BaseProvider) DoHTTPRequest(ctx context.Context, url string, body []byte, setHeaders func(*http.Request)) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -82,11 +82,11 @@ func (b *baseProvider) doHTTPRequest(ctx context.Context, url string, body []byt
 		setHeaders(req)
 	}
 
-	for k, v := range b.model.Headers {
+	for k, v := range b.Model.Headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := b.httpClient.Do(req)
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
@@ -94,12 +94,12 @@ func (b *baseProvider) doHTTPRequest(ctx context.Context, url string, body []byt
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		err := fmt.Errorf("%s API error %d: %s", b.model.Provider, resp.StatusCode, string(errBody))
+		err := fmt.Errorf("%s API error %d: %s", b.Model.Provider, resp.StatusCode, string(errBody))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			if isLoopbackURL(b.model.BaseURL) {
+			if isLoopbackURL(b.Model.BaseURL) {
 				return nil, fmt.Errorf("%s: local server requires authentication. Check your server config.", resp.Status)
 			}
-			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.model.Provider))
+			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.Model.Provider))
 		}
 		return nil, err
 	}
@@ -126,25 +126,25 @@ func envKeyForProvider(provider string) string {
 	}
 }
 
-// streamPipeline is implemented by each concrete provider to plug into runStream.
-type streamPipeline interface {
-	buildRequest(req core.StreamRequest) ([]byte, error)
-	sendRequest(ctx context.Context, body []byte) (io.ReadCloser, error)
-	parseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage
-	streamModel() core.Model
+// StreamPipeline is implemented by each concrete provider to plug into RunStream.
+type StreamPipeline interface {
+	BuildRequest(req core.StreamRequest) ([]byte, error)
+	SendRequest(ctx context.Context, body []byte) (io.ReadCloser, error)
+	ParseResponse(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent) core.AssistantMessage
+	StreamModel() core.Model
 }
 
 type Debuggable interface {
 	SetLogger(l *slog.Logger)
 }
 
-type debugLogger interface {
-	debugLog() *slog.Logger
+type DebugLogger interface {
+	DebugLog() *slog.Logger
 }
 
-// convertToolSchemas iterates tool schemas, normalises nil parameters,
+// ConvertToolSchemas iterates tool schemas, normalises nil parameters,
 // and calls build to produce provider-specific tool definitions.
-func convertToolSchemas[T any](tools []core.ToolSchema, build func(name, desc string, params any) T) []T {
+func ConvertToolSchemas[T any](tools []core.ToolSchema, build func(name, desc string, params any) T) []T {
 	out := make([]T, 0, len(tools))
 	for _, t := range tools {
 		params := t.Parameters
@@ -156,16 +156,16 @@ func convertToolSchemas[T any](tools []core.ToolSchema, build func(name, desc st
 	return out
 }
 
-// messageConverters holds per-type callbacks for converting core messages
+// MessageConverters holds per-type callbacks for converting core messages
 // to a provider-specific wire type.
-type messageConverters[T any] struct {
+type MessageConverters[T any] struct {
 	User       func(*core.UserMessage) T
 	Assistant  func(*core.AssistantMessage) T
 	ToolResult func(*core.ToolResultMessage) T
 }
 
-// convertMessageList applies the appropriate converter for each message type.
-func convertMessageList[T any](msgs []core.Message, conv messageConverters[T]) []T {
+// ConvertMessageList applies the appropriate converter for each message type.
+func ConvertMessageList[T any](msgs []core.Message, conv MessageConverters[T]) []T {
 	var out []T
 	for _, m := range msgs {
 		switch msg := m.(type) {
@@ -180,9 +180,9 @@ func convertMessageList[T any](msgs []core.Message, conv messageConverters[T]) [
 	return out
 }
 
-// mapStopReasonFromTable looks up a provider-specific stop reason string
+// MapStopReasonFromTable looks up a provider-specific stop reason string
 // in the given table, returning core.StopReasonStop as default.
-func mapStopReasonFromTable(reason string, table map[string]core.StopReason) core.StopReason {
+func MapStopReasonFromTable(reason string, table map[string]core.StopReason) core.StopReason {
 	if r, ok := table[reason]; ok {
 		return r
 	}
@@ -213,8 +213,8 @@ func extractSSEData(line []byte) []byte {
 	return nil
 }
 
-// toolResultText extracts joined text from a ToolResultMessage.
-func toolResultText(msg *core.ToolResultMessage) string {
+// ToolResultText extracts joined text from a ToolResultMessage.
+func ToolResultText(msg *core.ToolResultMessage) string {
 	var parts []string
 	for _, b := range msg.Content {
 		if tc, ok := b.(core.TextContent); ok {
@@ -224,9 +224,9 @@ func toolResultText(msg *core.ToolResultMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-// appendTextBuilder accumulates delta into a strings.Builder keyed by content index.
+// AppendTextBuilder accumulates delta into a strings.Builder keyed by content index.
 // If no TextContent exists in msg, one is appended.
-func appendTextBuilder(msg *core.AssistantMessage, delta string, builders map[int]*strings.Builder) {
+func AppendTextBuilder(msg *core.AssistantMessage, delta string, builders map[int]*strings.Builder) {
 	for i := range msg.Content {
 		if _, ok := msg.Content[i].(core.TextContent); ok {
 			b, exists := builders[i]
@@ -245,8 +245,8 @@ func appendTextBuilder(msg *core.AssistantMessage, delta string, builders map[in
 	builders[idx] = b
 }
 
-// finalizeTextBuilders writes accumulated text from builders into msg.Content.
-func finalizeTextBuilders(msg *core.AssistantMessage, builders map[int]*strings.Builder) {
+// FinalizeTextBuilders writes accumulated text from builders into msg.Content.
+func FinalizeTextBuilders(msg *core.AssistantMessage, builders map[int]*strings.Builder) {
 	for idx, b := range builders {
 		if idx < len(msg.Content) {
 			msg.Content[idx] = core.TextContent{Text: b.String()}
@@ -254,9 +254,9 @@ func finalizeTextBuilders(msg *core.AssistantMessage, builders map[int]*strings.
 	}
 }
 
-// decodeUserBlocks converts a UserMessage's Content and Blocks into
+// DecodeUserBlocks converts a UserMessage's Content and Blocks into
 // provider-specific typed slices using the supplied callbacks.
-func decodeUserBlocks[T any](msg *core.UserMessage, text func(string) T, image func(core.ImageContent) T) []T {
+func DecodeUserBlocks[T any](msg *core.UserMessage, text func(string) T, image func(core.ImageContent) T) []T {
 	var out []T
 	if msg.Content != "" {
 		out = append(out, text(msg.Content))
@@ -272,9 +272,9 @@ func decodeUserBlocks[T any](msg *core.UserMessage, text func(string) T, image f
 	return out
 }
 
-// scanSSE reads SSE lines from reader, calling handler for each non-empty
+// ScanSSE reads SSE lines from reader, calling handler for each non-empty
 // data payload. Respects context cancellation (sends StreamError on cancel).
-func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, handler func(data []byte), opts ...scanOption) {
+func ScanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, handler func(data []byte), opts ...ScanOption) {
 	scanner := bufio.NewScanner(reader)
 	for _, opt := range opts {
 		opt(scanner)
@@ -294,29 +294,29 @@ func scanSSE(ctx context.Context, reader io.Reader, ch chan<- core.StreamEvent, 
 	}
 }
 
-type scanOption func(*bufio.Scanner)
+type ScanOption func(*bufio.Scanner)
 
-func withLargeBuffer(initial, max int) scanOption {
+func WithLargeBuffer(initial, max int) ScanOption {
 	return func(s *bufio.Scanner) {
 		s.Buffer(make([]byte, 0, initial), max)
 	}
 }
 
-func computeCost(u core.Usage, c core.ModelCost) float64 {
+func ComputeCost(u core.Usage, c core.ModelCost) float64 {
 	return (float64(u.InputTokens)*c.Input +
 		float64(u.OutputTokens)*c.Output +
 		float64(u.CacheReadTokens)*c.CacheRead +
 		float64(u.CacheWriteTokens)*c.CacheWrite) / 1_000_000
 }
 
-// runStream is the shared Stream() goroutine template.
-func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-chan core.StreamEvent {
+// RunStream is the shared Stream() goroutine template.
+func RunStream(ctx context.Context, req core.StreamRequest, p StreamPipeline) <-chan core.StreamEvent {
 	ch := make(chan core.StreamEvent, 32)
 
 	go func() {
 		defer close(ch)
 
-		body, err := p.buildRequest(req)
+		body, err := p.BuildRequest(req)
 		if err != nil {
 			ch <- core.StreamEvent{Type: core.StreamError, Error: fmt.Errorf("build request: %w", err)}
 			return
@@ -324,18 +324,18 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 
 		// Debug: log request payload
 		var logger *slog.Logger
-		if dl, ok := p.(debugLogger); ok {
-			logger = dl.debugLog()
+		if dl, ok := p.(DebugLogger); ok {
+			logger = dl.DebugLog()
 		}
 		if logger != nil {
 			logger.Debug("request",
-				"provider", p.streamModel().Provider,
-				"model", p.streamModel().ID,
+				"provider", p.StreamModel().Provider,
+				"model", p.StreamModel().ID,
 				"body", string(body),
 			)
 		}
 
-		reader, err := p.sendRequest(ctx, body)
+		reader, err := p.SendRequest(ctx, body)
 		if err != nil {
 			ch <- core.StreamEvent{Type: core.StreamError, Error: err}
 			return
@@ -349,23 +349,23 @@ func runStream(ctx context.Context, req core.StreamRequest, p streamPipeline) <-
 			parseReader = io.TeeReader(reader, lw)
 			defer func() {
 				logger.Debug("response",
-					"provider", p.streamModel().Provider,
-					"model", p.streamModel().ID,
+					"provider", p.StreamModel().Provider,
+					"model", p.StreamModel().ID,
 					"body", lw.buf.String(),
 					"truncated", lw.Truncated(),
 				)
 			}()
 		}
 
-		msg := p.parseResponse(ctx, parseReader, ch)
-		m := p.streamModel()
+		msg := p.ParseResponse(ctx, parseReader, ch)
+		m := p.StreamModel()
 		if msg.StopReason == "" {
 			msg.StopReason = core.StopReasonStop
 		}
 		msg.Model = m.ID
 		msg.Provider = m.Provider
 		msg.Timestamp = time.Now()
-		msg.Usage.Cost = computeCost(msg.Usage, m.Cost)
+		msg.Usage.Cost = ComputeCost(msg.Usage, m.Cost)
 
 		ch <- core.StreamEvent{Type: core.StreamDone, Message: &msg}
 	}()

@@ -124,18 +124,10 @@ func (r *Registry) ModelsByProvider(provider string) []core.Model {
 }
 
 // Create creates a StreamProvider for the given model.
+// All providers use the OpenAI-compatible protocol by default.
+// Non-OpenAI protocols (Anthropic, Google) are provided by extensions.
 func (r *Registry) Create(m core.Model, apiKeyFn func() string) (core.StreamProvider, error) {
-	switch m.API {
-	case core.APIOpenAI:
-		return NewOpenAI(m, apiKeyFn), nil
-	case core.APIAnthropic:
-		return NewAnthropic(m, apiKeyFn), nil
-	case core.APIGoogle:
-		return NewGoogle(m, apiKeyFn), nil
-	default:
-		// Default to OpenAI-compatible
-		return NewOpenAI(m, apiKeyFn), nil
-	}
+	return NewOpenAI(m, apiKeyFn), nil
 }
 
 // RegisterLocalServers probes each URL concurrently for available models and

@@ -44,9 +44,10 @@ func (ImageContent) isContentBlock() {}
 
 // ToolCall is a request from the assistant to invoke a tool.
 type ToolCall struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Arguments    map[string]any `json:"arguments"`
+	ProviderMeta map[string]any `json:"providerMeta,omitempty"` // opaque provider data (e.g. Gemini thought signatures)
 }
 
 func (ToolCall) isAssistantContent() {}
