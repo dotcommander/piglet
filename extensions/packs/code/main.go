@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dotcommander/piglet/extensions/fossil"
 	"github.com/dotcommander/piglet/extensions/lsp"
 	"github.com/dotcommander/piglet/extensions/packs/internal/safety"
 	"github.com/dotcommander/piglet/extensions/plan"
@@ -19,5 +20,6 @@ func main() {
 	safety.Register(e, "plan", plan.Register)
 	safety.Register(e, "suggest", suggest.Register)
 	safety.Register(e, "toolsearch", toolsearch.Register)
+	safety.Register(e, "fossil", fossil.RegisterInterceptor)
 	e.Run()
 }
