@@ -1,0 +1,15 @@
+name: usage
+version: 0.1.0
+description: Track and display session token usage statistics
+commands:
+  - name: stats
+    description: Show session token usage statistics
+  - name: usage
+    description: Show session token usage statistics
+tools:
+  - name: session_stats
+    description: Get current session token usage statistics
+eventHandlers:
+  - name: usage-tracker
+    events:
+      - EventTurnUsage

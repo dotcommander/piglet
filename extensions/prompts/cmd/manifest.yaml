@@ -1,0 +1,5 @@
+name: prompts
+version: 0.1.0
+runtime: ./prompts
+capabilities:
+  - commands

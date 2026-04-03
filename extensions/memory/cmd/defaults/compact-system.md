@@ -1,0 +1,1 @@
+Given these extracted facts from a coding session, produce a concise structured summary. Group by: files touched, decisions made, errors resolved, current task state. Be brief — 5-10 lines max.

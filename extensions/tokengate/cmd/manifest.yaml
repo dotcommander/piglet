@@ -1,0 +1,16 @@
+name: tokengate
+version: 0.2.0
+runtime: ./tokengate
+capabilities:
+  - interceptors
+  - eventHandlers
+  - tools
+  - commands
+  - prompt
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/tokengate/prompt.md
+  - src: cmd/defaults/config.yaml
+    dest: extensions/tokengate/config.yaml
+  - src: cmd/defaults/summarize-prompt.md
+    dest: extensions/tokengate/summarize-prompt.md

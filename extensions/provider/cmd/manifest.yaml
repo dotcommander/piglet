@@ -1,0 +1,5 @@
+name: provider
+version: 0.1.0
+runtime: ./provider
+capabilities:
+  - provider

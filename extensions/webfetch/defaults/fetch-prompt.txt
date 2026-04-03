@@ -1,0 +1,1 @@
+Please extract and summarize the main content from this URL: %s

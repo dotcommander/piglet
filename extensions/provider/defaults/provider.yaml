@@ -1,0 +1,45 @@
+# Provider extension configuration
+# Location: ~/.config/piglet/extensions/provider/provider.yaml
+
+# Override existing providers (e.g. route through a corporate proxy):
+# overrides:
+#   anthropic:
+#     base_url: https://gateway.corp.com/anthropic
+#     headers:
+#       X-Corp-Auth: "token123"
+#     key_command: "security find-generic-password -ws anthropic-api"
+
+# Define custom providers mapping to existing wire formats:
+# custom:
+#   openrouter:
+#     api: openai
+#     base_url: https://openrouter.ai/api/v1
+#     headers:
+#       HTTP-Referer: "https://piglet.dev"
+#     key_command: "op read 'op://Dev/OpenRouter/api-key'"
+
+# Per-model compatibility overrides (exact ID first, then longest prefix):
+# compat:
+#   deepseek-:
+#     strip_tool_choice: true
+#   deepseek-coder-v2:
+#     name: "DeepSeek Coder v2 (Custom)"
+#   mistral-:
+#     strip_stream_options: true
+#     headers:
+#       X-Custom: "value"
+
+# --- Credential Resolution ---
+#
+# API keys are resolved in this order:
+#   1. Host auth (piglet's built-in key management via AuthGetKey)
+#   2. key_command from overrides or custom provider config
+#
+# key_command supports three formats:
+#   Shell command:  "!security find-generic-password -ws anthropic-api"
+#   Env var:        "ANTHROPIC_API_KEY"   (must match [A-Z_][A-Z0-9_]+)
+#   Literal:        "sk-abc123..."
+#
+# Shell command results are cached for the process lifetime to avoid
+# re-executing expensive credential lookups (1Password, macOS Keychain)
+# on every stream request.

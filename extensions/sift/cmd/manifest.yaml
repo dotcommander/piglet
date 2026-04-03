@@ -1,0 +1,9 @@
+name: sift
+version: 0.1.0
+runtime: ./sift
+capabilities:
+  - interceptors
+  - prompt
+defaults:
+  - src: defaults/prompt.md
+    dest: extensions/sift/prompt.md

@@ -1,0 +1,11 @@
+name: bulk
+version: 0.1.0
+runtime: ./bulk
+description: Run shell commands across many items (git repos, dirs, files) in parallel
+capabilities:
+  - tools
+intents: [build, deploy, configure]
+triggers: [bulk, multi-repo, parallel commands, batch, across repos]
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/bulk/prompt.md

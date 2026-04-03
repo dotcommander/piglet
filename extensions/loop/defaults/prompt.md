@@ -1,0 +1,1 @@
+Use /loop <interval> <prompt> to run a prompt on a recurring interval (e.g. /loop 5m check build status). Use /loop-stop to cancel.

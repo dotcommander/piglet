@@ -1,0 +1,39 @@
+# Intent taxonomy for prompt classification
+# Each intent has verbs (leading-word match) and keywords (substring match)
+intents:
+  debug:
+    verbs: [fix, debug, diagnose, troubleshoot, investigate, trace, bisect]
+    keywords: [bug, error, crash, panic, fail, broken, wrong, issue, leak, race, deadlock, hang, stuck]
+  build:
+    verbs: [build, compile, install, setup, scaffold, create, init, bootstrap, generate]
+    keywords: [build, compile, binary, executable, scaffold, boilerplate, new project]
+  refactor:
+    verbs: [refactor, restructure, reorganize, simplify, extract, inline, rename, move, split, merge]
+    keywords: [refactor, cleanup, clean up, technical debt, dead code, duplication]
+  test:
+    verbs: [test, verify, validate, check, assert, benchmark, fuzz]
+    keywords: [test, spec, coverage, assertion, mock, fixture, benchmark, fuzz]
+  explain:
+    verbs: [explain, describe, show, what, how, why, tell, clarify]
+    keywords: [explain, understand, overview, summary, documentation, docs]
+  optimize:
+    verbs: [optimize, speed, profile, tune, reduce, improve, cache]
+    keywords: [slow, performance, memory, cpu, latency, throughput, bottleneck, optimize, profile, allocation]
+  configure:
+    verbs: [configure, config, set, enable, disable, toggle, update]
+    keywords: [config, setting, environment, env, flag, option, parameter]
+  deploy:
+    verbs: [deploy, release, publish, push, ship, tag, promote]
+    keywords: [deploy, release, production, staging, ci, cd, pipeline, docker, kubernetes, k8s]
+  design:
+    verbs: [design, architect, plan, propose, draft, sketch, layout]
+    keywords: [design, architecture, pattern, interface, api, schema, component, layout, ui, ux]
+  write:
+    verbs: [write, add, implement, create, make, generate, author, draft]
+    keywords: [feature, implement, new, add, endpoint, handler, middleware, command, tool]
+  search:
+    verbs: [find, search, grep, locate, look, where, list]
+    keywords: [find, search, where, which, locate, usage, reference, caller]
+  review:
+    verbs: [review, audit, inspect, lint, scan, check, assess]
+    keywords: [review, audit, security, vulnerability, lint, code quality, pr, pull request]

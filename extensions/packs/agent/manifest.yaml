@@ -1,0 +1,10 @@
+name: pack-agent
+version: 0.1.0
+runtime: ./pack-agent
+capabilities:
+  - tools
+  - commands
+  - interceptors
+  - prompt
+  - eventHandlers
+  - shortcuts

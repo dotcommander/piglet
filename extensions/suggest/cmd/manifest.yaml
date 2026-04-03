@@ -1,0 +1,8 @@
+name: suggest
+version: 0.1.0
+runtime: ./suggest
+capabilities:
+  - eventHandlers
+defaults:
+  - src: defaults/prompt.md
+    dest: extensions/suggest/prompt.md

@@ -1,0 +1,12 @@
+name: lsp
+version: 0.1.0
+runtime: ./lsp
+description: Language server queries for go-to-definition, references, hover, rename, and symbols
+capabilities:
+  - tools
+  - prompt
+intents: [search, refactor, explain]
+triggers: [definition, references, hover, rename symbol, go to def, type info]
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/lsp/prompt.md

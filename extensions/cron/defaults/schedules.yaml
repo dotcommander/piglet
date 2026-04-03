@@ -1,0 +1,34 @@
+# Piglet Cron — Schedule Definitions
+# See: piglet-cron run --help
+#
+# Each task has:
+#   action: shell | prompt | webhook
+#   schedule: every | daily_at | weekly
+#   timeout: duration (default 5m)
+#   enabled: true | false (default true)
+#
+# Examples:
+#
+# tasks:
+#   daily-summary:
+#     action: prompt
+#     prompt: "Summarize my coding activity from the last 24 hours"
+#     schedule:
+#       daily_at: "18:00"
+#     timeout: 5m
+#
+#   backup-sessions:
+#     action: shell
+#     command: "tar czf ~/.config/piglet/backups/sessions-$(date +%Y%m%d).tar.gz ~/.config/piglet/sessions/"
+#     schedule:
+#       weekly: "sunday 02:00"
+#     timeout: 2m
+#
+#   health-check:
+#     action: webhook
+#     url: "https://hc-ping.com/your-uuid-here"
+#     method: POST
+#     schedule:
+#       every: 5m
+
+tasks: {}

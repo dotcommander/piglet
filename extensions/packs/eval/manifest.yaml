@@ -1,0 +1,6 @@
+name: pack-eval
+version: 0.1.0
+runtime: ./pack-eval
+capabilities:
+  - tools
+  - commands

@@ -1,0 +1,9 @@
+name: pack-code
+version: 0.1.0
+runtime: ./pack-code
+capabilities:
+  - tools
+  - commands
+  - interceptors
+  - prompt
+  - eventHandlers

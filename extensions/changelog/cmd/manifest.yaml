@@ -1,0 +1,11 @@
+name: changelog
+version: 0.1.0
+runtime: ./changelog
+description: Generate changelogs from git history with conventional commit parsing
+capabilities:
+  - commands
+intents: [document, review]
+triggers: [changelog, release notes, what changed, conventional commits]
+defaults:
+  - src: defaults/changelog.yaml
+    dest: extensions/changelog/changelog.yaml

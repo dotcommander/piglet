@@ -1,0 +1,8 @@
+name: clipboard
+version: 0.1.0
+runtime: ./clipboard
+description: Copy tool results to system clipboard and paste clipboard content
+capabilities:
+  - tools
+  - shortcuts
+triggers: [clipboard, copy, paste]

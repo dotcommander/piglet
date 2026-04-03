@@ -1,0 +1,1 @@
+Before reading files to investigate issues, run deterministic tools first. Use repomap for structure, depgraph for dependencies, fossil for history, confirm for change impact. Send detector output for analysis, not raw files. Prefer targeted grep over file reads. Scope queries before expanding them.

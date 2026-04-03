@@ -1,0 +1,22 @@
+# Route extension configuration
+# Weights for composite scoring (must sum to 1.0)
+weights:
+  intent: 0.40
+  domain: 0.30
+  trigger: 0.30
+  anti: 0.50  # penalty multiplier: score *= (1 - anti_score * anti_weight)
+
+# Score threshold for primary tier
+primary_threshold: 0.25
+
+# Maximum results per tier
+max_primary: 5
+max_secondary: 10
+
+# Message hook injects routing context into conversation
+message_hook:
+  enabled: true
+  min_confidence: 0.10  # skip injection below this confidence
+
+# Trigger-to-keyword weight ratio (triggers weighted higher than keywords)
+trigger_keyword_ratio: 0.7

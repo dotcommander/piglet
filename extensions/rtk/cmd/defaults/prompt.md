@@ -1,0 +1,1 @@
+Bash commands are automatically optimized by RTK for reduced token output. No action needed.

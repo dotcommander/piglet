@@ -1,0 +1,20 @@
+name: example
+description: Example evaluation suite demonstrating all scorer types
+model: small
+cases:
+  - name: greeting
+    prompt: "Say hello in exactly 3 words"
+    scorer: exact
+    expected: "Hello to you"
+  - name: go-function
+    prompt: "Write a Go function that returns the sum of two integers"
+    scorer: contains
+    expected: "func"
+  - name: email-format
+    prompt: "Generate a sample email address"
+    scorer: regex
+    expected: ".+@.+\\..+"
+  - name: error-handling
+    prompt: "Write a Go function that opens a file and returns its contents, with proper error handling"
+    scorer: judge
+    criteria: "Uses os.Open or os.ReadFile, checks for errors with if err != nil, wraps errors with fmt.Errorf and %w"

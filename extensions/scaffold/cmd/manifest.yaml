@@ -1,0 +1,8 @@
+name: scaffold
+version: 0.1.0
+runtime: ./scaffold
+description: Generate project scaffolds and boilerplate code
+capabilities:
+  - commands
+intents: [build, write]
+triggers: [scaffold, boilerplate, new project, generate, init project]

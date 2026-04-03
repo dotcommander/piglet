@@ -1,0 +1,5 @@
+name: extensions-list
+version: 0.1.0
+runtime: ./extensions-list
+capabilities:
+  - commands

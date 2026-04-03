@@ -1,0 +1,8 @@
+name: autotitle
+version: 0.1.0
+runtime: ./autotitle
+capabilities:
+  - eventHandlers
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/autotitle/prompt.md

@@ -1,0 +1,5 @@
+name: pack-core
+version: 0.1.0
+runtime: ./pack-core
+capabilities:
+  - commands

@@ -1,0 +1,5 @@
+name: modelsdev
+version: 0.1.0
+runtime: ./modelsdev
+capabilities:
+  - eventHandlers

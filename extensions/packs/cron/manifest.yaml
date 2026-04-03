@@ -1,0 +1,7 @@
+name: pack-cron
+version: 0.1.0
+runtime: ./pack-cron
+capabilities:
+  - tools
+  - commands
+  - eventHandlers

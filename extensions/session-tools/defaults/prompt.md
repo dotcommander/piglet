@@ -1,0 +1,1 @@
+Use /handoff or the handoff tool to transfer context to a new session with a structured summary of goal, progress, decisions, and next steps. Use the session_query tool to search a parent session's content by keyword when you need to recover specific details after a handoff.

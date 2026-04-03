@@ -1,0 +1,5 @@
+# Token budget configuration
+context_window: 200000
+warn_percent: 80
+summarize_threshold: 8192
+summarize_enabled: true

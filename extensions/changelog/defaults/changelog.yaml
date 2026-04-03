@@ -1,0 +1,50 @@
+# Changelog type configuration
+# Maps conventional commit types to display labels and emoji
+types:
+  feat:
+    label: Features
+    emoji: "\u2728"
+    order: 1
+  fix:
+    label: Bug Fixes
+    emoji: "\U0001F41B"
+    order: 2
+  perf:
+    label: Performance
+    emoji: "\u26A1"
+    order: 3
+  refactor:
+    label: Refactoring
+    emoji: "\u267B\uFE0F"
+    order: 4
+  docs:
+    label: Documentation
+    emoji: "\U0001F4DA"
+    order: 5
+  test:
+    label: Tests
+    emoji: "\u2705"
+    order: 6
+  build:
+    label: Build
+    emoji: "\U0001F4E6"
+    order: 7
+  ci:
+    label: CI
+    emoji: "\U0001F527"
+    order: 8
+  chore:
+    label: Chores
+    emoji: "\U0001F9F9"
+    order: 9
+  style:
+    label: Style
+    emoji: "\U0001F3A8"
+    order: 10
+  other:
+    label: Other
+    emoji: "\U0001F4DD"
+    order: 99
+
+# Default commit range fallback when no tags exist
+fallback_count: 20

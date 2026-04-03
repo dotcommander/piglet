@@ -1,0 +1,13 @@
+name: behavior
+version: 0.1.0
+description: Load behavioral guidelines as an early system prompt section
+runtime: ./behavior
+intents:
+  - behavior
+  - guidelines
+triggers:
+  - behavior
+  - guidelines
+  - custom instructions
+capabilities:
+  - promptSections

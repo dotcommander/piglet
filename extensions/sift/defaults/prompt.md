@@ -1,0 +1,1 @@
+Large tool results are automatically compressed by Sift. Content below 4KB passes through unchanged. Repeated patterns and excessive blank lines are collapsed. If a result shows a [SIFT:] header, the original was larger — request the raw content if you need it.

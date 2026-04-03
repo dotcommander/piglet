@@ -1,0 +1,9 @@
+name: gitcontext
+version: 0.1.0
+runtime: ./gitcontext
+description: Inject git branch and status context into system prompt
+capabilities:
+  - promptSections
+intents: [explain]
+domains: [git]
+triggers: [git status, branch context, working tree]

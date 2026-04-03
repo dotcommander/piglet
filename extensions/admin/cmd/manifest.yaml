@@ -1,0 +1,16 @@
+name: admin
+version: 0.1.0
+description: Configuration viewer and model catalog management
+runtime: ./admin
+intents:
+  - admin
+  - configure
+triggers:
+  - config
+  - setup
+  - models
+  - model catalog
+  - sync models
+  - settings
+capabilities:
+  - commands

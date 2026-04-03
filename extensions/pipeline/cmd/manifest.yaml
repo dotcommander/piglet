@@ -1,0 +1,13 @@
+name: pipeline
+version: 0.1.0
+runtime: ./pipeline
+description: Run multi-step YAML workflows with params, loops, retries, and conditionals
+capabilities:
+  - tools
+  - commands
+  - prompt
+intents: [deploy, build, configure]
+triggers: [pipeline, workflow, multi-step, automation, yaml workflow, batch process]
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/pipeline/prompt.md

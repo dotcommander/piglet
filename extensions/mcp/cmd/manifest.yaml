@@ -1,0 +1,7 @@
+name: mcp
+version: 0.1.0
+runtime: ./mcp
+capabilities:
+  - tools
+  - commands
+  - prompt

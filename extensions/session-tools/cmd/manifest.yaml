@@ -1,0 +1,14 @@
+name: session-tools
+version: 0.2.0
+runtime: ./session-tools
+description: Session management, handoff, fork, and context preservation across sessions
+capabilities:
+  - commands
+  - tools
+  - prompt
+triggers: [session, handoff, fork, context preservation, resume, continue session]
+defaults:
+  - src: defaults/prompt.md
+    dest: extensions/session-handoff/prompt.md
+  - src: defaults/enhance-prompt.md
+    dest: extensions/session-handoff/enhance-prompt.md

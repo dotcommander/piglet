@@ -1,0 +1,13 @@
+name: cron
+version: 0.1.0
+runtime: ./cron
+description: Schedule and manage recurring tasks
+capabilities:
+  - tools
+  - commands
+  - eventHandlers
+intents: [configure, deploy]
+triggers: [cron, schedule, recurring, timer, periodic task]
+defaults:
+  - src: defaults/schedules.yaml
+    dest: extensions/cron/schedules.yaml

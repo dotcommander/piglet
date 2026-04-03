@@ -1,0 +1,10 @@
+name: plan
+version: 0.1.0
+runtime: ./plan
+description: Persistent structured task tracking with steps, checkpoints, and propose/execute modes
+capabilities:
+  - tools
+  - commands
+  - prompt
+intents: [design, write]
+triggers: [plan, steps, task tracking, checkpoint, propose mode, structured work]

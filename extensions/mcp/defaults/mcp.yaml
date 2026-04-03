@@ -1,0 +1,18 @@
+# MCP Server Configuration
+# Add MCP servers below. Each entry becomes available as piglet tools.
+#
+# servers:
+#   filesystem:
+#     type: stdio                    # "stdio" (default) or "http"
+#     command: npx
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-filesystem"
+#       - "/path/to/allowed/dir"
+#   remote-api:
+#     type: http
+#     url: "https://mcp.example.com/sse"
+#     headers:
+#       Authorization: "Bearer ${MCP_API_KEY}"
+
+servers: {}

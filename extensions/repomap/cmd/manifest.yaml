@@ -1,0 +1,10 @@
+name: repomap
+version: 0.1.0
+runtime: ./repomap
+description: Token-budgeted repository structure map with symbol extraction
+capabilities:
+  - tools
+  - prompt
+  - events
+intents: [search, explain]
+triggers: [repo structure, codebase map, project overview, file tree, symbols]

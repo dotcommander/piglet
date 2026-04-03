@@ -1,0 +1,57 @@
+# Domain taxonomy for prompt classification
+# keywords: substring matches in prompt text
+# projects: marker files whose presence implies the domain
+# extensions: file extensions that imply the domain
+domains:
+  go:
+    keywords: [golang, goroutine, gomod, gosum, cobra, viper, pgx, chi, bubbletea, lipgloss]
+    projects: [go.mod, go.sum, go.work]
+    extensions: [.go]
+  typescript:
+    keywords: [typescript, tsx, nextjs, next.js, react, angular, vue, svelte, deno, bun]
+    projects: [tsconfig.json, deno.json]
+    extensions: [.ts, .tsx]
+  javascript:
+    keywords: [javascript, nodejs, node.js, npm, yarn, pnpm, express, webpack, vite, eslint]
+    projects: [package.json, .npmrc]
+    extensions: [.js, .jsx, .mjs, .cjs]
+  python:
+    keywords: [python, pip, poetry, django, flask, fastapi, pytorch, numpy, pandas, uv]
+    projects: [pyproject.toml, setup.py, requirements.txt, Pipfile]
+    extensions: [.py]
+  rust:
+    keywords: [rust, cargo, tokio, async, borrow, lifetime, crate]
+    projects: [Cargo.toml, Cargo.lock]
+    extensions: [.rs]
+  php:
+    keywords: [php, laravel, symfony, composer, artisan, blade, livewire, pest]
+    projects: [composer.json, artisan]
+    extensions: [.php]
+  frontend:
+    keywords: [css, html, tailwind, component, responsive, dark mode, accessibility, a11y, svg, animation]
+    projects: [tailwind.config.js, tailwind.config.ts, postcss.config.js]
+    extensions: [.css, .scss, .html, .svelte, .vue]
+  database:
+    keywords: [sql, postgres, postgresql, mysql, sqlite, redis, mongo, mongodb, migration, schema, query, index, table]
+    projects: [migrations/, schema.sql]
+    extensions: [.sql]
+  infrastructure:
+    keywords: [docker, kubernetes, k8s, terraform, ansible, nginx, cloudflare, aws, gcp, azure, helm, ci, cd]
+    projects: [Dockerfile, docker-compose.yml, terraform.tf, .github/workflows]
+    extensions: [.tf, .hcl]
+  concurrency:
+    keywords: [goroutine, channel, mutex, lock, deadlock, race, atomic, semaphore, worker pool, parallel, concurrent, thread, async, await]
+    projects: []
+    extensions: []
+  api:
+    keywords: [rest, graphql, grpc, protobuf, openapi, swagger, endpoint, handler, middleware, route, http, websocket]
+    projects: [openapi.yaml, proto/]
+    extensions: [.proto]
+  security:
+    keywords: [auth, oauth, jwt, cors, csrf, xss, sql injection, encryption, tls, certificate, secret, credential, permission, rbac]
+    projects: []
+    extensions: []
+  git:
+    keywords: [git, commit, branch, merge, rebase, cherry-pick, stash, diff, blame, pr, pull request, github, gitlab]
+    projects: [.git]
+    extensions: []

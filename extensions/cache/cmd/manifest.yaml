@@ -1,0 +1,5 @@
+name: cache
+version: 0.1.0
+runtime: ./cache
+description: File-backed TTL cache for piglet extensions
+capabilities: []

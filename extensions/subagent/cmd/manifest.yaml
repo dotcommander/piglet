@@ -1,0 +1,8 @@
+name: subagent
+version: 0.1.0
+runtime: ./subagent
+description: Delegate tasks to independent sub-agents for focused parallel execution
+capabilities:
+  - tools
+intents: [write, debug, search, explain]
+triggers: [delegate, sub-agent, parallel, research, focused task, background work]

@@ -1,0 +1,9 @@
+name: safeguard
+version: 0.1.0
+runtime: ./safeguard
+description: Security interceptor that blocks dangerous commands and file operations
+capabilities:
+  - interceptors
+intents: [review]
+domains: [security]
+triggers: [dangerous command, destructive, force push, rm -rf, drop table]

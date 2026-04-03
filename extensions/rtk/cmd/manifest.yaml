@@ -1,0 +1,9 @@
+name: rtk
+version: 0.1.0
+runtime: ./rtk
+capabilities:
+  - interceptors
+  - prompt
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/rtk/prompt.md

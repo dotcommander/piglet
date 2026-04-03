@@ -1,0 +1,11 @@
+name: skill
+version: 0.1.0
+runtime: ./skill
+description: Load and manage skill files that provide domain knowledge and methodology
+capabilities:
+  - tools
+  - commands
+  - prompt
+  - messageHooks
+intents: [explain, write]
+triggers: [skill, methodology, knowledge, domain expertise, best practices]

@@ -1,0 +1,8 @@
+name: undo
+version: 0.1.0
+runtime: ./undo
+description: Restore files from undo snapshots taken before edits
+capabilities:
+  - commands
+intents: [debug]
+triggers: [undo, restore, revert file, snapshot]

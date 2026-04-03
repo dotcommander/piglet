@@ -1,0 +1,1 @@
+Search for: %s. Provide up to %d results with titles, URLs, and brief descriptions in a structured format.

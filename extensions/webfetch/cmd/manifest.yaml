@@ -1,0 +1,20 @@
+name: webfetch
+version: 0.1.0
+runtime: ./webfetch
+description: Fetch URLs as clean markdown or search the web
+capabilities:
+  - tools
+  - promptSections
+intents: [search, explain]
+triggers: [fetch url, web search, browse, read webpage, documentation lookup]
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/webfetch/prompt.md
+  - src: defaults/fetch-prompt.txt
+    dest: extensions/webfetch/fetch-prompt.txt
+  - src: defaults/search-prompt.txt
+    dest: extensions/webfetch/search-prompt.txt
+  - src: defaults/gemini-fetch-prompt.txt
+    dest: extensions/webfetch/gemini-fetch-prompt.txt
+  - src: defaults/gemini-search-prompt.txt
+    dest: extensions/webfetch/gemini-search-prompt.txt

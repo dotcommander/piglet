@@ -1,0 +1,9 @@
+name: pack-context
+version: 0.1.0
+runtime: ./pack-context
+capabilities:
+  - tools
+  - commands
+  - prompt
+  - messageHooks
+  - eventHandlers

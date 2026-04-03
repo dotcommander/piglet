@@ -1,0 +1,9 @@
+name: loop
+version: 0.1.0
+runtime: ./loop
+capabilities:
+  - commands
+  - promptSections
+defaults:
+  - src: cmd/defaults/prompt.md
+    dest: extensions/loop/prompt.md
