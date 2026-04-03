@@ -227,3 +227,26 @@ func (m *modelMgr) Sync() (int, error) {
 	}
 	return n, err
 }
+
+func (m *modelMgr) WriteWithOverrides(overrides map[string]ext.ModelOverride) (int, error) {
+	provOverrides := make(map[string]provider.CuratedModelOverride, len(overrides))
+	for k, v := range overrides {
+		provOverrides[k] = provider.CuratedModelOverride{
+			Name:          v.Name,
+			ContextWindow: v.ContextWindow,
+			MaxTokens:     v.MaxTokens,
+		}
+	}
+
+	yml := provider.GenerateModelsYAML(provider.CuratedModels(), provOverrides)
+
+	path, err := config.ModelsPath()
+	if err != nil {
+		return 0, fmt.Errorf("models path: %w", err)
+	}
+	if err := config.AtomicWrite(path, []byte(yml), 0o644); err != nil {
+		return 0, fmt.Errorf("write models.yaml: %w", err)
+	}
+
+	return m.Sync()
+}

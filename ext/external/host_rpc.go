@@ -278,6 +278,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostSetSessionTitle(msg)
 	case MethodHostSyncModels:
 		h.handleHostSyncModels(msg)
+	case MethodHostWriteModels:
+		h.handleHostWriteModels(msg)
 	case MethodHostRunBackground:
 		h.handleHostRunBackground(msg)
 	case MethodHostCancelBackground:

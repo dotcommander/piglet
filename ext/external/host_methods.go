@@ -415,6 +415,30 @@ func (h *Host) handleHostSyncModels(msg *Message) {
 	h.respond(*msg.ID, HostSyncModelsResult{Updated: updated})
 }
 
+func (h *Host) handleHostWriteModels(msg *Message) {
+	var params HostWriteModelsParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	overrides := make(map[string]ext.ModelOverride, len(params.Overrides))
+	for k, v := range params.Overrides {
+		overrides[k] = ext.ModelOverride{
+			Name:          v.Name,
+			ContextWindow: v.ContextWindow,
+			MaxTokens:     v.MaxTokens,
+		}
+	}
+	n, err := h.app.WriteModelsWithOverrides(overrides)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "write models: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, HostWriteModelsResult{ModelsWritten: n})
+}
+
 func (h *Host) handleHostRunBackground(msg *Message) {
 	var params HostRunBackgroundParams
 	if !h.decodeParams(msg, &params) {

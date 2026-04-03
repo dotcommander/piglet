@@ -91,6 +91,10 @@ func (m *mockModelMgr) Sync() (int, error) {
 	return m.syncCount, m.syncErr
 }
 
+func (m *mockModelMgr) WriteWithOverrides(_ map[string]ext.ModelOverride) (int, error) {
+	return m.syncCount, m.syncErr
+}
+
 func echoToolDef() *ext.ToolDef {
 	return &ext.ToolDef{
 		ToolSchema: core.ToolSchema{

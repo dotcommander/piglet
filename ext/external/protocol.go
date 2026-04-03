@@ -498,6 +498,23 @@ type HostSyncModelsResult struct {
 	Updated int `json:"updated"`
 }
 
+// HostWriteModelsParams holds API-sourced overrides for regenerating models.yaml.
+type HostWriteModelsParams struct {
+	Overrides map[string]HostModelOverride `json:"overrides"`
+}
+
+// HostModelOverride holds values that replace curated defaults for one model.
+type HostModelOverride struct {
+	Name          string `json:"name,omitempty"`
+	ContextWindow int    `json:"contextWindow,omitempty"`
+	MaxTokens     int    `json:"maxTokens,omitempty"`
+}
+
+// HostWriteModelsResult is the host's response after writing models.
+type HostWriteModelsResult struct {
+	ModelsWritten int `json:"modelsWritten"`
+}
+
 // HostRunBackgroundParams starts a background agent.
 type HostRunBackgroundParams struct {
 	Prompt string `json:"prompt"`
@@ -720,6 +737,7 @@ const (
 	MethodHostForkSession             = "host/forkSession"
 	MethodHostSetSessionTitle         = "host/setSessionTitle"
 	MethodHostSyncModels              = "host/syncModels"
+	MethodHostWriteModels             = "host/writeModels"
 	MethodHostRunBackground           = "host/runBackground"
 	MethodHostCancelBackground        = "host/cancelBackground"
 	MethodHostIsBackgroundRunning     = "host/isBackgroundRunning"

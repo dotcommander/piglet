@@ -230,6 +230,26 @@ func (e *Extension) SyncModels(ctx context.Context) (int, error) {
 	return r.Updated, nil
 }
 
+// ModelOverride holds API-sourced values that replace curated defaults.
+type ModelOverride struct {
+	Name          string `json:"name,omitempty"`
+	ContextWindow int    `json:"contextWindow,omitempty"`
+	MaxTokens     int    `json:"maxTokens,omitempty"`
+}
+
+// WriteModels regenerates models.yaml from the embedded curated list with
+// the given API overrides, writes to disk, and reloads the registry.
+func (e *Extension) WriteModels(ctx context.Context, overrides map[string]ModelOverride) (int, error) {
+	type resp struct {
+		ModelsWritten int `json:"modelsWritten"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/writeModels", map[string]any{"overrides": overrides})
+	if err != nil {
+		return 0, err
+	}
+	return r.ModelsWritten, nil
+}
+
 // RunBackground starts a background agent with the given prompt.
 func (e *Extension) RunBackground(ctx context.Context, prompt string) error {
 	return hostCallVoid(e, ctx, "host/runBackground", map[string]any{"prompt": prompt})

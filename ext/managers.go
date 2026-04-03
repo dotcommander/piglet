@@ -89,6 +89,13 @@ type SessionManager interface {
 	FullTree() []TreeNode
 }
 
+// ModelOverride holds API-sourced values that replace curated defaults.
+type ModelOverride struct {
+	Name          string
+	ContextWindow int
+	MaxTokens     int
+}
+
 // ModelManager provides model operations to commands and extensions.
 // Implemented by the wiring layer which imports provider/ and config/.
 type ModelManager interface {
@@ -103,4 +110,8 @@ type ModelManager interface {
 	// Sync updates the model catalog from an external source (e.g. models.dev).
 	// Returns the number of models updated.
 	Sync() (updated int, err error)
+
+	// WriteWithOverrides regenerates models.yaml from the embedded curated
+	// list with the given API overrides, writes it to disk, and reloads.
+	WriteWithOverrides(overrides map[string]ModelOverride) (int, error)
 }

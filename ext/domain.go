@@ -189,6 +189,16 @@ func (a *App) SyncModels() (int, error) {
 	return mm.Sync()
 }
 
+// WriteModelsWithOverrides regenerates models.yaml from the embedded curated
+// list with API-sourced overrides, writes to disk, and reloads the registry.
+func (a *App) WriteModelsWithOverrides(overrides map[string]ModelOverride) (int, error) {
+	mm := a.modelMgr()
+	if mm == nil {
+		return 0, fmt.Errorf("model manager not configured")
+	}
+	return mm.WriteWithOverrides(overrides)
+}
+
 // ResolveModel returns a model and configured provider for the given model ID
 // without switching the main agent. Used by sub-agents to run on different models.
 func (a *App) ResolveModel(id string) (core.Model, core.StreamProvider, error) {
