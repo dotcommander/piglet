@@ -194,14 +194,19 @@ loop:
 
 			if e, ok := evt.(core.EventTurnEnd); ok {
 				if e.Assistant != nil {
-					u := e.Assistant.Usage
+					a := e.Assistant
+					u := a.Usage
 					_ = enc.Encode(map[string]any{
-						"type": "turn_end",
-						"usage": map[string]int{
+						"type":        "turn_end",
+						"model":       a.Model,
+						"provider":    a.Provider,
+						"stop_reason": string(a.StopReason),
+						"usage": map[string]any{
 							"input_tokens":       u.InputTokens,
 							"output_tokens":      u.OutputTokens,
 							"cache_read_tokens":  u.CacheReadTokens,
 							"cache_write_tokens": u.CacheWriteTokens,
+							"cost":               u.Cost,
 						},
 					})
 					if err := extractAgentError(e.Assistant); err != nil {
