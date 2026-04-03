@@ -12,7 +12,7 @@
 
 ## Overview
 
-Piglet is provider-agnostic. It supports multiple LLM providers through three streaming protocols, and you can switch between providers mid-session. Every provider works the same way — set an API key, pick a model, and go.
+Piglet is provider-agnostic. It supports multiple LLM providers through the OpenAI-compatible streaming protocol (built-in) plus extension-provided protocols for Anthropic and Google. You can switch between providers mid-session. Every provider works the same way — set an API key, pick a model, and go.
 
 ## Authentication
 
@@ -77,9 +77,9 @@ Piglet normalizes provider names. These aliases resolve automatically:
 
 | Provider | API Key Variable | Protocol | Notes |
 |----------|-----------------|----------|-------|
-| **Anthropic** | `ANTHROPIC_API_KEY` | Anthropic | Prompt caching enabled automatically |
+| **Anthropic** | `ANTHROPIC_API_KEY` | Anthropic (via extension) | Prompt caching enabled automatically |
 | **OpenAI** | `OPENAI_API_KEY` | OpenAI | Supports `max_completion_tokens` for newer models |
-| **Google** | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Google | Gemini models via `generativelanguage.googleapis.com` |
+| **Google** | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Google (via extension) | Gemini models via `generativelanguage.googleapis.com` |
 | **xAI** | `XAI_API_KEY` | OpenAI | Grok models via OpenAI-compatible API |
 | **Groq** | `GROQ_API_KEY` | OpenAI | Fast inference for open models |
 | **OpenRouter** | `OPENROUTER_API_KEY` | OpenAI | Routes to best available model |
@@ -89,13 +89,13 @@ Piglet normalizes provider names. These aliases resolve automatically:
 
 ### Anthropic
 
-Piglet automatically enables prompt caching for Anthropic models:
+The Anthropic streaming protocol is provided by the `pack-agent` extension. It automatically enables prompt caching:
 
 - The system prompt is wrapped in cacheable blocks
 - Tools are cached with a breakpoint on the last tool
 - Conversation history gets a cache breakpoint on the 2nd-to-last user message
 
-This happens transparently — no configuration needed.
+This happens transparently — no configuration needed. Requires the `pack-agent` extension to be installed (`/extensions install`).
 
 ### OpenAI
 
@@ -103,7 +103,7 @@ Piglet auto-detects whether a model requires `max_completion_tokens` (newer mode
 
 ### Google
 
-Uses the `v1beta` streaming endpoint with Server-Sent Events. Supports larger SSE buffers (256KB initial, 10MB max) for models that produce long outputs.
+The Google streaming protocol is provided by the `pack-agent` extension. Uses the `v1beta` streaming endpoint with Server-Sent Events. Supports larger SSE buffers (256KB initial, 10MB max) for models that produce long outputs. Requires the `pack-agent` extension to be installed (`/extensions install`).
 
 ## Selecting a Model
 
@@ -253,12 +253,12 @@ Edit `models.yaml` to add custom models, adjust costs, or override context windo
 
 ## Streaming Protocols
 
-Piglet implements three streaming protocols natively:
+The core ships with one streaming protocol. Non-OpenAI protocols are provided by extensions via `RegisterStreamProvider`.
 
-| Protocol | Used By | Wire Format |
-|----------|---------|-------------|
-| **OpenAI** | OpenAI, xAI, Groq, OpenRouter, Z.AI, local servers | `POST /v1/chat/completions` with `stream: true`, SSE |
-| **Anthropic** | Anthropic | `POST /v1/messages` with `stream: true`, SSE |
-| **Google** | Google Gemini | `POST /v1beta/models/{id}:streamGenerateContent?alt=sse` |
+| Protocol | Used By | Wire Format | Source |
+|----------|---------|-------------|--------|
+| **OpenAI** | OpenAI, xAI, Groq, OpenRouter, Z.AI, local servers | `POST /v1/chat/completions` with `stream: true`, SSE | Built-in (`provider/`) |
+| **Anthropic** | Anthropic | `POST /v1/messages` with `stream: true`, SSE | `pack-agent` extension |
+| **Google** | Google Gemini | `POST /v1beta/models/{id}:streamGenerateContent?alt=sse` | `pack-agent` extension |
 
-Extensions can register additional streaming protocols via `RegisterStreamProvider`. Any server that speaks one of these three protocols works out of the box.
+Any server that speaks the OpenAI protocol works out of the box. Anthropic and Google require the `pack-agent` extension.

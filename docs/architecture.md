@@ -51,8 +51,8 @@ The core is frozen at 17 events and 5 extension primitives. The answer to "how d
 │  core/                Agent loop, streaming, types   │
 │                       (imports nothing from piglet)  │
 ├──────────────────────────────────────────────────────┤
-│  provider/            OpenAI, Anthropic, Google      │
-│                       streaming implementations      │
+│  provider/            OpenAI-compatible streaming     │
+│                       (Anthropic, Google via ext)     │
 ├──────────────────────────────────────────────────────┤
 │  session/             Tree-structured JSONL          │
 │                       persistence                    │
@@ -144,13 +144,13 @@ External extensions run as child processes communicating via JSON-RPC v2 over fi
 
 **Package:** `provider/`
 
-Three streaming protocols implemented natively:
+The OpenAI-compatible streaming protocol is implemented natively. Non-OpenAI protocols (Anthropic, Google) are provided by the `pack-agent` extension via `RegisterStreamProvider`.
 
-| Protocol | Provider | Wire Format |
-|----------|----------|-------------|
-| OpenAI | OpenAI, xAI, Groq, OpenRouter, Z.AI, local servers | `POST /v1/chat/completions` SSE |
-| Anthropic | Anthropic | `POST /v1/messages` SSE |
-| Google | Google Gemini | `POST /v1beta/models/{id}:streamGenerateContent` SSE |
+| Protocol | Provider | Wire Format | Source |
+|----------|----------|-------------|--------|
+| OpenAI | OpenAI, xAI, Groq, OpenRouter, Z.AI, local servers | `POST /v1/chat/completions` SSE | Built-in |
+| Anthropic | Anthropic | `POST /v1/messages` SSE | `pack-agent` extension |
+| Google | Google Gemini | `POST /v1beta/models/{id}:streamGenerateContent` SSE | `pack-agent` extension |
 
 Each provider implements `core.StreamProvider`:
 

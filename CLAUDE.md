@@ -133,7 +133,7 @@ tool/          Compiled-in tools (see tool/register.go)
 command/       Compiled-in commands, status sections, shortcuts (see command/builtins.go)
 prompt/        System prompt builder + compiled-in prompt sections
 config/        Settings (YAML), auth (JSON)
-provider/      3 streaming protocols: OpenAI (+ compatible: OpenRouter, xAI, Groq, LM Studio, Ollama), Anthropic, Google
+provider/      OpenAI-compatible streaming (OpenRouter, xAI, Groq, LM Studio, Ollama). Anthropic/Google via extensions.
 session/       Tree-structured JSONL persistence, in-place branching, compaction (see docs/sessions.md)
 shell/         Agent lifecycle — submit, process events, drain actions (frontend-agnostic)
 tui/           Bubble Tea v2 UI (consumes shell/)
