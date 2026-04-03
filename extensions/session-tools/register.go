@@ -198,4 +198,6 @@ func Register(e *sdk.Extension) {
 			return sdk.TextResult("Handoff complete. Context transferred to new session."), nil
 		},
 	})
+
+	RegisterBridge(e)
 }
