@@ -324,6 +324,28 @@ func (h *Host) handleHostConversationMessages(msg *Message) {
 	h.respond(*msg.ID, HostConversationMessagesResult{Messages: data})
 }
 
+func (h *Host) handleHostLLMSnapshot(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	snap := h.app.LLMSnapshot()
+	msgsData, err := json.Marshal(snap.Messages)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "marshal snapshot messages: "+err.Error())
+		return
+	}
+	toolsData, err := json.Marshal(snap.Tools)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "marshal snapshot tools: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, map[string]any{
+		"system":   snap.System,
+		"messages": json.RawMessage(msgsData),
+		"tools":    json.RawMessage(toolsData),
+	})
+}
+
 func (h *Host) handleHostSetConversationMessages(msg *Message) {
 	if !h.requireApp(msg) {
 		return

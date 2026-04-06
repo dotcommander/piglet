@@ -166,11 +166,12 @@ func (m Model) handleBgEvent(evt core.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	done := m.shell.ProcessBgEvent(evt)
+	done := m.shell.ProcessBgEvent(m.bgTaskName, evt)
 	notifyCmd := m.applyShellNotifications()
 
 	if done {
 		m.bgEventCh = nil
+		m.bgTaskName = ""
 		// Check if shell restarted the main agent (held-back end completed)
 		if ch := m.shell.EventChannel(); ch != nil && ch != m.eventCh {
 			m.eventCh = ch

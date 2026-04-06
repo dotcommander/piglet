@@ -329,8 +329,14 @@ func (a *App) wrapWithInterceptors(toolName string, execute core.ToolExecuteFn) 
 				return nil, fmt.Errorf("interceptor %s before: %w", ic.Name, err)
 			}
 			if !allow {
+				msg := fmt.Sprintf("blocked by interceptor: %s", ic.Name)
+				if ic.Preview != nil {
+					if preview := ic.Preview(ctx, toolName, currentArgs); preview != "" {
+						msg = preview
+					}
+				}
 				return &core.ToolResult{
-					Content: []core.ContentBlock{core.TextContent{Text: fmt.Sprintf("blocked by interceptor: %s", ic.Name)}},
+					Content: []core.ContentBlock{core.TextContent{Text: msg}},
 				}, nil
 			}
 			if modified != nil {

@@ -110,6 +110,26 @@ func (a *App) LastAssistantText() string {
 	return ""
 }
 
+// LLMSnapshot returns a read-only projection of the data that would be sent
+// to the LLM in the next API call: system prompt, messages, and tool schemas.
+func (a *App) LLMSnapshot() LLMSnapshot {
+	a.mu.RLock()
+	agent := a.agent
+	tools := make([]core.ToolSchema, 0, len(a.tools))
+	for _, td := range a.tools {
+		tools = append(tools, td.ToolSchema)
+	}
+	a.mu.RUnlock()
+
+	var snap LLMSnapshot
+	snap.Tools = tools
+	if agent != nil {
+		snap.System = agent.System()
+		snap.Messages = agent.Messages()
+	}
+	return snap
+}
+
 // ShowOverlay creates or replaces a named overlay in the TUI.
 // Anchor: "center" (default), "right", "left". Width: "50%", "80" (chars), "" (auto).
 func (a *App) ShowOverlay(key, title, content, anchor, width string) {

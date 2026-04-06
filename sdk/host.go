@@ -181,6 +181,19 @@ func (e *Extension) ConversationMessages(ctx context.Context) (json.RawMessage, 
 	return r.Messages, nil
 }
 
+// LLMSnapshot returns a read-only projection of what would be sent to the LLM:
+// system prompt, conversation messages, and tool schemas.
+func (e *Extension) LLMSnapshot(ctx context.Context) (LLMSnapshotResult, error) {
+	return hostCall[LLMSnapshotResult](e, ctx, "host/llmSnapshot", struct{}{})
+}
+
+// LLMSnapshotResult is the response from host/llmSnapshot.
+type LLMSnapshotResult struct {
+	System   string          `json:"system"`
+	Messages json.RawMessage `json:"messages"`
+	Tools    json.RawMessage `json:"tools"`
+}
+
 // SetConversationMessages replaces the conversation history with the given wire messages.
 func (e *Extension) SetConversationMessages(ctx context.Context, messages json.RawMessage) error {
 	return hostCallVoid(e, ctx, "host/setConversationMessages", map[string]any{

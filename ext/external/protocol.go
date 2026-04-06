@@ -198,8 +198,9 @@ type InterceptorBeforeParams struct {
 
 // InterceptorBeforeResult is the extension's response.
 type InterceptorBeforeResult struct {
-	Allow bool           `json:"allow"`
-	Args  map[string]any `json:"args,omitempty"`
+	Allow   bool           `json:"allow"`
+	Args    map[string]any `json:"args,omitempty"`
+	Preview string         `json:"preview,omitempty"` // shown to LLM when allow=false
 }
 
 // InterceptorAfterParams is sent after tool execution.
@@ -736,6 +737,7 @@ const (
 	MethodHostChat                    = "host/chat"
 	MethodHostAgentRun                = "host/agent.run"
 	MethodHostConversationMessages    = "host/conversationMessages"
+	MethodHostLLMSnapshot             = "host/llmSnapshot"
 	MethodHostSetConversationMessages = "host/setConversationMessages"
 	MethodHostSessions                = "host/sessions"
 	MethodHostLoadSession             = "host/loadSession"

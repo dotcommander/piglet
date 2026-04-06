@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dotcommander/piglet/config"
@@ -188,11 +189,13 @@ func (h *Host) bridgePromptSections(app *ext.App, info *ext.ExtInfo) {
 
 func (h *Host) bridgeInterceptors(app *ext.App, info *ext.ExtInfo) {
 	for _, ic := range h.Interceptors() {
+		before, preview := proxyInterceptorBeforeWithPreview(h, ic.Name)
 		app.RegisterInterceptor(ext.Interceptor{
 			Name:     ic.Name,
 			Priority: ic.Priority,
-			Before:   proxyInterceptorBefore(h, ic.Name),
+			Before:   before,
 			After:    proxyInterceptorAfter(h, ic.Name),
+			Preview:  preview,
 		})
 		info.Interceptors = append(info.Interceptors, ic.Name)
 	}
@@ -285,16 +288,35 @@ func proxyCommandExecute(h *Host, cmdName string) func(args string, app *ext.App
 	}
 }
 
-// proxyInterceptorBefore returns a Before function that proxies to the extension.
-func proxyInterceptorBefore(h *Host, name string) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
-	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+// proxyInterceptorBeforeWithPreview returns a paired Before + Preview function.
+// The Before captures the preview from the extension's response; Preview returns it.
+func proxyInterceptorBeforeWithPreview(h *Host, name string) (
+	func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error),
+	func(ctx context.Context, toolName string, args map[string]any) string,
+) {
+	var lastPreview atomic.Value // stores string
+
+	before := func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 		select {
 		case <-h.Closed():
-			return true, args, nil // host dead — allow tool to proceed
+			return true, args, nil
 		default:
 		}
-		return h.InterceptBefore(ctx, name, toolName, args)
+		allow, modArgs, preview, err := h.InterceptBefore(ctx, name, toolName, args)
+		if preview != "" {
+			lastPreview.Store(preview)
+		}
+		return allow, modArgs, err
 	}
+
+	preview := func(_ context.Context, _ string, _ map[string]any) string {
+		if v, ok := lastPreview.Load().(string); ok {
+			return v
+		}
+		return ""
+	}
+
+	return before, preview
 }
 
 // proxyInterceptorAfter returns an After function that proxies to the extension.

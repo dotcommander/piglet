@@ -271,6 +271,8 @@ func (h *Host) handleRequest(msg *Message) {
 		go h.handleHostAgentRun(msg) // may be slow (agent loop)
 	case MethodHostConversationMessages:
 		h.handleHostConversationMessages(msg)
+	case MethodHostLLMSnapshot:
+		h.handleHostLLMSnapshot(msg)
 	case MethodHostSetConversationMessages:
 		h.handleHostSetConversationMessages(msg)
 	case MethodHostSessions:

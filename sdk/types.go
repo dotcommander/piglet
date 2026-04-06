@@ -66,6 +66,7 @@ type InterceptorDef struct {
 	Priority int
 	Before   func(ctx context.Context, toolName string, args map[string]any) (allow bool, modified map[string]any, err error)
 	After    func(ctx context.Context, toolName string, details any) (any, error)
+	Preview  func(ctx context.Context, toolName string, args map[string]any) string // optional: called when Before blocks
 }
 
 // EventHandlerDef defines an agent lifecycle event handler.

@@ -317,26 +317,26 @@ func (h *Host) ExecuteCommand(ctx context.Context, name, args string) error {
 // ---------------------------------------------------------------------------
 
 // InterceptBefore sends an interceptor/before request to the extension.
-func (h *Host) InterceptBefore(ctx context.Context, name, toolName string, args map[string]any) (bool, map[string]any, error) {
+func (h *Host) InterceptBefore(ctx context.Context, name, toolName string, args map[string]any) (bool, map[string]any, string, error) {
 	resp, err := h.request(ctx, MethodInterceptorBefore, InterceptorBeforeParams{
 		Name:     name,
 		ToolName: toolName,
 		Args:     args,
 	})
 	if err != nil {
-		return true, args, err // allow on error to avoid blocking
+		return true, args, "", err // allow on error to avoid blocking
 	}
 	if resp.Error != nil {
-		return true, args, fmt.Errorf("interceptor before: %s", resp.Error.Message)
+		return true, args, "", fmt.Errorf("interceptor before: %s", resp.Error.Message)
 	}
 	var result InterceptorBeforeResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return true, args, fmt.Errorf("unmarshal interceptor before: %w", err)
+		return true, args, "", fmt.Errorf("unmarshal interceptor before: %w", err)
 	}
 	if result.Args != nil {
-		return result.Allow, result.Args, nil
+		return result.Allow, result.Args, result.Preview, nil
 	}
-	return result.Allow, args, nil
+	return result.Allow, args, result.Preview, nil
 }
 
 // InterceptAfter sends an interceptor/after request to the extension.

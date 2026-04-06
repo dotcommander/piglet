@@ -96,6 +96,12 @@ type Interceptor struct {
 	// After is called after tool execution.
 	// Return modified result to transform output.
 	After func(ctx context.Context, toolName string, result any) (any, error)
+
+	// Preview is called when Before blocks a tool call (allow=false).
+	// If set, its return value replaces the generic "blocked by interceptor"
+	// message — letting the LLM see a description of what the tool would do.
+	// nil = use default block message.
+	Preview func(ctx context.Context, toolName string, args map[string]any) string
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +263,15 @@ type PromptSection struct {
 // ---------------------------------------------------------------------------
 // Provider registration
 // ---------------------------------------------------------------------------
+
+// LLMSnapshot is a read-only projection of what would be sent to the LLM
+// in the next API call. Extensions use this for introspection (token budgets,
+// debugging, display) without triggering an actual LLM request.
+type LLMSnapshot struct {
+	System   string            // assembled system prompt
+	Messages []core.Message    // conversation history
+	Tools    []core.ToolSchema // available tool schemas
+}
 
 // ExtInfo describes a loaded extension for /extensions listing.
 type ExtInfo struct {

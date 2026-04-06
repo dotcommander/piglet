@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,19 +31,17 @@ type Shell struct {
 	settings *config.Settings
 	ctx      context.Context
 
-	mu       sync.Mutex
-	queue    []queuedItem
-	running  bool
-	eventCh  <-chan core.Event
-	quitting bool
+	mu        sync.Mutex
+	queue     []queuedItem
+	queueMode QueueMode
+	running   bool
+	eventCh   <-chan core.Event
+	quitting  bool
 
-	// Background agent
-	bgAgent   *core.Agent
-	bgEventCh <-chan core.Event
-	bgTask    string
-	bgResult  strings.Builder
+	// Background task registry
+	bgTasks map[string]*bgEntry
 
-	// Main agent ended but bg agent still running
+	// Main agent ended but bg tasks still running
 	heldBackEnd bool
 
 	// Accumulated notifications for the frontend
@@ -194,6 +191,20 @@ func (s *Shell) QueueSize() int {
 	return len(s.queue)
 }
 
+// SetQueueMode switches between DrainAll and SingleStep queue processing.
+func (s *Shell) SetQueueMode(mode QueueMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queueMode = mode
+}
+
+// QueueMode returns the current queue processing mode.
+func (s *Shell) QueueMode() QueueMode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.queueMode
+}
+
 // Quitting returns true if a quit action was processed.
 func (s *Shell) Quitting() bool {
 	s.mu.Lock()
@@ -209,11 +220,29 @@ func (s *Shell) EventChannel() <-chan core.Event {
 	return s.eventCh
 }
 
-// BgEventChannel returns the background agent event channel, or nil.
+// BgEventChannels returns all active background task event channels keyed by name.
+func (s *Shell) BgEventChannels() map[string]<-chan core.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.bgTasks) == 0 {
+		return nil
+	}
+	out := make(map[string]<-chan core.Event, len(s.bgTasks))
+	for name, entry := range s.bgTasks {
+		out[name] = entry.eventCh
+	}
+	return out
+}
+
+// BgEventChannel returns the first active background task's event channel, or nil.
+// Kept for backward compatibility with frontends that handle only one bg task.
 func (s *Shell) BgEventChannel() <-chan core.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.bgEventCh
+	for _, entry := range s.bgTasks {
+		return entry.eventCh
+	}
+	return nil
 }
 
 // Notifications returns and clears all pending notifications.

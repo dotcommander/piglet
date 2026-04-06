@@ -9,11 +9,21 @@ import (
 )
 
 // startBackground is the callback wired into ext.App via WithRunBackground.
+// Uses the prompt as the task name (truncated to 20 runes).
 func (s *Shell) startBackground(prompt string) error {
+	name := TruncateRunes(prompt, 20)
+	return s.StartBackgroundNamed(name, prompt)
+}
+
+// StartBackgroundNamed starts a named background agent with the given prompt.
+func (s *Shell) StartBackgroundNamed(name, prompt string) error {
 	s.mu.Lock()
-	if s.bgAgent != nil && s.bgAgent.IsRunning() {
+	if s.bgTasks == nil {
+		s.bgTasks = make(map[string]*bgEntry)
+	}
+	if _, exists := s.bgTasks[name]; exists {
 		s.mu.Unlock()
-		return fmt.Errorf("background task already running")
+		return fmt.Errorf("background task %q already running", name)
 	}
 	agent := s.agent
 	s.mu.Unlock()
@@ -28,42 +38,43 @@ func (s *Shell) startBackground(prompt string) error {
 		bgMax = config.IntOr(s.settings.Agent.BgMaxTurns, 5)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.bgAgent = core.NewAgent(core.AgentConfig{
+	bgAgent := core.NewAgent(core.AgentConfig{
 		System:   agent.System(),
 		Provider: agent.Provider(),
 		Tools:    tools,
 		MaxTurns: bgMax,
 	})
 
-	ch := s.bgAgent.Start(s.ctx, prompt)
-	s.bgEventCh = ch
-	s.bgTask = prompt
-	s.bgResult.Reset()
+	ch := bgAgent.Start(s.ctx, prompt)
 
-	task := TruncateRunes(prompt, 20)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.bgTasks[name] = &bgEntry{
+		agent:   bgAgent,
+		eventCh: ch,
+		prompt:  prompt,
+	}
+
 	s.notifications = append(s.notifications, Notification{
 		Kind: NotifyStatus,
 		Key:  ext.StatusKeyBg,
-		Text: "bg: " + task,
+		Text: "bg: " + name,
 	})
 
 	return nil
 }
 
-// StopBackground cancels the running background agent.
+// StopBackground cancels all running background tasks.
 func (s *Shell) StopBackground() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.bgAgent != nil && s.bgAgent.IsRunning() {
-		s.bgAgent.Stop()
+	for name, entry := range s.bgTasks {
+		if entry.agent != nil && entry.agent.IsRunning() {
+			entry.agent.Stop()
+		}
+		delete(s.bgTasks, name)
 	}
-	s.bgAgent = nil
-	s.bgEventCh = nil
-	s.bgTask = ""
-	s.bgResult.Reset()
 	s.notifications = append(s.notifications, Notification{
 		Kind: NotifyStatus,
 		Key:  ext.StatusKeyBg,
@@ -71,11 +82,48 @@ func (s *Shell) StopBackground() {
 	})
 }
 
-// isBackgroundRunning returns whether a background agent is currently active.
+// StopBackgroundNamed cancels a specific named background task.
+func (s *Shell) StopBackgroundNamed(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.bgTasks[name]
+	if !ok {
+		return
+	}
+	if entry.agent != nil && entry.agent.IsRunning() {
+		entry.agent.Stop()
+	}
+	delete(s.bgTasks, name)
+	if len(s.bgTasks) == 0 {
+		s.notifications = append(s.notifications, Notification{
+			Kind: NotifyStatus,
+			Key:  ext.StatusKeyBg,
+			Text: "",
+		})
+	}
+}
+
+// isBackgroundRunning returns whether any background task is currently active.
 func (s *Shell) isBackgroundRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.bgAgent != nil && s.bgAgent.IsRunning()
+	for _, entry := range s.bgTasks {
+		if entry.agent != nil && entry.agent.IsRunning() {
+			return true
+		}
+	}
+	return false
+}
+
+// BackgroundTasks returns the names of all active background tasks.
+func (s *Shell) BackgroundTasks() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	names := make([]string, 0, len(s.bgTasks))
+	for name := range s.bgTasks {
+		names = append(names, name)
+	}
+	return names
 }
 
 // TruncateRunes truncates s to max runes, appending "…" (U+2026) if truncated.

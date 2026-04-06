@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// QueueMode controls how the shell drains its input queue on EventAgentEnd.
+type QueueMode int
+
+const (
+	// QueueDrainAll processes all queued items at once, merging prompts
+	// into a single turn. This is the default.
+	QueueDrainAll QueueMode = iota
+
+	// QueueSingleStep processes one item from the queue per agent turn.
+	// Remaining items stay queued for the next EventAgentEnd.
+	QueueSingleStep
+)
+
 type queuePriority int
 
 const (
@@ -26,6 +39,24 @@ func drainQueue(q *[]queuedItem) []queuedItem {
 		return int(a.priority) - int(b.priority)
 	})
 	return items
+}
+
+// drainOne removes and returns the highest-priority item from the queue.
+// Returns nil if the queue is empty.
+func drainOne(q *[]queuedItem) *queuedItem {
+	if len(*q) == 0 {
+		return nil
+	}
+	// Find highest priority (lowest value)
+	best := 0
+	for i, it := range *q {
+		if it.priority < (*q)[best].priority {
+			best = i
+		}
+	}
+	item := (*q)[best]
+	*q = slices.Delete(*q, best, best+1)
+	return &item
 }
 
 func drainPrompts(items []queuedItem) []queuedItem {

@@ -102,7 +102,8 @@ type Model struct {
 	eventCh <-chan core.Event
 
 	// Background event channel (mirrors shell.BgEventChannel for polling)
-	bgEventCh <-chan core.Event
+	bgEventCh  <-chan core.Event
+	bgTaskName string
 
 	// Streaming glamour cache
 	streamCache streamCache

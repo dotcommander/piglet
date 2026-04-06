@@ -573,6 +573,7 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 	// Run all interceptors' Before hooks in order
 	allow := true
 	args := maps.Clone(params.Args)
+	var preview string
 	for _, ic := range e.interceptors {
 		if ic.Before == nil {
 			continue
@@ -584,6 +585,9 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 		}
 		if !a {
 			allow = false
+			if ic.Preview != nil {
+				preview = ic.Preview(ctx, params.ToolName, args)
+			}
 			break
 		}
 		if modified != nil {
@@ -591,10 +595,14 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 		}
 	}
 
-	e.sendResponse(*msg.ID, map[string]any{
+	resp := map[string]any{
 		"allow": allow,
 		"args":  args,
-	})
+	}
+	if preview != "" {
+		resp["preview"] = preview
+	}
+	e.sendResponse(*msg.ID, resp)
 }
 
 func (e *Extension) handleInterceptorAfter(msg *rpcMessage) {

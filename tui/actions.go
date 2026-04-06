@@ -93,9 +93,13 @@ func (m *Model) applyShellNotifications() tea.Cmd {
 	}
 
 	// Check if shell started a background agent
-	if ch := m.shell.BgEventChannel(); ch != nil && ch != m.bgEventCh {
-		m.bgEventCh = ch
-		cmds = append(cmds, pollBgEvents(ch))
+	for name, ch := range m.shell.BgEventChannels() {
+		if ch != m.bgEventCh {
+			m.bgEventCh = ch
+			m.bgTaskName = name
+			cmds = append(cmds, pollBgEvents(ch))
+			break // TUI tracks one bg task at a time for now
+		}
 	}
 
 	return tea.Batch(cmds...)

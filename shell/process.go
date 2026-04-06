@@ -56,9 +56,27 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 		}
 
 	case core.EventAgentEnd:
-		// Check if bg agent is still running
+		// Repair any orphaned tool calls before anything else.
 		s.mu.Lock()
-		bgRunning := s.bgAgent != nil && s.bgAgent.IsRunning()
+		agent := s.agent
+		s.mu.Unlock()
+		if agent != nil {
+			msgs := agent.Messages()
+			repaired := repairMessageSequence(msgs)
+			if len(repaired) != len(msgs) {
+				agent.SetMessages(repaired)
+			}
+		}
+
+		// Check if any bg task is still running
+		s.mu.Lock()
+		bgRunning := false
+		for _, entry := range s.bgTasks {
+			if entry.agent != nil && entry.agent.IsRunning() {
+				bgRunning = true
+				break
+			}
+		}
 		s.mu.Unlock()
 
 		if bgRunning {
@@ -101,25 +119,29 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 	return false
 }
 
-// ProcessBgEvent handles one background agent event.
-func (s *Shell) ProcessBgEvent(evt core.Event) (done bool) {
+// ProcessBgEvent handles one background agent event for the given task name.
+func (s *Shell) ProcessBgEvent(name string, evt core.Event) (done bool) {
 	switch e := evt.(type) {
 	case core.EventStreamDelta:
 		if e.Kind == "text" {
 			s.mu.Lock()
-			s.bgResult.WriteString(e.Delta)
+			if entry, ok := s.bgTasks[name]; ok {
+				entry.result.WriteString(e.Delta)
+			}
 			s.mu.Unlock()
 		}
 
 	case core.EventAgentEnd:
 		s.mu.Lock()
-		result := s.bgResult.String()
-		task := s.bgTask
+		entry, ok := s.bgTasks[name]
+		var result, prompt string
+		if ok {
+			result = entry.result.String()
+			prompt = entry.prompt
+			delete(s.bgTasks, name)
+		}
+		anyRunning := len(s.bgTasks) > 0
 		heldBack := s.heldBackEnd
-		s.bgAgent = nil
-		s.bgEventCh = nil
-		s.bgTask = ""
-		s.bgResult.Reset()
 		s.mu.Unlock()
 
 		if result == "" {
@@ -127,12 +149,14 @@ func (s *Shell) ProcessBgEvent(evt core.Event) (done bool) {
 		}
 		s.notify(Notification{
 			Kind: NotifyMessage,
-			Text: fmt.Sprintf("Background task: %s\n\n%s", task, result),
+			Text: fmt.Sprintf("Background task: %s\n\n%s", prompt, result),
 		})
-		s.notify(Notification{Kind: NotifyStatus, Key: ext.StatusKeyBg, Text: ""})
+		if !anyRunning {
+			s.notify(Notification{Kind: NotifyStatus, Key: ext.StatusKeyBg, Text: ""})
+		}
 
-		// Complete held-back main agent end
-		if heldBack {
+		// Complete held-back main agent end if no bg tasks remain
+		if heldBack && !anyRunning {
 			s.mu.Lock()
 			s.heldBackEnd = false
 			s.mu.Unlock()
@@ -275,6 +299,15 @@ func (s *Shell) drainActions() {
 // merges queued prompts into one turn, and restarts the agent if needed.
 func (s *Shell) drainAndSubmitQueued() {
 	s.mu.Lock()
+	mode := s.queueMode
+	s.mu.Unlock()
+
+	if mode == QueueSingleStep {
+		s.drainAndSubmitOne()
+		return
+	}
+
+	s.mu.Lock()
 	items := drainQueue(&s.queue)
 	s.mu.Unlock()
 
@@ -300,6 +333,30 @@ func (s *Shell) drainAndSubmitQueued() {
 		s.persistMessage(userMsg)
 		s.notify(Notification{Kind: NotifyQueuedSubmit, Text: content})
 		s.startAgent(content)
+	}
+
+	s.drainActions()
+}
+
+// drainAndSubmitOne processes a single item from the queue.
+func (s *Shell) drainAndSubmitOne() {
+	s.mu.Lock()
+	item := drainOne(&s.queue)
+	s.mu.Unlock()
+
+	if item == nil {
+		s.drainActions()
+		return
+	}
+
+	if item.priority == priorityLater {
+		name, args := parseSlashCommand(item.content)
+		s.runCommand(name, args)
+	} else {
+		userMsg := &core.UserMessage{Content: item.content, Timestamp: time.Now()}
+		s.persistMessage(userMsg)
+		s.notify(Notification{Kind: NotifyQueuedSubmit, Text: item.content})
+		s.startAgent(item.content)
 	}
 
 	s.drainActions()
