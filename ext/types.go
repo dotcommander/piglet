@@ -146,6 +146,35 @@ const (
 )
 
 // ---------------------------------------------------------------------------
+// Steer disposition
+// ---------------------------------------------------------------------------
+
+// SteerDisposition indicates what happened to a steering message.
+type SteerDisposition int
+
+const (
+	// SteerDelivered means the message was injected into the active agent run.
+	SteerDelivered SteerDisposition = iota
+	// SteerQueued means the agent was idle; the message is queued for the next run.
+	SteerQueued
+	// SteerDropped means no agent is bound; the message was lost.
+	SteerDropped
+)
+
+func (d SteerDisposition) String() string {
+	switch d {
+	case SteerDelivered:
+		return "delivered"
+	case SteerQueued:
+		return "queued"
+	case SteerDropped:
+		return "dropped"
+	default:
+		return "unknown"
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Renderers
 // ---------------------------------------------------------------------------
 

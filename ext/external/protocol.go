@@ -164,6 +164,11 @@ type SteerParams struct {
 	Content string `json:"content"`
 }
 
+// AbortWithMarkerParams is the payload for aborting with a session marker.
+type AbortWithMarkerParams struct {
+	Reason string `json:"reason"`
+}
+
 // ---------------------------------------------------------------------------
 // Command execution: host → extension (request/response)
 // ---------------------------------------------------------------------------
@@ -764,4 +769,5 @@ const (
 	MethodShowMessage                 = "showMessage"
 	MethodSendMessage                 = "sendMessage"
 	MethodSteer                       = "steer"
+	MethodAbortWithMarker             = "abortWithMarker"
 )

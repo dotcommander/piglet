@@ -58,6 +58,12 @@ type App struct {
 	cancelBackground    func()
 	isBackgroundRunning func() bool
 
+	// Abort with marker callback (set via Bind)
+	abortWithMarker func(reason string)
+
+	// Steer with disposition callback (set via Bind)
+	steerFn func(content string) SteerDisposition
+
 	// Idle signaling
 	idle        bool            // true when agent is not running
 	idleWaiters []chan struct{} // pending WaitForIdle callers
@@ -147,6 +153,16 @@ func WithCancelBackground(fn func()) BindOption {
 // WithIsBackgroundRunning sets the callback to check if a background agent is active.
 func WithIsBackgroundRunning(fn func() bool) BindOption {
 	return func(a *App) { a.isBackgroundRunning = fn }
+}
+
+// WithAbortWithMarker sets the callback for aborting with a session marker.
+func WithAbortWithMarker(fn func(reason string)) BindOption {
+	return func(a *App) { a.abortWithMarker = fn }
+}
+
+// WithSteer sets the callback for steering with disposition reporting.
+func WithSteer(fn func(content string) SteerDisposition) BindOption {
+	return func(a *App) { a.steerFn = fn }
 }
 
 // ---------------------------------------------------------------------------

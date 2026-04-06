@@ -101,6 +101,11 @@ func (b *BaseProvider) DoHTTPRequest(ctx context.Context, url string, body []byt
 			}
 			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.Model.Provider))
 		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if d := parseRetryAfter(resp.Header.Get("Retry-After")); d > 0 {
+				return nil, &RetryAfterError{Err: err, Duration: d}
+			}
+		}
 		return nil, err
 	}
 

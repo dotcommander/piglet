@@ -22,12 +22,33 @@ func (a *App) SendMessage(content string) {
 }
 
 // Steer injects a steering message that interrupts the current turn.
-func (a *App) Steer(content string) {
+// Returns a SteerDisposition indicating whether the message was delivered,
+// queued, or dropped.
+func (a *App) Steer(content string) SteerDisposition {
 	a.mu.RLock()
+	fn := a.steerFn
 	agent := a.agent
 	a.mu.RUnlock()
+
+	if fn != nil {
+		return fn(content)
+	}
 	if agent != nil {
 		agent.Steer(&core.UserMessage{Content: content})
+		return SteerDelivered
+	}
+	return SteerDropped
+}
+
+// AbortWithMarker cancels the current agent run and persists an interruption
+// marker to the session, so the LLM sees the context on the next run.
+// Falls back to plain Steer abort if no marker callback is bound.
+func (a *App) AbortWithMarker(reason string) {
+	a.mu.RLock()
+	fn := a.abortWithMarker
+	a.mu.RUnlock()
+	if fn != nil {
+		fn(reason)
 	}
 }
 

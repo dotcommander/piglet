@@ -324,12 +324,16 @@ type wireMsg struct {
 type compactConfig struct {
 	KeepRecent         int `yaml:"keep_recent"`
 	TruncateToolResult int `yaml:"truncate_tool_result"`
+	LightTrimMaxLen    int `yaml:"light_trim_max_len"`
+	SkipLLMThreshold   int `yaml:"skip_llm_threshold"`
 }
 
 func defaultCompactConfig() compactConfig {
 	return compactConfig{
 		KeepRecent:         6,
 		TruncateToolResult: 2000,
+		LightTrimMaxLen:    2000,
+		SkipLLMThreshold:   8000,
 	}
 }
 
@@ -353,8 +357,14 @@ func makeCompactHandler(ext *sdk.Extension, s *Store) func(ctx context.Context, 
 			return raw, nil
 		}
 
-		// Truncate large tool results in messages being compacted to prevent
-		// bash/read output from dominating the summarizer's budget.
+		// Stage 1: Lightweight pre-pass — microcompact old tool results
+		// (replaces full tool output with one-line summaries, no LLM needed).
+		microcompactToolResults(params.Messages, cfg.KeepRecent)
+
+		// Stage 2: Trim long text blocks in older messages, keeping head+tail.
+		lightTrimMessages(params.Messages, cfg.KeepRecent, cfg.LightTrimMaxLen)
+
+		// Stage 3: Truncate remaining large tool results for the summarizer.
 		truncateToolResults(params.Messages[:len(params.Messages)-cfg.KeepRecent], cfg.TruncateToolResult)
 
 		// Extract prior compaction file lists for cumulative tracking.
@@ -368,8 +378,12 @@ func makeCompactHandler(ext *sdk.Extension, s *Store) func(ctx context.Context, 
 		// so cumulative tracking survives across compaction boundaries.
 		summary = mergeFileLists(summary, priorRead, priorModified)
 
-		// Try to refine with LLM if we have facts
-		if summary != "" {
+		// Stage 4: If lightweight passes reduced token count below threshold,
+		// skip the expensive LLM summarization call.
+		skipLLM := cfg.SkipLLMThreshold > 0 && estimateTokens(params.Messages) < cfg.SkipLLMThreshold
+
+		// Try to refine with LLM if we have facts and are above threshold
+		if summary != "" && !skipLLM {
 			resp, err := ext.Chat(ctx, sdk.ChatRequest{
 				System:   strings.TrimSpace(defaultCompactSystem),
 				Messages: []sdk.ChatMessage{{Role: "user", Content: summary}},

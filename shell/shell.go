@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
@@ -78,6 +79,8 @@ func (s *Shell) bgBindOpts() []ext.BindOption {
 		ext.WithRunBackground(s.startBackground),
 		ext.WithCancelBackground(s.StopBackground),
 		ext.WithIsBackgroundRunning(s.isBackgroundRunning),
+		ext.WithAbortWithMarker(s.AbortWithMarker),
+		ext.WithSteer(s.Steer),
 	}
 }
 
@@ -108,6 +111,7 @@ func (s *Shell) IsRunning() bool {
 // Abort cancels the current agent run without blocking. The agent
 // goroutine finishes asynchronously and emits EventAgentEnd, which
 // the frontend uses to transition out of the streaming state.
+// No marker is inserted — the LLM does not see the interruption.
 func (s *Shell) Abort() {
 	s.mu.Lock()
 	agent := s.agent
@@ -117,14 +121,43 @@ func (s *Shell) Abort() {
 	}
 }
 
-// Steer injects a steering message into the running agent turn.
-func (s *Shell) Steer(content string) {
+// AbortWithMarker cancels the current agent run and persists a marker
+// message to the session so the LLM sees the interruption context on
+// the next run. Use for programmatic cancellations (e.g. plan-mode
+// transitions) where the model needs to know the prior run was interrupted.
+func (s *Shell) AbortWithMarker(reason string) {
 	s.mu.Lock()
 	agent := s.agent
 	s.mu.Unlock()
-	if agent != nil {
-		agent.Steer(&core.UserMessage{Content: content})
+	if agent == nil {
+		return
 	}
+	agent.Cancel()
+	marker := &core.UserMessage{
+		Content:   "[Request interrupted: " + reason + "]",
+		Timestamp: time.Now(),
+	}
+	s.persistMessage(marker)
+}
+
+// Steer injects a steering message into the running agent turn.
+// Returns the disposition: delivered (active run), queued (idle), or dropped (no agent).
+func (s *Shell) Steer(content string) ext.SteerDisposition {
+	s.mu.Lock()
+	agent := s.agent
+	running := s.running
+	s.mu.Unlock()
+
+	if agent == nil {
+		return ext.SteerDropped
+	}
+	if running {
+		agent.Steer(&core.UserMessage{Content: content})
+		return ext.SteerDelivered
+	}
+	// Agent exists but not running — queue for next run.
+	s.enqueue(content, false)
+	return ext.SteerQueued
 }
 
 // Commands returns all registered slash commands.

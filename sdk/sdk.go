@@ -242,6 +242,12 @@ func (e *Extension) Steer(content string) {
 	e.sendNotification("steer", map[string]string{"content": content})
 }
 
+// AbortWithMarker cancels the current agent run and persists an interruption
+// marker to the session, so the LLM sees the context on the next run.
+func (e *Extension) AbortWithMarker(reason string) {
+	e.sendNotification("abortWithMarker", map[string]string{"reason": reason})
+}
+
 // Log sends a log message to the host.
 func (e *Extension) Log(level, msg string) {
 	e.sendNotification("log", map[string]string{"level": level, "message": msg})

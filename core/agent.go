@@ -38,6 +38,8 @@ type AgentConfig struct {
 	MaxRetries      int // retry attempts on error; 0 = use default (3)
 	ToolConcurrency int // max parallel tool calls; 0 = use default (10)
 
+	MaxRetryDelay time.Duration // cap on retry backoff; 0 = use default (5s)
+
 	// OnCompact is called when token usage exceeds CompactAt.
 	// It receives the context and current messages, and returns the compacted message set.
 	// If nil, compaction is disabled.
@@ -57,6 +59,13 @@ func (c AgentConfig) toolConcurrency() int {
 		return c.ToolConcurrency
 	}
 	return ToolConcurrency
+}
+
+func (c AgentConfig) maxRetryDelay() time.Duration {
+	if c.MaxRetryDelay > 0 {
+		return c.MaxRetryDelay
+	}
+	return RetryMaxDelay
 }
 
 // Agent manages the agent loop: streaming, tool execution, steering, events.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ func (a *Agent) streamWithRetry(ctx context.Context) (*AssistantMessage, error) 
 			return nil, err
 		}
 
-		delay := retryDelay(attempt)
+		delay := a.retryDelay(attempt, err)
 		a.emit(EventRetry{
 			Attempt: attempt + 1,
 			Max:     maxRetries,
@@ -112,10 +113,26 @@ func (a *Agent) streamOnce(ctx context.Context) (*AssistantMessage, error) {
 	return final, nil
 }
 
-func retryDelay(attempt int) time.Duration {
+// retryAfterHint is satisfied by errors that carry a provider Retry-After duration.
+// Defined here as an unexported interface to avoid importing the provider package.
+type retryAfterHint interface {
+	RetryAfter() time.Duration
+}
+
+func (a *Agent) retryDelay(attempt int, err error) time.Duration {
+	maxDelay := a.cfg.maxRetryDelay()
+
+	// Prefer provider-supplied Retry-After when present.
+	var hint retryAfterHint
+	if errors.As(err, &hint) {
+		if d := hint.RetryAfter(); d > 0 {
+			return min(d, maxDelay)
+		}
+	}
+
 	d := RetryBaseDelay * (1 << max(attempt, 0))
-	if d > RetryMaxDelay {
-		d = RetryMaxDelay
+	if d > maxDelay {
+		d = maxDelay
 	}
 	return d
 }

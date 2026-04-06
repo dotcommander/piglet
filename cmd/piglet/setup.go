@@ -238,6 +238,12 @@ func registerBuiltins(app *ext.App, rt *runtime) {
 		GrepLimit: rt.settings.Tools.GrepLimit,
 	})
 	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
+
+	// Per-tool circuit breaker: disable tools after 5 consecutive errors, re-enable after 30s.
+	cbInterceptor, cbHandler := ext.NewToolCircuitBreaker(5, 30*time.Second)
+	app.RegisterInterceptor(cbInterceptor)
+	app.RegisterEventHandler(cbHandler)
+
 	app.RegisterExtInfo(ext.ExtInfo{
 		Name:     "builtin",
 		Kind:     "builtin",
