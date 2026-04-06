@@ -16,7 +16,7 @@ require (
 	github.com/go-rod/rod v0.116.2
 	github.com/gocolly/colly/v2 v2.3.0
 	github.com/google/uuid v1.6.0
-	github.com/mark3labs/mcp-go v0.46.0
+	github.com/mark3labs/mcp-go v0.47.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
