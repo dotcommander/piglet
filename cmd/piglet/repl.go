@@ -37,7 +37,7 @@ func runREPL(ctx context.Context, rt *runtime) error {
 		}
 
 		resp := sh.Submit(input)
-		if replDrainNotifications(sh) {
+		if drainNotifications(sh) {
 			break
 		}
 
@@ -64,7 +64,7 @@ func runREPL(ctx context.Context, rt *runtime) error {
 					fmt.Fprintf(os.Stderr, "[max turns: %d/%d]\n", e.Count, e.Max)
 				}
 				sh.ProcessEvent(evt)
-				if replDrainNotifications(sh) {
+				if drainNotifications(sh) {
 					fmt.Println()
 					return nil
 				}
@@ -89,9 +89,9 @@ func runREPL(ctx context.Context, rt *runtime) error {
 	return nil
 }
 
-// replDrainNotifications prints pending shell notifications to stderr.
+// drainNotifications prints pending shell notifications to stderr.
 // Returns true if a quit was requested.
-func replDrainNotifications(sh *shell.Shell) bool {
+func drainNotifications(sh *shell.Shell) bool {
 	for _, n := range sh.Notifications() {
 		switch n.Kind {
 		case shell.NotifyMessage:

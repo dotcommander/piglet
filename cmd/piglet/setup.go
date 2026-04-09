@@ -4,25 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
-	"github.com/dotcommander/piglet/session"
-	"github.com/dotcommander/piglet/shell"
-	"github.com/dotcommander/piglet/tool"
 )
 
 // runtime holds state threaded between startup phases.
@@ -224,134 +216,6 @@ func loadRuntime(ctx context.Context, debugFlag bool, modelOverride, baseURLOver
 	return rt, cleanup, nil
 }
 
-// registerBuiltins registers all compiled-in tools, commands, and prompt sections.
-func registerBuiltins(app *ext.App, rt *runtime) {
-	tool.RegisterBuiltins(app, tool.BashConfig{
-		DefaultTimeout: rt.settings.Bash.DefaultTimeout,
-		MaxTimeout:     rt.settings.Bash.MaxTimeout,
-		MaxStdout:      rt.settings.Bash.MaxStdout,
-		MaxStderr:      rt.settings.Bash.MaxStderr,
-	}, tool.ToolConfig{
-		ReadLimit: rt.settings.Tools.ReadLimit,
-		GrepLimit: rt.settings.Tools.GrepLimit,
-	})
-	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
-
-	// Per-tool circuit breaker: disable tools after 5 consecutive errors, re-enable after 30s.
-	cbInterceptor, cbHandler := ext.NewToolCircuitBreaker(5, 30*time.Second)
-	app.RegisterInterceptor(cbInterceptor)
-	app.RegisterEventHandler(cbHandler)
-
-	app.RegisterExtInfo(ext.ExtInfo{
-		Name:     "builtin",
-		Kind:     "builtin",
-		Runtime:  "go",
-		Tools:    app.Tools(),
-		Commands: slices.Sorted(maps.Keys(app.Commands())),
-	})
-	prompt.RegisterProjectDocs(app, rt.settings.GetProjectDocs())
-}
-
-// buildSystemPrompt assembles the system prompt with tool mode applied.
-func buildSystemPrompt(app *ext.App, rt *runtime) string {
-	return prompt.Build(app, rt.settings.SystemPrompt, prompt.BuildOptions{
-		OrderOverrides: rt.settings.PromptOrder,
-		ToolMode:       toolModeForModel(rt.model),
-	})
-}
-
-// toolModeForModel returns the tool disclosure mode for the given model.
-// Local providers get compact mode (deferred tools stripped); cloud gets full.
-func toolModeForModel(m core.Model) ext.ToolMode {
-	if provider.IsLocalProvider(m.Provider) {
-		return ext.ToolModeCompact
-	}
-	return ext.ToolModeFull
-}
-
-// loadExtensionsWithRetry loads external extensions, auto-installs if none
-// found and autoInstall is true, then reloads. Returns a composite cleanup.
-func loadExtensionsWithRetry(ctx context.Context, app *ext.App, rt *runtime, autoInstall bool) func() {
-	projectDir := rt.projectExtDir()
-	loaded, cleanup, loadErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, projectDir)
-	if loadErr != nil {
-		slog.Warn("load extensions", "err", loadErr)
-	}
-
-	if autoInstall && loaded == 0 {
-		if err := command.InstallOfficialExtensions(os.Stderr, rt.settings); err != nil {
-			fmt.Fprintf(os.Stderr, "auto-install failed: %v\n", err)
-		}
-		reloaded, reloadCleanup, retryErr := external.LoadAll(ctx, app, tool.UndoSnapshots, rt.settings.DisabledExtensions, projectDir)
-		if retryErr != nil {
-			slog.Warn("load extensions", "err", retryErr)
-		}
-		origCleanup := cleanup
-		cleanup = func() { reloadCleanup(); origCleanup() }
-		if reloaded > 0 {
-			fmt.Fprintf(os.Stderr, "Loaded %d extensions.\n\n", reloaded)
-		}
-	}
-
-	return cleanup
-}
-
-// setupApp creates the extension app, registers tools/commands/extensions,
-// builds the system prompt, and returns the app with cleanup.
-func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, string, func()) {
-	app := ext.NewApp(rt.cwd)
-	registerBuiltins(app, rt)
-
-	extCleanup := loadExtensionsWithRetry(ctx, app, rt, interactive)
-
-	prompt.RegisterSelfKnowledge(app)
-
-	system := buildSystemPrompt(app, rt)
-
-	return app, system, extCleanup
-}
-
-// buildAgent creates the agent from app state and runtime config.
-func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
-	mode := toolModeForModel(rt.model)
-	coreTools := app.CoreToolsForModel(mode)
-	app.SetToolMode(mode)
-	var opts core.StreamOptions
-	if rt.settings.Agent.MaxTokens > 0 {
-		mt := rt.settings.Agent.MaxTokens
-		opts.MaxTokens = &mt
-	}
-	agCfg := core.AgentConfig{
-		Provider:        rt.prov,
-		System:          system,
-		Tools:           coreTools,
-		Options:         opts,
-		MaxTurns:        config.IntOr(rt.settings.Agent.MaxTurns, config.DefaultMaxTurns),
-		MaxMessages:     config.IntOr(rt.settings.Agent.MaxMessages, 200),
-		MaxRetries:      rt.settings.Agent.MaxRetries,
-		ToolConcurrency: rt.settings.Agent.ToolConcurrency,
-	}
-	if c := app.Compactor(); c != nil {
-		agCfg.CompactAt = c.Threshold
-		agCfg.OnCompact = ext.CompactWithCircuitBreaker(c.Compact, 3, 5*time.Minute)
-	}
-	return core.NewAgent(agCfg)
-}
-
-// openSession creates a session and persists the model ID. Returns nil if
-// session creation fails (persistence disabled).
-func openSession(rt *runtime) *session.Session {
-	sess, err := session.New(rt.sessDir, rt.cwd)
-	if err != nil {
-		slog.Warn("session creation failed, persistence disabled", "err", err)
-		return nil
-	}
-	if err := sess.SetModel(rt.model.ID); err != nil {
-		slog.Warn("persist model to session", "error", err)
-	}
-	return sess
-}
-
 func openDebugLog() (*slog.Logger, func(), error) {
 	dir, err := config.ConfigDir()
 	if err != nil {
@@ -365,47 +229,4 @@ func openDebugLog() (*slog.Logger, func(), error) {
 	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	fmt.Fprintf(os.Stderr, "debug: logging to %s\n", path)
 	return logger, func() { _ = f.Close() }, nil
-}
-
-// shellBundle groups the objects produced by buildShell so callers can defer
-// cleanup and sess.Close() correctly.
-type shellBundle struct {
-	sh      *shell.Shell
-	sess    *session.Session
-	cleanup func()
-}
-
-// buildShell runs the 6-step shell-construction sequence shared by run() and
-// runREPL(): setup app → resolve provider → open session → build agent →
-// create shell → attach managers.
-func buildShell(ctx context.Context, rt *runtime, interactive bool) *shellBundle {
-	app, system, extCleanup := setupApp(ctx, rt, interactive)
-
-	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
-		rt.prov = p
-	}
-
-	sess := openSession(rt)
-	ag := buildAgent(app, rt, system)
-
-	sessPtr := &sess
-	sh := shell.New(ctx, shell.Config{
-		App:      app,
-		Agent:    ag,
-		Session:  sess,
-		Settings: &rt.settings,
-	})
-	sh.SetAgent(ag,
-		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-		ext.WithModelManager(newModelMgr(rt, app)),
-		ext.WithToolActivator(func() {
-			ag.SetTools(app.CoreTools())
-		}),
-	)
-
-	return &shellBundle{
-		sh:      sh,
-		sess:    sess,
-		cleanup: extCleanup,
-	}
 }

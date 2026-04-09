@@ -11,7 +11,6 @@ import (
 	"sync"
 	"syscall"
 
-	"charm.land/lipgloss/v2"
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
@@ -58,124 +57,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func run() error {
-	flags, err := parseFlags(os.Args[1:])
-	if err != nil {
-		return err
-	}
-	if flags.help {
-		printHelp()
-		return nil
-	}
-	if flags.version {
-		fmt.Println("piglet " + resolveVersion())
-		return nil
-	}
-
-	// Subcommands
-	if len(flags.promptArgs) == 1 && flags.promptArgs[0] == "init" {
-		return config.RunSetup(writeModelsYAML, provider.SetupDefaults())
-	}
-	if len(flags.promptArgs) >= 1 && (flags.promptArgs[0] == "update" || flags.promptArgs[0] == "upgrade") {
-		settings, err := config.Load()
-		if err != nil {
-			return fmt.Errorf("config: %w", err)
-		}
-		// --extensions-only: called by the old binary after self-upgrade
-		// so the NEW binary's code handles extension installation.
-		if len(flags.promptArgs) >= 2 && flags.promptArgs[1] == "--extensions-only" {
-			return command.InstallOfficialExtensions(os.Stderr, settings)
-		}
-		return command.RunUpdate(os.Stderr, settings, resolveVersion())
-	}
-
-	userPrompt := strings.Join(flags.promptArgs, " ")
-
-	// Read piped stdin when available (not a terminal).
-	stdinPiped := false
-	if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice == 0 {
-		stdinPiped = true
-		if data, err := io.ReadAll(os.Stdin); err == nil {
-			if piped := strings.TrimSpace(string(data)); piped != "" {
-				if userPrompt == "" {
-					userPrompt = piped
-				} else {
-					userPrompt = userPrompt + "\n\n" + piped
-				}
-			}
-		}
-	}
-
-	interactive := userPrompt == ""
-	if interactive && stdinPiped {
-		return fmt.Errorf("no input: stdin pipe was empty and no prompt given")
-	}
-
-	resolvedBaseURL, err := resolveBaseURL(flags.baseURL, flags.port)
-	if err != nil {
-		return err
-	}
-
-	// --local: scan well-known ports for a running local model server.
-	if flags.local {
-		if resolvedBaseURL != "" {
-			return fmt.Errorf("--local and --port/--base-url are mutually exclusive")
-		}
-		scan, err := provider.ScanLocalServers()
-		if err != nil {
-			return err
-		}
-		resolvedBaseURL = scan.URL
-		// Reuse the models already fetched during the scan — no second probe needed.
-		if flags.model == "" {
-			if m := provider.BestModel(scan.Models); m != "" {
-				flags.model = m
-			}
-		}
-	}
-
-	// Auto-probe model when connecting to a local server without explicit --model.
-	if flags.model == "" && resolvedBaseURL != "" {
-		result, err := provider.ProbeServer(resolvedBaseURL)
-		if err != nil {
-			return fmt.Errorf("could not detect model at %s: %w\nSpecify with --model <name>", resolvedBaseURL, err)
-		}
-		flags.model = result.ModelID
-		if flags.model == "" {
-			flags.model = "default"
-		}
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	rt, debugCleanup, err := loadRuntime(ctx, flags.debug, flags.model, resolvedBaseURL)
-	if err != nil {
-		return err
-	}
-	defer debugCleanup()
-
-	if interactive {
-		if flags.repl {
-			return runREPL(ctx, rt)
-		}
-		return runInteractive(ctx, rt)
-	}
-
-	b := buildShell(ctx, rt, false)
-	defer b.cleanup()
-	if b.sess != nil {
-		defer b.sess.Close()
-	}
-
-	if flags.json {
-		if flags.result != "" {
-			fmt.Fprintf(os.Stderr, "warning: --result is ignored with --json\n")
-		}
-		return runJSON(ctx, b.sh, userPrompt)
-	}
-	return runPrint(ctx, b.sh, userPrompt, flags.result)
 }
 
 // cliFlags holds parsed command-line flags.
@@ -242,6 +123,153 @@ func parseFlags(args []string) (cliFlags, error) {
 	return f, nil
 }
 
+// handleSubcommands processes init/update subcommands.
+// Returns (true, nil) if a subcommand was handled, (false, nil) to continue.
+func handleSubcommands(args []string) (bool, error) {
+	if len(args) == 1 && args[0] == "init" {
+		return true, config.RunSetup(writeModelsYAML, provider.SetupDefaults())
+	}
+	if len(args) >= 1 && (args[0] == "update" || args[0] == "upgrade") {
+		settings, err := config.Load()
+		if err != nil {
+			return true, fmt.Errorf("config: %w", err)
+		}
+		// --extensions-only: called by the old binary after self-upgrade
+		// so the NEW binary's code handles extension installation.
+		if len(args) >= 2 && args[1] == "--extensions-only" {
+			return true, command.InstallOfficialExtensions(os.Stderr, settings)
+		}
+		return true, command.RunUpdate(os.Stderr, settings, resolveVersion())
+	}
+	return false, nil
+}
+
+// readStdin reads piped stdin and combines it with positional prompt args.
+func readStdin(promptArgs []string) (userPrompt string, stdinPiped bool, err error) {
+	userPrompt = strings.Join(promptArgs, " ")
+	info, statErr := os.Stdin.Stat()
+	if statErr != nil {
+		return userPrompt, false, nil
+	}
+	if info.Mode()&os.ModeCharDevice == 0 {
+		stdinPiped = true
+		data, readErr := io.ReadAll(os.Stdin)
+		if readErr != nil {
+			return userPrompt, stdinPiped, readErr
+		}
+		if piped := strings.TrimSpace(string(data)); piped != "" {
+			if userPrompt == "" {
+				userPrompt = piped
+			} else {
+				userPrompt = userPrompt + "\n\n" + piped
+			}
+		}
+	}
+	return userPrompt, stdinPiped, nil
+}
+
+// resolveLocalModel handles --local scanning and auto-probe for local servers.
+func resolveLocalModel(flags cliFlags, baseURL string) (resolvedBaseURL, model string, _ error) {
+	if flags.local {
+		if baseURL != "" {
+			return "", "", fmt.Errorf("--local and --port/--base-url are mutually exclusive")
+		}
+		scan, err := provider.ScanLocalServers()
+		if err != nil {
+			return "", "", err
+		}
+		baseURL = scan.URL
+		// Reuse the models already fetched during the scan — no second probe needed.
+		if flags.model == "" {
+			if m := provider.BestModel(scan.Models); m != "" {
+				flags.model = m
+			}
+		}
+	}
+
+	// Auto-probe model when connecting to a local server without explicit --model.
+	if flags.model == "" && baseURL != "" {
+		result, err := provider.ProbeServer(baseURL)
+		if err != nil {
+			return "", "", fmt.Errorf("could not detect model at %s: %w\nSpecify with --model <name>", baseURL, err)
+		}
+		flags.model = result.ModelID
+		if flags.model == "" {
+			flags.model = "default"
+		}
+	}
+	return baseURL, flags.model, nil
+}
+
+func run() error {
+	flags, err := parseFlags(os.Args[1:])
+	if err != nil {
+		return err
+	}
+	if flags.help {
+		printHelp()
+		return nil
+	}
+	if flags.version {
+		fmt.Println("piglet " + resolveVersion())
+		return nil
+	}
+
+	if handled, err := handleSubcommands(flags.promptArgs); handled || err != nil {
+		return err
+	}
+
+	userPrompt, stdinPiped, err := readStdin(flags.promptArgs)
+	if err != nil {
+		return err
+	}
+
+	interactive := userPrompt == ""
+	if interactive && stdinPiped {
+		return fmt.Errorf("no input: stdin pipe was empty and no prompt given")
+	}
+
+	baseURL, err := resolveBaseURL(flags.baseURL, flags.port)
+	if err != nil {
+		return err
+	}
+
+	baseURL, flags.model, err = resolveLocalModel(flags, baseURL)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	rt, debugCleanup, err := loadRuntime(ctx, flags.debug, flags.model, baseURL)
+	if err != nil {
+		return err
+	}
+	defer debugCleanup()
+
+	if interactive {
+		if flags.repl {
+			return runREPL(ctx, rt)
+		}
+		return runInteractive(ctx, rt)
+	}
+
+	b := buildShell(ctx, rt, false)
+	defer b.cleanup()
+	if b.sess != nil {
+		defer b.sess.Close()
+	}
+
+	if flags.json {
+		if flags.result != "" {
+			fmt.Fprintf(os.Stderr, "warning: --result is ignored with --json\n")
+		}
+		return runJSON(ctx, b.sh, userPrompt)
+	}
+	return runPrint(ctx, b.sh, userPrompt, flags.result)
+}
+
 // runInteractive starts the TUI immediately with compiled-in extensions only,
 // then loads external extensions in a background goroutine via SetupFn.
 func runInteractive(ctx context.Context, rt *runtime) error {
@@ -280,13 +308,7 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 		system := buildSystemPrompt(app, rt)
 		ag := buildAgent(app, rt, system)
 
-		sh.SetAgent(ag,
-			ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
-			ext.WithModelManager(newModelMgr(rt, app)),
-			ext.WithToolActivator(func() {
-				ag.SetTools(app.CoreTools())
-			}),
-		)
+		attachManagers(sh, ag, app, rt, sessPtr)
 
 		return tui.AgentReadyMsg{Agent: ag}
 	}
@@ -309,66 +331,4 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 	extCleanupMu.Unlock()
 
 	return tuiErr
-}
-
-func printHelp() {
-	w := lipgloss.Writer
-
-	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED")).Bold(true)
-	heading := lipgloss.NewStyle().Bold(true)
-	dim := lipgloss.NewStyle().Faint(true)
-
-	p := func(f string, a ...any) { fmt.Fprintf(w, f, a...) }
-
-	p("%s %s — extension-first coding assistant\n\n", brand.Render("piglet"), dim.Render(resolveVersion()))
-
-	p("%s\n", heading.Render("USAGE"))
-	p("  piglet [flags] [prompt]\n\n")
-
-	p("%s\n", heading.Render("MODES"))
-	p("  piglet                       Interactive TUI session\n")
-	p("  piglet \"fix the tests\"       Single-shot — print response and exit\n")
-	p("  cat f.go | piglet \"review\"   Piped context with prompt\n")
-	p("  echo \"hello\" | piglet        Piped input as prompt\n")
-	p("  piglet init                  First-time setup (config, models, API keys)\n")
-	p("  piglet update                Self-update and rebuild extensions\n\n")
-
-	p("%s\n", heading.Render("FLAGS"))
-	p("      --local            Auto-detect local model server (scans common ports)\n")
-	p("      --model <query>    Model name, URL, or :port  [$PIGLET_DEFAULT_MODEL]\n")
-	p("      --base-url <url>   Override provider endpoint\n")
-	p("      --port <n>         Shorthand for localhost:<n> (auto-detects model)\n")
-	p("      --repl             Simple REPL mode (no TUI)\n")
-	p("      --json             NDJSON event stream (single-shot only)\n")
-	p("      --result <path>    Write final output to file\n")
-	p("      --debug            Log payloads to debug.log\n")
-	p("  -v, --version          Print version\n")
-	p("  -h, --help             Print this help\n\n")
-
-	p("%s\n", heading.Render("EXAMPLES"))
-	p("  piglet                                  Start interactive session\n")
-	p("  piglet \"what does this project do?\"     Quick question\n")
-	p("  piglet --model sonnet \"hello\"           Use a specific model\n")
-	p("  piglet --local                          Auto-detect local server\n")
-	p("  piglet --port 11434 \"hello\"             Talk to local Ollama\n")
-	p("  piglet :8080 \"summarize main.go\"        URL shorthand as model\n")
-	p("  piglet --json \"list files\" | jq .       Machine-readable output\n\n")
-
-	p("%s\n", heading.Render("INTERACTIVE"))
-	p("  /help       All commands            Ctrl+C  Stop / quit\n")
-	p("  /model      Switch model            Ctrl+P  Model selector\n")
-	p("  /session    Switch session          Ctrl+S  Session picker\n")
-	p("  /compact    Compress history        Ctrl+M  Toggle mouse\n")
-	p("  /clear      Reset conversation      Ctrl+Z  Suspend\n\n")
-
-	p("%s  ~/.config/piglet/\n", heading.Render("CONFIG"))
-	p("  config.yaml    Settings             auth.json      API keys\n")
-	p("  prompt.md      System prompt        behavior.md    Guidelines\n")
-	p("  models.yaml    Model catalog        skills/        Loaded on demand\n\n")
-
-	p("%s\n", heading.Render("ENVIRONMENT"))
-	p("  PIGLET_DEFAULT_MODEL    Override default model\n")
-	p("  PIGLET_SMALL_MODEL      Override small model (autotitle, compaction)\n\n")
-
-	p("%s  https://github.com/dotcommander/piglet\n", heading.Render("DOCS"))
 }
