@@ -560,6 +560,7 @@ func (e *Extension) handleCommandExecute(msg *rpcMessage) {
 
 func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 	var params struct {
+		Name     string         `json:"name"`
 		ToolName string         `json:"toolName"`
 		Args     map[string]any `json:"args"`
 	}
@@ -570,12 +571,15 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 	ctx, cleanup := e.requestCtx(*msg.ID)
 	defer cleanup()
 
-	// Run all interceptors' Before hooks in order
+	// Run the targeted interceptor's Before hook (or all if name is empty).
 	allow := true
 	args := maps.Clone(params.Args)
 	var preview string
 	for _, ic := range e.interceptors {
 		if ic.Before == nil {
+			continue
+		}
+		if params.Name != "" && ic.Name != params.Name {
 			continue
 		}
 		a, modified, err := ic.Before(ctx, params.ToolName, args)
@@ -607,6 +611,7 @@ func (e *Extension) handleInterceptorBefore(msg *rpcMessage) {
 
 func (e *Extension) handleInterceptorAfter(msg *rpcMessage) {
 	var params struct {
+		Name     string `json:"name"`
 		ToolName string `json:"toolName"`
 		Details  any    `json:"details"`
 	}
@@ -620,6 +625,9 @@ func (e *Extension) handleInterceptorAfter(msg *rpcMessage) {
 	details := params.Details
 	for _, ic := range e.interceptors {
 		if ic.After == nil {
+			continue
+		}
+		if params.Name != "" && ic.Name != params.Name {
 			continue
 		}
 		modified, err := ic.After(ctx, params.ToolName, details)

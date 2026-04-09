@@ -57,6 +57,8 @@ func RegisterPreflight(e *sdk.Extension) {
 	var onProtectedBranch atomic.Bool
 	var protectedBranchName atomic.Pointer[string]
 
+	var lastPreflightReason atomic.Value
+
 	e.RegisterInterceptor(sdk.InterceptorDef{
 		Name:     "preflight",
 		Priority: 1900,
@@ -87,12 +89,20 @@ func RegisterPreflight(e *sdk.Extension) {
 				if name != nil {
 					branchName = *name
 				}
-				return false, nil, fmt.Errorf(
+				reason := fmt.Sprintf(
 					"pre-flight: blocked %s on %s — create a feature branch first",
 					toolName, branchName)
+				lastPreflightReason.Store(reason)
+				return false, nil, nil
 			}
 
 			return true, args, nil
+		},
+		Preview: func(_ context.Context, _ string, _ map[string]any) string {
+			if v, ok := lastPreflightReason.Load().(string); ok {
+				return v
+			}
+			return ""
 		},
 	})
 }

@@ -19,7 +19,10 @@ func Register(e *sdk.Extension) {
 
 	// blocker is set in OnInit (when CWD is available) and read atomically in Before.
 	// Before OnInit completes, calls fall through to allow (safe default).
-	var blocker atomic.Pointer[func(context.Context, string, map[string]any) (bool, map[string]any, error)]
+	var blocker atomic.Pointer[func(context.Context, string, map[string]any) (bool, map[string]any, string)]
+
+	// lastReason captures the block reason from Before for Preview to return.
+	var lastReason atomic.Value
 
 	if cfg.Profile != ProfileOff {
 		e.OnInitAppend(func(e *sdk.Extension) {
@@ -36,9 +39,19 @@ func Register(e *sdk.Extension) {
 		Priority: 2000,
 		Before: func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
 			if fn := blocker.Load(); fn != nil {
-				return (*fn)(ctx, toolName, args)
+				allow, modified, reason := (*fn)(ctx, toolName, args)
+				if !allow {
+					lastReason.Store(reason)
+				}
+				return allow, modified, nil
 			}
 			return true, args, nil
+		},
+		Preview: func(_ context.Context, _ string, _ map[string]any) string {
+			if v, ok := lastReason.Load().(string); ok {
+				return v
+			}
+			return ""
 		},
 	})
 

@@ -127,6 +127,7 @@ func (h *testHarness) skipNotifications(t *testing.T) rpcMessage {
 // ---------------------------------------------------------------------------
 
 func TestInitialize(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterTool(ToolDef{
 		Name:        "mytool",
@@ -193,6 +194,7 @@ func TestInitialize(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOnInit(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	called := false
 	h.ext.OnInit(func(e *Extension) {
@@ -236,6 +238,7 @@ func TestOnInit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolExecute(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterTool(ToolDef{
 		Name:        "greet",
@@ -279,6 +282,7 @@ func TestToolExecute(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolExecuteUnknown(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 
 	h.ext.handleMessage(sendRequest(11, "tool/execute", map[string]any{
@@ -301,6 +305,7 @@ func TestToolExecuteUnknown(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCommandExecute(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	ran := false
 	h.ext.RegisterCommand(CommandDef{
@@ -330,6 +335,7 @@ func TestCommandExecute(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestInterceptorBeforeAllow(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterInterceptor(InterceptorDef{
 		Name:     "modifier",
@@ -367,6 +373,7 @@ func TestInterceptorBeforeAllow(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestInterceptorBeforeBlock(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterInterceptor(InterceptorDef{
 		Name:     "blocker",
@@ -399,6 +406,7 @@ func TestInterceptorBeforeBlock(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEventDispatch(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterEventHandler(EventHandlerDef{
 		Name:   "turn-end-handler",
@@ -434,6 +442,7 @@ func TestEventDispatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEventDispatchUnmatched(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterEventHandler(EventHandlerDef{
 		Name:   "turn-end-handler",
@@ -466,6 +475,7 @@ func TestEventDispatchUnmatched(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMessageHook(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	h.ext.RegisterMessageHook(MessageHookDef{
 		Name:     "injector",
@@ -497,6 +507,7 @@ func TestMessageHook(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUnknownMethod(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 
 	h.ext.handleMessage(sendRequest(60, "no/such/method", nil))
@@ -515,6 +526,7 @@ func TestUnknownMethod(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCancelRequest(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	ctxCancelled := make(chan struct{})
 
@@ -562,6 +574,7 @@ func TestCancelRequest(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResponseRouting(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 
 	// Register a pending channel manually to simulate an outgoing request.
@@ -605,5 +618,189 @@ func TestResponseRouting(t *testing.T) {
 	h.ext.pendingMu.Unlock()
 	if still {
 		t.Error("response should have been removed from pending map")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 14. Interceptor before — name discriminator targets only the named interceptor
+// ---------------------------------------------------------------------------
+
+func TestInterceptorBeforeNameFilter(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	// "blocker" always blocks — if it runs, allow will be false.
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "blocker",
+		Priority: 2000,
+		Before: func(_ context.Context, _ string, _ map[string]any) (bool, map[string]any, error) {
+			return false, nil, nil
+		},
+	})
+	// "passer" always allows.
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "passer",
+		Priority: 100,
+		Before: func(_ context.Context, _ string, args map[string]any) (bool, map[string]any, error) {
+			return true, args, nil
+		},
+	})
+
+	// Target "passer" by name — "blocker" must NOT run.
+	h.ext.handleMessage(sendRequest(100, "interceptor/before", map[string]any{
+		"name":     "passer",
+		"toolName": "bash",
+		"args":     map[string]any{"command": "rm -rf /"},
+	}))
+
+	msg := h.readMessage(t)
+	if msg.Error != nil {
+		t.Fatalf("unexpected error: %v", msg.Error)
+	}
+	var result struct {
+		Allow bool `json:"allow"`
+	}
+	unmarshalResult(t, msg, &result)
+	if !result.Allow {
+		t.Error("allow should be true — blocker should not have run when name targets passer")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 15. Interceptor before — name discriminator blocks only the named interceptor
+// ---------------------------------------------------------------------------
+
+func TestInterceptorBeforeNameFilterBlock(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "blocker",
+		Priority: 2000,
+		Before: func(_ context.Context, _ string, _ map[string]any) (bool, map[string]any, error) {
+			return false, nil, nil
+		},
+		Preview: func(_ context.Context, _ string, _ map[string]any) string {
+			return "blocked by blocker"
+		},
+	})
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "passer",
+		Priority: 100,
+		Before: func(_ context.Context, _ string, args map[string]any) (bool, map[string]any, error) {
+			return true, args, nil
+		},
+	})
+
+	// Target "blocker" by name — should block with preview.
+	h.ext.handleMessage(sendRequest(101, "interceptor/before", map[string]any{
+		"name":     "blocker",
+		"toolName": "bash",
+		"args":     map[string]any{},
+	}))
+
+	msg := h.readMessage(t)
+	if msg.Error != nil {
+		t.Fatalf("unexpected JSON-RPC error: %v", msg.Error)
+	}
+	var result struct {
+		Allow   bool   `json:"allow"`
+		Preview string `json:"preview"`
+	}
+	unmarshalResult(t, msg, &result)
+	if result.Allow {
+		t.Error("allow should be false when blocker is targeted")
+	}
+	if result.Preview != "blocked by blocker" {
+		t.Errorf("preview: got %q, want %q", result.Preview, "blocked by blocker")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 16. Interceptor before — block returns structured response, not JSON-RPC error
+// ---------------------------------------------------------------------------
+
+func TestInterceptorBeforeBlockIsNotRPCError(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	// Interceptor blocks without returning an error — the response must be
+	// a structured {allow: false}, NOT a JSON-RPC error.
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "clean-blocker",
+		Priority: 100,
+		Before: func(_ context.Context, _ string, _ map[string]any) (bool, map[string]any, error) {
+			return false, nil, nil // allow=false, NO error
+		},
+		Preview: func(_ context.Context, _ string, _ map[string]any) string {
+			return "reason for blocking"
+		},
+	})
+
+	h.ext.handleMessage(sendRequest(102, "interceptor/before", map[string]any{
+		"name":     "clean-blocker",
+		"toolName": "bash",
+		"args":     map[string]any{"command": "rm -rf /"},
+	}))
+
+	msg := h.readMessage(t)
+	// The critical assertion: response must NOT be a JSON-RPC error.
+	if msg.Error != nil {
+		t.Fatalf("block must return structured {allow:false}, not JSON-RPC error: code=%d msg=%s",
+			msg.Error.Code, msg.Error.Message)
+	}
+	var result struct {
+		Allow   bool   `json:"allow"`
+		Preview string `json:"preview"`
+	}
+	unmarshalResult(t, msg, &result)
+	if result.Allow {
+		t.Error("allow should be false")
+	}
+	if result.Preview != "reason for blocking" {
+		t.Errorf("preview: got %q, want %q", result.Preview, "reason for blocking")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 17. Interceptor after — name discriminator
+// ---------------------------------------------------------------------------
+
+func TestInterceptorAfterNameFilter(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "mutator",
+		Priority: 2000,
+		After: func(_ context.Context, _ string, details any) (any, error) {
+			return "mutated", nil
+		},
+	})
+	h.ext.RegisterInterceptor(InterceptorDef{
+		Name:     "identity",
+		Priority: 100,
+		After: func(_ context.Context, _ string, details any) (any, error) {
+			return details, nil // pass through
+		},
+	})
+
+	// Target "identity" — "mutator" must NOT run, details unchanged.
+	h.ext.handleMessage(sendRequest(103, "interceptor/after", map[string]any{
+		"name":     "identity",
+		"toolName": "bash",
+		"details":  "original",
+	}))
+
+	msg := h.readMessage(t)
+	if msg.Error != nil {
+		t.Fatalf("unexpected error: %v", msg.Error)
+	}
+	var result struct {
+		Details string `json:"details"`
+	}
+	unmarshalResult(t, msg, &result)
+	if result.Details != "original" {
+		t.Errorf("details: got %q, want %q — mutator should not have run", result.Details, "original")
 	}
 }

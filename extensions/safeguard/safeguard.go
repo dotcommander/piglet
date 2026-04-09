@@ -34,9 +34,10 @@ func CompilePatterns(patterns []string) []*regexp.Regexp {
 
 // BlockerWithConfig returns a Before interceptor that enforces the given profile.
 // In strict mode, write/edit/bash calls targeting paths outside cwd are blocked.
+// Returns (allow, args, reason) — reason is non-empty when allow is false.
 // Blocked decisions are logged to the audit logger when provided.
-func BlockerWithConfig(cfg Config, compiled []*regexp.Regexp, cwd string, audit *AuditLogger) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
-	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, error) {
+func BlockerWithConfig(cfg Config, compiled []*regexp.Regexp, cwd string, audit *AuditLogger) func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, string) {
+	return func(ctx context.Context, toolName string, args map[string]any) (bool, map[string]any, string) {
 		// Strict mode: workspace scoping for file-mutating tools
 		if cfg.Profile == ProfileStrict && cwd != "" {
 			switch toolName {
@@ -44,7 +45,7 @@ func BlockerWithConfig(cfg Config, compiled []*regexp.Regexp, cwd string, audit 
 				path, _ := args["file_path"].(string)
 				if path != "" && !isInsideWorkspace(path, cwd) {
 					audit.Log(toolName, "blocked", "outside workspace", path)
-					return false, nil, fmt.Errorf("safeguard [strict]: blocked %s outside workspace %s", toolName, cwd)
+					return false, nil, fmt.Sprintf("safeguard [strict]: blocked %s outside workspace %s", toolName, cwd)
 				}
 			}
 		}
@@ -56,13 +57,13 @@ func BlockerWithConfig(cfg Config, compiled []*regexp.Regexp, cwd string, audit 
 				// Fast path: skip security checks for known read-only commands.
 				if ClassifyCommand(command) == CommandReadOnly {
 					audit.Log(toolName, "allowed", "read_only", truncate(command, 200))
-					return true, args, nil
+					return true, args, ""
 				}
 
 				// Metacharacter injection checks (parser-level attacks).
 				if err := ValidateInjection(command); err != nil {
 					audit.Log(toolName, "blocked", err.Error(), truncate(command, 200))
-					return false, nil, fmt.Errorf("safeguard: %v", err)
+					return false, nil, fmt.Sprintf("safeguard: %v", err)
 				}
 
 				for _, re := range compiled {
@@ -72,13 +73,13 @@ func BlockerWithConfig(cfg Config, compiled []*regexp.Regexp, cwd string, audit 
 						if dir, err := xdg.ExtensionDir("safeguard"); err == nil {
 							configPath = filepath.Join(dir, "safeguard.yaml")
 						}
-						return false, nil, fmt.Errorf("safeguard: blocked dangerous command matching %q — edit %s to adjust", re.String(), configPath)
+						return false, nil, fmt.Sprintf("safeguard: blocked dangerous command matching %q — edit %s to adjust", re.String(), configPath)
 					}
 				}
 			}
 		}
 
-		return true, args, nil
+		return true, args, ""
 	}
 }
 

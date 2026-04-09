@@ -15,10 +15,10 @@ func TestBlockerWithConfig_BalancedBlocksPattern(t *testing.T) {
 	patterns := safeguard.CompilePatterns([]string{`\brm\s+-rf\b`})
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileBalanced}, patterns, "", nil)
 
-	allow, _, err := blocker(context.Background(), "bash", map[string]any{"command": "rm -rf /"})
+	allow, _, reason := blocker(context.Background(), "bash", map[string]any{"command": "rm -rf /"})
 	assert.False(t, allow)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "blocked dangerous command")
+	assert.NotEmpty(t, reason)
+	assert.Contains(t, reason, "blocked dangerous command")
 }
 
 func TestBlockerWithConfig_BalancedAllowsSafe(t *testing.T) {
@@ -26,9 +26,9 @@ func TestBlockerWithConfig_BalancedAllowsSafe(t *testing.T) {
 	patterns := safeguard.CompilePatterns([]string{`\brm\s+-rf\b`})
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileBalanced}, patterns, "", nil)
 
-	allow, args, err := blocker(context.Background(), "bash", map[string]any{"command": "ls -la"})
+	allow, args, reason := blocker(context.Background(), "bash", map[string]any{"command": "ls -la"})
 	assert.True(t, allow)
-	assert.NoError(t, err)
+	assert.Empty(t, reason)
 	assert.NotNil(t, args)
 }
 
@@ -38,9 +38,9 @@ func TestBlockerWithConfig_BalancedIgnoresWrite(t *testing.T) {
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileBalanced}, patterns, "/workspace", nil)
 
 	// Balanced mode does NOT block writes outside workspace
-	allow, _, err := blocker(context.Background(), "write", map[string]any{"file_path": "/etc/passwd"})
+	allow, _, reason := blocker(context.Background(), "write", map[string]any{"file_path": "/etc/passwd"})
 	assert.True(t, allow)
-	assert.NoError(t, err)
+	assert.Empty(t, reason)
 }
 
 func TestBlockerWithConfig_StrictBlocksOutsideWorkspace(t *testing.T) {
@@ -48,10 +48,10 @@ func TestBlockerWithConfig_StrictBlocksOutsideWorkspace(t *testing.T) {
 	patterns := safeguard.CompilePatterns(nil)
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileStrict}, patterns, "/workspace/project", nil)
 
-	allow, _, err := blocker(context.Background(), "write", map[string]any{"file_path": "/etc/passwd"})
+	allow, _, reason := blocker(context.Background(), "write", map[string]any{"file_path": "/etc/passwd"})
 	assert.False(t, allow)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "outside workspace")
+	assert.NotEmpty(t, reason)
+	assert.Contains(t, reason, "outside workspace")
 }
 
 func TestBlockerWithConfig_StrictAllowsInsideWorkspace(t *testing.T) {
@@ -59,9 +59,9 @@ func TestBlockerWithConfig_StrictAllowsInsideWorkspace(t *testing.T) {
 	patterns := safeguard.CompilePatterns(nil)
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileStrict}, patterns, "/workspace/project", nil)
 
-	allow, _, err := blocker(context.Background(), "write", map[string]any{"file_path": "/workspace/project/main.go"})
+	allow, _, reason := blocker(context.Background(), "write", map[string]any{"file_path": "/workspace/project/main.go"})
 	assert.True(t, allow)
-	assert.NoError(t, err)
+	assert.Empty(t, reason)
 }
 
 func TestBlockerWithConfig_StrictAllowsNonMutating(t *testing.T) {
@@ -70,9 +70,9 @@ func TestBlockerWithConfig_StrictAllowsNonMutating(t *testing.T) {
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileStrict}, patterns, "/workspace", nil)
 
 	// read tool is not blocked even outside workspace
-	allow, _, err := blocker(context.Background(), "read", map[string]any{"file_path": "/etc/hosts"})
+	allow, _, reason := blocker(context.Background(), "read", map[string]any{"file_path": "/etc/hosts"})
 	assert.True(t, allow)
-	assert.NoError(t, err)
+	assert.Empty(t, reason)
 }
 
 func TestBlockerWithConfig_StrictAlsoBlocksPatterns(t *testing.T) {
@@ -80,9 +80,9 @@ func TestBlockerWithConfig_StrictAlsoBlocksPatterns(t *testing.T) {
 	patterns := safeguard.CompilePatterns([]string{`\brm\s+-rf\b`})
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileStrict}, patterns, "/workspace", nil)
 
-	allow, _, err := blocker(context.Background(), "bash", map[string]any{"command": "rm -rf /"})
+	allow, _, reason := blocker(context.Background(), "bash", map[string]any{"command": "rm -rf /"})
 	assert.False(t, allow)
-	assert.Error(t, err)
+	assert.NotEmpty(t, reason)
 }
 
 func TestAuditLogger(t *testing.T) {
@@ -118,9 +118,9 @@ func TestTruncate(t *testing.T) {
 	longCmd := "rm -rf " + string(make([]byte, 300))
 	blocker := safeguard.BlockerWithConfig(safeguard.Config{Profile: safeguard.ProfileBalanced}, patterns, "", nil)
 
-	allow, _, err := blocker(context.Background(), "bash", map[string]any{"command": longCmd})
+	allow, _, reason := blocker(context.Background(), "bash", map[string]any{"command": longCmd})
 	assert.False(t, allow)
-	assert.Error(t, err)
+	assert.NotEmpty(t, reason)
 }
 
 func TestProfileConstants(t *testing.T) {
