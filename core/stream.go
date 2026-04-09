@@ -38,7 +38,7 @@ func (a *Agent) streamWithRetry(ctx context.Context) (*AssistantMessage, error) 
 			return nil, ctx.Err()
 		}
 	}
-	return nil, fmt.Errorf("unreachable")
+	panic("core: streamWithRetry: loop exited unexpectedly")
 }
 
 func (a *Agent) streamOnce(ctx context.Context) (*AssistantMessage, error) {
@@ -130,7 +130,8 @@ func (a *Agent) retryDelay(attempt int, err error) time.Duration {
 		}
 	}
 
-	d := RetryBaseDelay * (1 << max(attempt, 0))
+	shift := min(attempt, 20) // cap to prevent overflow on 32-bit
+	d := RetryBaseDelay * (1 << shift)
 	if d > maxDelay {
 		d = maxDelay
 	}

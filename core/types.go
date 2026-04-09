@@ -4,6 +4,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -81,7 +82,11 @@ func (m *UserMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = UserMessage(raw.Alias)
-	m.Blocks = unmarshalContentBlocks(raw.Blocks)
+	blocks, err := unmarshalContentBlocks(raw.Blocks)
+	if err != nil {
+		return fmt.Errorf("user message blocks: %w", err)
+	}
+	m.Blocks = blocks
 	return nil
 }
 
@@ -109,9 +114,9 @@ type ToolResultMessage struct {
 
 func (*ToolResultMessage) isMessage() {}
 
-func unmarshalContentBlocks(rawBlocks []json.RawMessage) []ContentBlock {
+func unmarshalContentBlocks(rawBlocks []json.RawMessage) ([]ContentBlock, error) {
 	var blocks []ContentBlock
-	for _, r := range rawBlocks {
+	for i, r := range rawBlocks {
 		var probe struct {
 			MimeType string `json:"mimeType"`
 		}
@@ -119,17 +124,19 @@ func unmarshalContentBlocks(rawBlocks []json.RawMessage) []ContentBlock {
 
 		if probe.MimeType != "" {
 			var ic ImageContent
-			if err := json.Unmarshal(r, &ic); err == nil {
-				blocks = append(blocks, ic)
+			if err := json.Unmarshal(r, &ic); err != nil {
+				return nil, fmt.Errorf("content block[%d]: unmarshal image: %w", i, err)
 			}
+			blocks = append(blocks, ic)
 		} else {
 			var tc TextContent
-			if err := json.Unmarshal(r, &tc); err == nil {
-				blocks = append(blocks, tc)
+			if err := json.Unmarshal(r, &tc); err != nil {
+				return nil, fmt.Errorf("content block[%d]: unmarshal text: %w", i, err)
 			}
+			blocks = append(blocks, tc)
 		}
 	}
-	return blocks
+	return blocks, nil
 }
 
 // UnmarshalJSON implements custom unmarshaling for AssistantMessage
@@ -146,7 +153,7 @@ func (m *AssistantMessage) UnmarshalJSON(data []byte) error {
 	*m = AssistantMessage(raw.Alias)
 	m.Content = nil
 
-	for _, r := range raw.Content {
+	for i, r := range raw.Content {
 		var probe struct {
 			Text     string `json:"text"`
 			Thinking string `json:"thinking"`
@@ -158,19 +165,22 @@ func (m *AssistantMessage) UnmarshalJSON(data []byte) error {
 		switch {
 		case probe.ID != "" || probe.Name != "":
 			var tc ToolCall
-			if err := json.Unmarshal(r, &tc); err == nil {
-				m.Content = append(m.Content, tc)
+			if err := json.Unmarshal(r, &tc); err != nil {
+				return fmt.Errorf("assistant content[%d]: unmarshal tool call: %w", i, err)
 			}
+			m.Content = append(m.Content, tc)
 		case probe.Thinking != "":
 			var tc ThinkingContent
-			if err := json.Unmarshal(r, &tc); err == nil {
-				m.Content = append(m.Content, tc)
+			if err := json.Unmarshal(r, &tc); err != nil {
+				return fmt.Errorf("assistant content[%d]: unmarshal thinking: %w", i, err)
 			}
+			m.Content = append(m.Content, tc)
 		default:
 			var tc TextContent
-			if err := json.Unmarshal(r, &tc); err == nil {
-				m.Content = append(m.Content, tc)
+			if err := json.Unmarshal(r, &tc); err != nil {
+				return fmt.Errorf("assistant content[%d]: unmarshal text: %w", i, err)
 			}
+			m.Content = append(m.Content, tc)
 		}
 	}
 	return nil
@@ -188,7 +198,11 @@ func (m *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = ToolResultMessage(raw.Alias)
-	m.Content = unmarshalContentBlocks(raw.Content)
+	blocks, err := unmarshalContentBlocks(raw.Content)
+	if err != nil {
+		return fmt.Errorf("tool result content: %w", err)
+	}
+	m.Content = blocks
 	return nil
 }
 
