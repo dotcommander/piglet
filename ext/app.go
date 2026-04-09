@@ -1,8 +1,9 @@
 package ext
 
 import (
-	"github.com/dotcommander/piglet/core"
 	"sync"
+
+	"github.com/dotcommander/piglet/core"
 )
 
 // App is the single extension API surface. Extensions receive this in their
@@ -252,10 +253,4 @@ func (a *App) enqueue(action Action) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.actions = append(a.actions, action)
-}
-
-// eventSub is an internal subscriber record for the inter-extension event bus.
-type eventSub struct {
-	id int
-	fn func(any)
 }

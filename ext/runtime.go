@@ -1,9 +1,7 @@
 package ext
 
 import (
-	"context"
 	"fmt"
-	"slices"
 
 	"github.com/dotcommander/piglet/core"
 )
@@ -70,26 +68,6 @@ func (a *App) SetProvider(p core.StreamProvider) {
 	if agent != nil {
 		agent.SetProvider(p)
 	}
-}
-
-// Notify sends a notification to the TUI.
-func (a *App) Notify(msg string) {
-	a.enqueue(ActionNotify{Message: msg})
-}
-
-// NotifyWithLevel sends a notification with a severity level.
-func (a *App) NotifyWithLevel(msg, level string) {
-	a.enqueue(ActionNotify{Message: msg, Level: level})
-}
-
-// NotifyWarn sends a warning notification.
-func (a *App) NotifyWarn(msg string) {
-	a.enqueue(ActionNotify{Message: msg, Level: "warn"})
-}
-
-// NotifyError sends an error notification.
-func (a *App) NotifyError(msg string) {
-	a.enqueue(ActionNotify{Message: msg, Level: "error"})
 }
 
 // LastAssistantText returns the text content of the last assistant message,
@@ -243,18 +221,6 @@ func (a *App) SetConversationMessages(msgs []core.Message) {
 	}
 }
 
-// Publish sends data to all subscribers of a topic.
-// Callbacks run synchronously — keep them fast or use goroutines in the subscriber.
-func (a *App) Publish(topic string, data any) {
-	a.mu.RLock()
-	subs := make([]eventSub, len(a.eventBus[topic]))
-	copy(subs, a.eventBus[topic])
-	a.mu.RUnlock()
-	for _, sub := range subs {
-		sub.fn(data)
-	}
-}
-
 // ToggleStepMode toggles step mode and returns the new state.
 func (a *App) ToggleStepMode() bool {
 	a.mu.RLock()
@@ -266,48 +232,4 @@ func (a *App) ToggleStepMode() bool {
 	on := !agent.StepMode()
 	agent.SetStepMode(on)
 	return on
-}
-
-// WaitForIdle blocks until SignalIdle is called or the context is cancelled.
-// Returns immediately if the agent is already idle (missed-signal safe).
-func (a *App) WaitForIdle(ctx context.Context) error {
-	a.mu.Lock()
-	if a.idle {
-		a.mu.Unlock()
-		return nil
-	}
-	ch := make(chan struct{}, 1)
-	a.idleWaiters = append(a.idleWaiters, ch)
-	a.mu.Unlock()
-
-	select {
-	case <-ch:
-		return nil
-	case <-ctx.Done():
-		a.mu.Lock()
-		a.idleWaiters = slices.DeleteFunc(a.idleWaiters, func(c chan struct{}) bool { return c == ch })
-		a.mu.Unlock()
-		return ctx.Err()
-	}
-}
-
-// SignalIdle marks the agent as idle and wakes all pending WaitForIdle callers.
-// Called by the shell/TUI when the agent finishes a turn.
-func (a *App) SignalIdle() {
-	a.mu.Lock()
-	a.idle = true
-	waiters := a.idleWaiters
-	a.idleWaiters = nil
-	a.mu.Unlock()
-	for _, ch := range waiters {
-		close(ch)
-	}
-}
-
-// ClearIdle marks the agent as no longer idle.
-// Must be called when the agent starts a new run, before any WaitForIdle callers register.
-func (a *App) ClearIdle() {
-	a.mu.Lock()
-	a.idle = false
-	a.mu.Unlock()
 }
