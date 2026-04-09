@@ -33,17 +33,19 @@ type ScanResult struct {
 	Models []ProbeResult // all models reported by that server
 }
 
-// ScanLocalServers probes well-known local model server ports concurrently
-// and returns the first responding server (by preference order) together with
-// its model list, avoiding a redundant probe call by the caller.
+// ScanLocalServers probes well-known ports concurrently, returning the first
+// responding server by preference order.
 func ScanLocalServers() (ScanResult, error) {
 	type hit struct {
 		url    string
 		models []ProbeResult
 	}
+
 	found := make([]hit, len(WellKnownPorts))
 	ok := make([]bool, len(WellKnownPorts))
 	var wg sync.WaitGroup
+
+	// Probe well-known ports concurrently.
 	for i, s := range WellKnownPorts {
 		wg.Add(1)
 		go func(idx, port int) {
@@ -55,6 +57,7 @@ func ScanLocalServers() (ScanResult, error) {
 			}
 		}(i, s.Port)
 	}
+
 	wg.Wait()
 
 	for i, responding := range ok {
@@ -74,36 +77,94 @@ func ScanLocalServers() (ScanResult, error) {
 type ProbeResult struct {
 	ModelID       string // discovered model ID (e.g. "qwen3.5-27b-mxfp8")
 	ServerType    string // "lmstudio", "ollama", or "unknown"
+	State         string // "loaded", "not-loaded", or "" (unknown/not reported)
 	ContextWindow int    // if discoverable, else 0
 }
 
-// BestModel returns the ID of the best chat-capable model from a list,
-// skipping embedding-only models. Returns "" if results is empty.
-func BestModel(results []ProbeResult) string {
+// bestResult returns the best chat-capable ProbeResult from a list.
+// Prefers loaded models over unloaded, skips embedding-only models.
+// Falls back to the first result if all models are embeddings.
+// Returns a zero ProbeResult if results is empty.
+func bestResult(results []ProbeResult) ProbeResult {
+	// First pass: loaded + non-embedding (ideal).
+	for _, r := range results {
+		if r.State == "loaded" && !isEmbeddingModel(r.ModelID) {
+			return r
+		}
+	}
+	// Second pass: any non-embedding (state unknown or all unloaded).
 	for _, r := range results {
 		if !isEmbeddingModel(r.ModelID) {
-			return r.ModelID
+			return r
 		}
 	}
 	if len(results) > 0 {
-		return results[0].ModelID
+		return results[0]
 	}
-	return ""
+	return ProbeResult{}
+}
+
+// BestModel returns the ID of the best chat-capable model from a list.
+// Prefers loaded models over unloaded, skips embedding-only models.
+// Returns "" if results is empty.
+func BestModel(results []ProbeResult) string {
+	return bestResult(results).ModelID
 }
 
 // ProbeServer contacts baseURL + "/v1/models" and returns the best
-// available model, preferring chat-capable models over embedding models.
+// available model, preferring loaded chat-capable models. For Ollama,
+// it checks /api/ps for warm (in-memory) models first.
 func ProbeServer(baseURL string) (ProbeResult, error) {
 	results, err := ProbeModels(baseURL)
 	if err != nil {
 		return ProbeResult{}, err
 	}
-	for _, r := range results {
-		if !isEmbeddingModel(r.ModelID) {
-			return r, nil
+
+	// Ollama: check /api/ps for warm models before falling back to full list.
+	if len(results) > 0 && results[0].ServerType == "ollama" {
+		if warm := probeOllamaPS(baseURL); len(warm) > 0 {
+			if r := bestResult(warm); r.ModelID != "" {
+				return r, nil
+			}
 		}
 	}
-	return results[0], nil
+
+	return bestResult(results), nil
+}
+
+// probeOllamaPS calls Ollama's /api/ps to get currently loaded (warm) models.
+func probeOllamaPS(baseURL string) []ProbeResult {
+	client := &http.Client{Timeout: 3 * time.Second}
+	endpoint := strings.TrimRight(baseURL, "/") + "/api/ps"
+
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var body struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil
+	}
+
+	results := make([]ProbeResult, len(body.Models))
+	for i, m := range body.Models {
+		results[i] = ProbeResult{
+			ModelID:    m.Name,
+			ServerType: "ollama",
+			State:      "loaded",
+		}
+	}
+	return results
 }
 
 // isEmbeddingModel returns true if the model ID suggests an embedding-only model.
@@ -130,10 +191,14 @@ func detectServerType(resp *http.Response, ownedBy string) string {
 		}
 	}
 
-	// Check owned_by field for Ollama.
+	// Check owned_by field.
 	switch strings.ToLower(ownedBy) {
 	case "ollama", "ollama.org":
 		return "ollama"
+	case "llamacpp":
+		return "llamacpp"
+	case "vllm":
+		return "vllm"
 	}
 
 	return "unknown"
@@ -157,8 +222,10 @@ func ProbeModels(baseURL string) ([]ProbeResult, error) {
 
 	var body struct {
 		Data []struct {
-			ID      string `json:"id"`
-			OwnedBy string `json:"owned_by"`
+			ID      string                 `json:"id"`
+			OwnedBy string                 `json:"owned_by"`
+			State   string                 `json:"state"`  // LM Studio: "loaded" / "not-loaded"
+			Status  struct{ Value string } `json:"status"` // llama.cpp router: "loaded" / "loading" / "unloaded"
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -173,9 +240,14 @@ func ProbeModels(baseURL string) ([]ProbeResult, error) {
 
 	results := make([]ProbeResult, len(body.Data))
 	for i, m := range body.Data {
+		state := m.State
+		if state == "" {
+			state = m.Status.Value // llama.cpp router mode
+		}
 		results[i] = ProbeResult{
 			ModelID:    m.ID,
 			ServerType: serverType,
+			State:      state,
 		}
 	}
 	return results, nil
@@ -210,7 +282,7 @@ func IsLoopbackURL(rawURL string) bool {
 // (auto-discovered or explicitly configured as local/lmstudio/ollama/vllm).
 func IsLocalProvider(provider string) bool {
 	switch strings.ToLower(provider) {
-	case "local", "lmstudio", "ollama", "vllm", "mlx":
+	case "local", "lmstudio", "ollama", "llamacpp", "vllm", "mlx":
 		return true
 	}
 	return false

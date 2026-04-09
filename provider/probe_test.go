@@ -41,6 +41,75 @@ func TestProbeServer_SkipsEmbedding(t *testing.T) {
 	assert.Equal(t, "llama-3.3-70b", result.ModelID)
 }
 
+func TestProbeServer_LlamaCppRouterStatus(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "mistral-7b.gguf", "owned_by": "llamacpp", "status": map[string]string{"value": "unloaded"}},
+				{"id": "llama-3.3-8b.gguf", "owned_by": "llamacpp", "status": map[string]string{"value": "loaded"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := ProbeServer(srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, "llama-3.3-8b.gguf", result.ModelID)
+	assert.Equal(t, "loaded", result.State)
+	assert.Equal(t, "llamacpp", result.ServerType)
+}
+
+func TestProbeServer_OllamaPS(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]string{
+					{"id": "llama3.2", "owned_by": "ollama"},
+					{"id": "qwen2.5-coder:32b", "owned_by": "ollama"},
+					{"id": "nomic-embed-text", "owned_by": "ollama"},
+				},
+			})
+		case "/api/ps":
+			json.NewEncoder(w).Encode(map[string]any{
+				"models": []map[string]string{
+					{"name": "qwen2.5-coder:32b"},
+				},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	result, err := ProbeServer(srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, "qwen2.5-coder:32b", result.ModelID)
+	assert.Equal(t, "loaded", result.State)
+}
+
+func TestProbeServer_PrefersLoaded(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]string{
+				{"id": "qwen2.5-coder-32b", "owned_by": "lmstudio", "state": "not-loaded"},
+				{"id": "deepseek-r1:8b", "owned_by": "lmstudio", "state": "not-loaded"},
+				{"id": "llama-3.3-70b", "owned_by": "lmstudio", "state": "loaded"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := ProbeServer(srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, "llama-3.3-70b", result.ModelID)
+	assert.Equal(t, "loaded", result.State)
+}
+
 func TestProbeServer_SingleModel(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +139,19 @@ func TestBestModel(t *testing.T) {
 		{"single chat", []ProbeResult{{ModelID: "llama-3.3-70b"}}, "llama-3.3-70b"},
 		{"skip embedding first", []ProbeResult{{ModelID: "text-embedding-3-large"}, {ModelID: "llama-3.3-70b"}}, "llama-3.3-70b"},
 		{"all embedding falls back to first", []ProbeResult{{ModelID: "text-embedding-3-large"}}, "text-embedding-3-large"},
+		{"prefer loaded over unloaded", []ProbeResult{
+			{ModelID: "qwen2.5-coder-32b", State: "not-loaded"},
+			{ModelID: "llama-3.3-70b", State: "loaded"},
+		}, "llama-3.3-70b"},
+		{"loaded embedding skipped for loaded chat", []ProbeResult{
+			{ModelID: "text-embedding-3-large", State: "loaded"},
+			{ModelID: "qwen2.5-coder-32b", State: "not-loaded"},
+			{ModelID: "llama-3.3-70b", State: "loaded"},
+		}, "llama-3.3-70b"},
+		{"no state falls back to first non-embedding", []ProbeResult{
+			{ModelID: "qwen2.5-coder-32b"},
+			{ModelID: "llama-3.3-70b"},
+		}, "qwen2.5-coder-32b"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
