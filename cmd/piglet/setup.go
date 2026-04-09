@@ -69,6 +69,7 @@ func resolveBaseURL(baseURL, port string) (string, error) {
 		return "", fmt.Errorf("--port and --base-url are mutually exclusive")
 	}
 	if port != "" {
+		port = strings.TrimPrefix(port, ":") // accept ":8000" as well as "8000"
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65535 {
 			return "", fmt.Errorf("--port must be a valid port number (1-65535): %s", port)

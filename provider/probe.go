@@ -7,14 +7,88 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
+
+// WellKnownPort describes a default port for a local model server.
+type WellKnownPort struct {
+	Port int
+	Name string
+}
+
+// WellKnownPorts lists default ports for common local model servers,
+// ordered by preference (first match wins in ScanLocalServers).
+var WellKnownPorts = []WellKnownPort{
+	{1234, "LM Studio"},
+	{11434, "Ollama"},
+	{8080, "MLX/llama.cpp/LocalAI"},
+	{8000, "vLLM"},
+	{5000, "text-generation-webui"},
+}
+
+// ScanResult holds the outcome of ScanLocalServers.
+type ScanResult struct {
+	URL    string        // base URL of the responding server
+	Models []ProbeResult // all models reported by that server
+}
+
+// ScanLocalServers probes well-known local model server ports concurrently
+// and returns the first responding server (by preference order) together with
+// its model list, avoiding a redundant probe call by the caller.
+func ScanLocalServers() (ScanResult, error) {
+	type hit struct {
+		url    string
+		models []ProbeResult
+	}
+	found := make([]hit, len(WellKnownPorts))
+	ok := make([]bool, len(WellKnownPorts))
+	var wg sync.WaitGroup
+	for i, s := range WellKnownPorts {
+		wg.Add(1)
+		go func(idx, port int) {
+			defer wg.Done()
+			u := fmt.Sprintf("http://localhost:%d", port)
+			if models, err := ProbeModels(u); err == nil {
+				found[idx] = hit{url: u, models: models}
+				ok[idx] = true
+			}
+		}(i, s.Port)
+	}
+	wg.Wait()
+
+	for i, responding := range ok {
+		if responding {
+			return ScanResult{URL: found[i].url, Models: found[i].models}, nil
+		}
+	}
+
+	parts := make([]string, len(WellKnownPorts))
+	for i, s := range WellKnownPorts {
+		parts[i] = fmt.Sprintf("%d (%s)", s.Port, s.Name)
+	}
+	return ScanResult{}, fmt.Errorf("no local model server found\nScanned: %s\nStart a server or use --port <n>", strings.Join(parts, ", "))
+}
 
 // ProbeResult holds the outcome of probing a local model server.
 type ProbeResult struct {
 	ModelID       string // discovered model ID (e.g. "qwen3.5-27b-mxfp8")
 	ServerType    string // "lmstudio", "ollama", or "unknown"
 	ContextWindow int    // if discoverable, else 0
+}
+
+// BestModel returns the ID of the best chat-capable model from a list,
+// skipping embedding-only models. Returns "" if results is empty.
+func BestModel(results []ProbeResult) string {
+	for _, r := range results {
+		if !isEmbeddingModel(r.ModelID) {
+			return r.ModelID
+		}
+	}
+	if len(results) > 0 {
+		return results[0].ModelID
+	}
+	return ""
 }
 
 // ProbeServer contacts baseURL + "/v1/models" and returns the best
@@ -24,7 +98,6 @@ func ProbeServer(baseURL string) (ProbeResult, error) {
 	if err != nil {
 		return ProbeResult{}, err
 	}
-	// Prefer non-embedding models — embedding models can't do chat completions.
 	for _, r := range results {
 		if !isEmbeddingModel(r.ModelID) {
 			return r, nil

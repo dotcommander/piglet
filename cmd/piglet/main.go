@@ -117,6 +117,37 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// --local: scan well-known ports for a running local model server.
+	if flags.local {
+		if resolvedBaseURL != "" {
+			return fmt.Errorf("--local and --port/--base-url are mutually exclusive")
+		}
+		scan, err := provider.ScanLocalServers()
+		if err != nil {
+			return err
+		}
+		resolvedBaseURL = scan.URL
+		// Reuse the models already fetched during the scan — no second probe needed.
+		if flags.model == "" {
+			if m := provider.BestModel(scan.Models); m != "" {
+				flags.model = m
+			}
+		}
+	}
+
+	// Auto-probe model when connecting to a local server without explicit --model.
+	if flags.model == "" && resolvedBaseURL != "" {
+		result, err := provider.ProbeServer(resolvedBaseURL)
+		if err != nil {
+			return fmt.Errorf("could not detect model at %s: %w\nSpecify with --model <name>", resolvedBaseURL, err)
+		}
+		flags.model = result.ModelID
+		if flags.model == "" {
+			flags.model = "default"
+		}
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	rt, debugCleanup, err := loadRuntime(ctx, flags.debug, flags.model, resolvedBaseURL)
@@ -152,6 +183,7 @@ type cliFlags struct {
 	debug      bool
 	json       bool
 	repl       bool
+	local      bool
 	help       bool
 	version    bool
 	model      string
@@ -177,6 +209,8 @@ func parseFlags(args []string) (cliFlags, error) {
 			f.json = true
 		case "--repl":
 			f.repl = true
+		case "--local":
+			f.local = true
 		case "--model":
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--model requires a value")
@@ -300,9 +334,10 @@ func printHelp() {
 	p("  piglet update                Self-update and rebuild extensions\n\n")
 
 	p("%s\n", heading.Render("FLAGS"))
+	p("      --local            Auto-detect local model server (scans common ports)\n")
 	p("      --model <query>    Model name, URL, or :port  [$PIGLET_DEFAULT_MODEL]\n")
 	p("      --base-url <url>   Override provider endpoint\n")
-	p("      --port <n>         Shorthand for localhost:<n>\n")
+	p("      --port <n>         Shorthand for localhost:<n> (auto-detects model)\n")
 	p("      --repl             Simple REPL mode (no TUI)\n")
 	p("      --json             NDJSON event stream (single-shot only)\n")
 	p("      --result <path>    Write final output to file\n")
@@ -314,6 +349,7 @@ func printHelp() {
 	p("  piglet                                  Start interactive session\n")
 	p("  piglet \"what does this project do?\"     Quick question\n")
 	p("  piglet --model sonnet \"hello\"           Use a specific model\n")
+	p("  piglet --local                          Auto-detect local server\n")
 	p("  piglet --port 11434 \"hello\"             Talk to local Ollama\n")
 	p("  piglet :8080 \"summarize main.go\"        URL shorthand as model\n")
 	p("  piglet --json \"list files\" | jq .       Machine-readable output\n\n")
