@@ -15,7 +15,7 @@ func TestBuild_BasePrompt(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("")
-	result := prompt.Build(app, "You are a helpful assistant.")
+	result := prompt.Build(app, "You are a helpful assistant.", nil)
 
 	// Base prompt appears when no user prompt file is loaded (HOME set to temp dir).
 	// In CI there is no ~/.config/piglet/prompt.md, so base is used.
@@ -39,7 +39,7 @@ func TestBuild_WithPromptSections(t *testing.T) {
 		Order:   1,
 	})
 
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 
 	assert.Contains(t, result, "# Code Style")
 	assert.Contains(t, result, "Always use gofmt.")
@@ -61,7 +61,7 @@ func TestBuild_WithToolDefs(t *testing.T) {
 		PromptGuides: []string{"Use offset/limit for large files", "Prefer grep to locate content"},
 	})
 
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 
 	// Only hints and guides appear — description is sent via API tool schemas
 	assert.Contains(t, result, "# Tool Usage Notes")
@@ -81,7 +81,7 @@ func TestBuild_EmptyBase(t *testing.T) {
 		Content: "Some content.",
 	})
 
-	result := prompt.Build(app, "")
+	result := prompt.Build(app, "", nil)
 
 	// Even with empty base, sections appear
 	assert.Contains(t, result, "# Section")
@@ -109,7 +109,7 @@ func TestBuild_SectionsOrdered(t *testing.T) {
 		Order:   20,
 	})
 
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 
 	idxFirst := strings.Index(result, "# First")
 	idxSecond := strings.Index(result, "# Second")
@@ -138,7 +138,7 @@ func TestBuild_ToolWithoutHint(t *testing.T) {
 		// No PromptHint, no PromptGuides — tool is omitted from prompt entirely
 	})
 
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 
 	// Tools without hints/guides don't appear in the prompt (description sent via API)
 	assert.NotContains(t, result, "## list_dir")
@@ -150,7 +150,7 @@ func TestBuild_NoToolsSection(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("")
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 
 	// No tools registered → no tool usage section
 	assert.NotContains(t, result, "# Tool Usage Notes")
@@ -164,7 +164,7 @@ func TestBuild_OrderOverrides(t *testing.T) {
 	app.RegisterPromptSection(ext.PromptSection{Title: "B", Content: "bbb", Order: 20})
 
 	// Swap order so B comes before A
-	result := prompt.Build(app, "base", prompt.BuildOptions{
+	result := prompt.Build(app, "base", &prompt.BuildOptions{
 		OrderOverrides: map[string]int{"B": 5},
 	})
 
@@ -186,11 +186,11 @@ func TestBuild_DeferredTools(t *testing.T) {
 	})
 
 	// Full mode (default) — deferred tools present but no index section injected.
-	result := prompt.Build(app, "base")
+	result := prompt.Build(app, "base", nil)
 	assert.NotContains(t, result, "# Available Tools")
 
 	// Compact mode — deferred index appears with tool_search instruction.
-	result = prompt.Build(app, "base", prompt.BuildOptions{
+	result = prompt.Build(app, "base", &prompt.BuildOptions{
 		ToolMode: ext.ToolModeCompact,
 	})
 	assert.Contains(t, result, "# Available Tools")

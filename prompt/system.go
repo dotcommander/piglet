@@ -12,6 +12,7 @@ import (
 )
 
 // BuildOptions controls optional prompt building behavior.
+// Pass nil to use defaults (no overrides, full tool mode).
 type BuildOptions struct {
 	OrderOverrides map[string]int // section title → order override
 	ToolMode       ext.ToolMode   // controls how deferred tools appear in prompt
@@ -22,7 +23,7 @@ type BuildOptions struct {
 // 2. User prompt file (~/.config/piglet/prompt.md) — overrides base
 // 3. Extension-registered prompt sections
 // 4. Tool hints and guidelines from registered tools
-func Build(app *ext.App, base string, opts ...BuildOptions) string {
+func Build(app *ext.App, base string, opts *BuildOptions) string {
 	var b strings.Builder
 
 	// User prompt file overrides the base identity
@@ -36,13 +37,13 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 	// Extension-registered prompt sections (pre-sorted by Order; re-sorted only when overrides apply)
 	sections := app.PromptSections()
-	if len(opts) > 0 && len(opts[0].OrderOverrides) > 0 {
+	if opts != nil && len(opts.OrderOverrides) > 0 {
 		for i, s := range sections {
-			if order, ok := opts[0].OrderOverrides[s.Title]; ok {
+			if order, ok := opts.OrderOverrides[s.Title]; ok {
 				sections[i].Order = order
 			}
 		}
-		slices.SortFunc(sections, func(a, b ext.PromptSection) int {
+		slices.SortStableFunc(sections, func(a, b ext.PromptSection) int {
 			return cmp.Compare(a.Order, b.Order)
 		})
 	}
@@ -57,19 +58,35 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 	}
 
 	// Tool hints and guidelines (descriptions already sent via API tool schemas)
+	compact := opts != nil && opts.ToolMode == ext.ToolModeCompact
+	notes, deferred := buildToolNotes(app.ToolDefs(), compact)
+	if notes != "" {
+		b.WriteString("# Tool Usage Notes\n\n")
+		b.WriteString(notes)
+	}
+	if deferred != "" {
+		b.WriteString("# Available Tools\n\n")
+		b.WriteString("These tools are available but their parameter schemas are omitted to save context. Use `tool_search` to look up a tool's complete schema before calling it.\n\n")
+		b.WriteString(deferred)
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// buildToolNotes extracts tool usage notes and deferred tool index from the
+// given tool definitions. Returns two strings: hints/guides and deferred index.
+func buildToolNotes(defs []*ext.ToolDef, compact bool) (notes, deferred string) {
 	var toolNotes strings.Builder
 	var deferredIndex strings.Builder
-	compact := len(opts) > 0 && opts[0].ToolMode == ext.ToolModeCompact
-	for _, td := range app.ToolDefs() {
-		if td.Deferred {
-			if compact {
-				deferredIndex.WriteString("- **")
-				deferredIndex.WriteString(td.Name)
-				deferredIndex.WriteString("**: ")
-				deferredIndex.WriteString(td.Description)
-				deferredIndex.WriteString("\n")
-				continue
-			}
+	for _, td := range defs {
+		if td.Deferred && compact {
+			deferredIndex.WriteString("- **")
+			deferredIndex.WriteString(td.Name)
+			deferredIndex.WriteString("**: ")
+			deferredIndex.WriteString(td.Description)
+			deferredIndex.WriteString("\n")
+			continue
 		}
 		if td.PromptHint == "" && len(td.PromptGuides) == 0 {
 			continue
@@ -88,18 +105,7 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 		}
 		toolNotes.WriteString("\n")
 	}
-	if toolNotes.Len() > 0 {
-		b.WriteString("# Tool Usage Notes\n\n")
-		b.WriteString(toolNotes.String())
-	}
-	if deferredIndex.Len() > 0 {
-		b.WriteString("# Available Tools\n\n")
-		b.WriteString("These tools are available but their parameter schemas are omitted to save context. Use `tool_search` to look up a tool's complete schema before calling it.\n\n")
-		b.WriteString(deferredIndex.String())
-		b.WriteString("\n")
-	}
-
-	return b.String()
+	return toolNotes.String(), deferredIndex.String()
 }
 
 // loadUserPrompt reads ~/.config/piglet/prompt.md if it exists.
