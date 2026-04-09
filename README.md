@@ -103,9 +103,9 @@ Piglet is an agent loop: you send a message, the LLM responds with text or tool 
 core/       Agent loop, streaming, types. Imports nothing from piglet.
 ext/        Registration surface (ext.App) — the central API.
 tool/       7 built-in tools (read, write, edit, bash, grep, find, ls).
-command/    14 slash commands, 2 keyboard shortcuts, 6 status sections.
+command/    16 slash commands, 1 keyboard shortcut, 6 status sections.
 prompt/     System prompt builder + 2 prompt sections.
-provider/   OpenAI, Anthropic, Google streaming providers.
+provider/   OpenAI, Anthropic, Google streaming + local server auto-discovery.
 shell/      Agent lifecycle — submit, events, notifications (frontend-agnostic).
 tui/        Bubble Tea v2 terminal UI (consumes shell/).
 sdk/        Go Extension SDK — standalone module (github.com/dotcommander/piglet/sdk).
@@ -127,12 +127,36 @@ Switch mid-session with `Ctrl+P` or `/model`. No restart needed.
 | OpenRouter | `OPENROUTER_API_KEY` |
 | Z.AI | `ZAI_API_KEY` |
 | LM Studio | — (localhost:1234) |
+| Ollama | — (localhost:11434) |
 
 Any OpenAI-compatible endpoint works via base URL override in config.
 
 Use just the model ID (`gpt-5`) or the full form (`openai/gpt-5`). Override with `PIGLET_DEFAULT_MODEL` or `defaultModel` in config. Run `/model` to see all available models.
 
 > Piglet writes `models.yaml` to `~/.config/piglet/` on first run with the current model catalog. To refresh after a piglet upgrade, delete the file and restart — it regenerates automatically.
+
+### Local Models
+
+No API key needed. Point piglet at any local server that speaks the OpenAI protocol:
+
+```bash
+piglet --model :1234          # LM Studio (default port)
+piglet --model :11434         # Ollama (default port)
+piglet --model :8080          # llama.cpp, MLX, vLLM
+```
+
+Piglet probes the server, discovers available models, and auto-detects the server type. For persistent auto-discovery on every startup:
+
+```yaml
+# ~/.config/piglet/config.yaml
+localServers:
+  - http://localhost:1234
+  - http://localhost:11434
+```
+
+Local models automatically get **progressive tool disclosure** — piglet sends only 7 core tool schemas and defers the remaining 42 tools behind a lightweight `tool_search` index. The model calls `tool_search` when it needs a tool, and the full schema is loaded on demand. This keeps the prompt small enough for models with limited context windows.
+
+See [Providers — Local Models](docs/providers.md#local-models) for the full guide.
 
 ## Commands and Shortcuts
 

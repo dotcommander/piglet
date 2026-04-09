@@ -186,15 +186,57 @@ All models from configured servers appear in the model picker automatically.
 
 ### Supported Servers
 
-| Server | Default Port | Auto-Detected |
-|--------|-------------|---------------|
-| LM Studio | 1234 | Yes |
-| Ollama | 11434 | Yes |
-| vLLM | 8000 | Yes (generic) |
-| llama.cpp | 8080 | Yes (generic) |
-| MLX | 8080 | Yes (generic) |
+| Server | Default Port | Auto-Detected | Notes |
+|--------|-------------|---------------|-------|
+| LM Studio | 1234 | Yes | Detected via `owned_by` field in model response |
+| Ollama | 11434 | Yes | Detected via response headers |
+| vLLM | 8000 | Yes (generic) | |
+| llama.cpp | 8080 | Yes (generic) | |
+| MLX | 8080 | Yes (generic) | MLX Serve, mlx-lm |
+
+Piglet filters out embedding models automatically — models with names containing `embed`, `minilm`, `e5-`, `bge-`, or `gte-` are excluded from the model picker.
 
 If auto-discovery fails (server not running, non-standard API), piglet falls back to a generic "local" model with reasonable defaults.
+
+### Progressive Tool Disclosure
+
+Local models often have smaller context windows than cloud models. To keep the prompt manageable, piglet uses **progressive tool disclosure** for local model connections.
+
+**How it works:**
+
+When connected to a local model, piglet switches from `ToolModeFull` (all 49 tool schemas in the prompt) to `ToolModeCompact`:
+
+- **7 core tools** (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) send their full parameter schemas — always available
+- **42 extension tools** send only their name and one-line description — no parameter schemas
+- The deferred tools appear in a prompt section titled "Available Tools" so the model knows they exist
+- When the model needs a deferred tool, it calls `tool_search` with the tool name
+- `tool_search` returns the full schema and **activates** the tool — subsequent turns include the full schema automatically
+
+This reduces prompt size significantly while keeping all tools accessible on demand.
+
+**Example flow:**
+
+```
+User: "search my memory for auth patterns"
+
+Model sees: memory_search (Search stored memory entries) — no parameters shown
+Model calls: tool_search("memory_search")
+Piglet returns: full schema with parameters (query, limit, tags, etc.)
+Model calls: memory_search(query="auth patterns")
+```
+
+After activation, `memory_search` stays fully expanded for the rest of the session.
+
+**Configuration:**
+
+Tool mode is set automatically based on the provider — local servers use compact mode, cloud providers use full mode. You can customize the instruction shown to the model for deferred tools:
+
+```yaml
+# ~/.config/piglet/config.yaml
+deferredToolsNote: "Call tool_search before using any tool listed below."
+```
+
+Cloud providers always use full mode regardless of this setting.
 
 ## Custom Endpoints
 

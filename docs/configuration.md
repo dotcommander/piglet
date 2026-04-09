@@ -57,7 +57,7 @@ theme: ""                          # Reserved for future use
 rtk: null                          # RTK token optimization: null=auto, true/false=explicit
 debug: false                       # Log all request/response payloads
 safeguard: null                    # Dangerous command blocking: null/true=enabled, false=disabled
-deferredToolsNote: ""              # Custom instruction shown when deferred tools are present
+deferredToolsNote: ""              # Custom instruction for the model about deferred tools (local models only)
 ```
 
 ### Model Resolution
@@ -96,9 +96,8 @@ agent:
 | `maxTurns` | int | `10` | Maximum LLM calls per user prompt. Each tool-use round counts as one turn. Set to `0` for unlimited |
 | `bgMaxTurns` | int | `5` | Maximum turns for the background agent (`/bg`) |
 | `autoTitle` | bool | `true` | Automatically generate a session title after the first exchange |
-| `compactKeepRecent` | int | `6` | Number of recent messages to preserve when compacting |
 | `compactAt` | int | `0` | Token threshold for auto-compaction. When input tokens exceed this value, piglet compacts the history. `0` disables auto-compaction |
-| `compactKeepRecent` | int | `6` | Messages to keep during compaction |
+| `compactKeepRecent` | int | `6` | Number of recent messages to preserve when compacting |
 | `maxMessages` | int | `0` | Hard cap on conversation length. When exceeded, oldest messages (except the first) are dropped. `0` = unlimited |
 | `maxTokens` | int | `0` | Output token limit sent to the provider. `0` uses the model's default |
 | `maxRetries` | int | `3` | Number of retry attempts on transient provider errors (rate limits, timeouts) |
@@ -341,6 +340,7 @@ smallModel: claude-haiku-4-5
 debug: false
 safeguard: true
 rtk: null
+deferredToolsNote: ""              # Custom instruction for deferred tools (local models only)
 
 agent:
   maxTurns: 15

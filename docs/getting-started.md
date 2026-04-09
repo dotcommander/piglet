@@ -12,7 +12,7 @@
 
 - Go 1.26 or later
 - Git (for extension installation)
-- An API key from at least one supported [provider](providers.md)
+- An API key from at least one supported [provider](providers.md), **or** a local model server (LM Studio, Ollama, etc.)
 
 ## Installation
 
@@ -32,7 +32,9 @@ piglet --version
 
 ## API Keys
 
-Piglet needs an API key from at least one LLM provider. The fastest way to get started is to export an environment variable:
+Piglet needs an API key from at least one LLM provider — **or** a local model server. Pick one:
+
+### Cloud Provider (API Key)
 
 ```bash
 # Anthropic (recommended)
@@ -48,6 +50,27 @@ export GOOGLE_API_KEY=AIza...
 Add the export to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to make it permanent.
 
 For other providers and advanced auth methods (secret managers, shell commands), see the [Providers](providers.md) documentation.
+
+### Local Model (No API Key)
+
+Start [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.com), or any OpenAI-compatible server, then point piglet at it:
+
+```bash
+piglet --model :1234          # LM Studio (default port)
+piglet --model :11434         # Ollama (default port)
+piglet --model :8080          # llama.cpp, MLX, vLLM
+```
+
+Piglet probes the server, discovers available models, and starts immediately. No API key, no account, no configuration file needed.
+
+To auto-discover local servers on every startup, add them to `~/.config/piglet/config.yaml`:
+
+```yaml
+localServers:
+  - http://localhost:1234
+```
+
+See [Providers — Local Models](providers.md#local-models) for the full guide.
 
 ## First Launch
 
