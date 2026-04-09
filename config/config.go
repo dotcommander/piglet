@@ -43,9 +43,17 @@ type ProjectDoc struct {
 	Title string `yaml:"title"`
 }
 
+// DefaultMaxTurns is the application-wide default for agent max turns.
+// Used as the fallback in config.IntOr(settings.Agent.MaxTurns, config.DefaultMaxTurns).
+const DefaultMaxTurns = 30
+
+// DefaultSubAgentMaxTurns is the default max turns for sub-agent dispatch
+// (SubAgentSettings.MaxTurns zero value).
+const DefaultSubAgentMaxTurns = 30
+
 // AgentSettings controls agent loop behavior. Zero values use defaults.
 type AgentSettings struct {
-	MaxTurns          int   `yaml:"maxTurns,omitempty"`          // default 10
+	MaxTurns          int   `yaml:"maxTurns,omitempty"`          // default DefaultMaxTurns
 	BgMaxTurns        int   `yaml:"bgMaxTurns,omitempty"`        // default 5
 	AutoTitle         *bool `yaml:"autoTitle,omitempty"`         // default true; pointer distinguishes false from unset
 	CompactKeepRecent int   `yaml:"compactKeepRecent,omitempty"` // default 6
@@ -88,7 +96,7 @@ type BashSettings struct {
 
 // SubAgentSettings controls the dispatch tool's sub-agent defaults.
 type SubAgentSettings struct {
-	MaxTurns int `yaml:"maxTurns,omitempty"` // default 10
+	MaxTurns int `yaml:"maxTurns,omitempty"` // default DefaultSubAgentMaxTurns
 }
 
 // ExtensionSettings controls extension installation defaults.

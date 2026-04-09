@@ -137,7 +137,7 @@ func (h *Host) handleHostConfigGet(msg *Message) {
 		case "agent.compactAt":
 			values[key] = config.IntOr(settings.Agent.CompactAt, 0)
 		case "agent.maxTurns":
-			values[key] = config.IntOr(settings.Agent.MaxTurns, 10)
+			values[key] = config.IntOr(settings.Agent.MaxTurns, config.DefaultMaxTurns)
 		}
 	}
 	h.respond(*msg.ID, HostConfigGetResult{Values: values})
@@ -272,7 +272,7 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 
 	maxTurns := params.MaxTurns
 	if maxTurns <= 0 {
-		maxTurns = 10
+		maxTurns = config.DefaultMaxTurns
 	}
 
 	sub := core.NewAgent(core.AgentConfig{

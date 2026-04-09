@@ -80,7 +80,7 @@ Control how the agent loop behaves:
 
 ```yaml
 agent:
-  maxTurns: 10             # Max LLM calls per prompt (0 = unlimited)
+  maxTurns: 30             # Max LLM calls per prompt (0 = unlimited)
   bgMaxTurns: 5            # Max turns for background agent
   autoTitle: true          # Auto-generate session titles after first exchange
   compactKeepRecent: 6     # Messages to preserve during compaction
@@ -93,7 +93,7 @@ agent:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `maxTurns` | int | `10` | Maximum LLM calls per user prompt. Each tool-use round counts as one turn. Set to `0` for unlimited |
+| `maxTurns` | int | `30` | Maximum LLM calls per user prompt. Each tool-use round counts as one turn. Set to `0` for unlimited |
 | `bgMaxTurns` | int | `5` | Maximum turns for the background agent (`/bg`) |
 | `autoTitle` | bool | `true` | Automatically generate a session title after the first exchange |
 | `compactAt` | int | `0` | Token threshold for auto-compaction. When input tokens exceed this value, piglet compacts the history. `0` disables auto-compaction |
@@ -295,7 +295,7 @@ Control sub-agents dispatched by the `dispatch` tool:
 
 ```yaml
 subagent:
-  maxTurns: 10             # Max turns per sub-agent (default: 10)
+  maxTurns: 30             # Max turns per sub-agent (default: 30)
 ```
 
 ## Debug Mode
@@ -397,7 +397,7 @@ disabled_extensions:
 allowProjectExtensions: false
 
 subagent:
-  maxTurns: 10
+  maxTurns: 30
 
 providers:
   openai: https://my-proxy.example.com/v1

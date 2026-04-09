@@ -9,6 +9,9 @@ import (
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
+// maxSubTaskTurns is the cap applied to each sub-task's MaxTurns during planning.
+const maxSubTaskTurns = 30
+
 // SubTask represents a decomposed sub-task.
 type SubTask struct {
 	Task     string `json:"task"`
@@ -44,7 +47,7 @@ func PlanTasks(ctx context.Context, ext *sdk.Extension, request string, caps []C
 			Task:     request,
 			Tools:    "all",
 			Model:    "default",
-			MaxTurns: 10,
+			MaxTurns: maxSubTaskTurns,
 		}}, nil
 	}
 
@@ -55,7 +58,7 @@ func PlanTasks(ctx context.Context, ext *sdk.Extension, request string, caps []C
 			Task:     request,
 			Tools:    "all",
 			Model:    "default",
-			MaxTurns: 10,
+			MaxTurns: maxSubTaskTurns,
 		}}, nil
 	}
 
@@ -65,7 +68,7 @@ func PlanTasks(ctx context.Context, ext *sdk.Extension, request string, caps []C
 			Task:     request,
 			Tools:    "all",
 			Model:    "default",
-			MaxTurns: 10,
+			MaxTurns: maxSubTaskTurns,
 		}}, nil
 	}
 	if len(tasks) > 5 {
@@ -79,8 +82,8 @@ func PlanTasks(ctx context.Context, ext *sdk.Extension, request string, caps []C
 		if tasks[i].Model == "" {
 			tasks[i].Model = "default"
 		}
-		if tasks[i].MaxTurns <= 0 || tasks[i].MaxTurns > 20 {
-			tasks[i].MaxTurns = 10
+		if tasks[i].MaxTurns <= 0 || tasks[i].MaxTurns > maxSubTaskTurns {
+			tasks[i].MaxTurns = maxSubTaskTurns
 		}
 	}
 

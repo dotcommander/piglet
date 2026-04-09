@@ -267,7 +267,7 @@ Everything lives in `~/.config/piglet/`:
 defaultModel: claude-opus-4-6
 smallModel: claude-haiku-4-5-20251001   # for background tasks
 agent:
-  maxTurns: 10
+  maxTurns: 30
   maxMessages: 200
   toolConcurrency: 10
 ```

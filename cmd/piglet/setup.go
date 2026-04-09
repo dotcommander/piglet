@@ -325,7 +325,7 @@ func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
 		System:          system,
 		Tools:           coreTools,
 		Options:         opts,
-		MaxTurns:        config.IntOr(rt.settings.Agent.MaxTurns, 10),
+		MaxTurns:        config.IntOr(rt.settings.Agent.MaxTurns, config.DefaultMaxTurns),
 		MaxMessages:     config.IntOr(rt.settings.Agent.MaxMessages, 200),
 		MaxRetries:      rt.settings.Agent.MaxRetries,
 		ToolConcurrency: rt.settings.Agent.ToolConcurrency,

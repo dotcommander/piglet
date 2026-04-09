@@ -15,7 +15,7 @@ Delegates tasks to independent sub-agents that run to completion with their own 
 | `task` | string | yes | Task instructions for the sub-agent |
 | `context` | string | no | Additional context appended to system prompt |
 | `tools` | enum | no | `read_only` (default) or `all` |
-| `max_turns` | int | no | Max agent turns (default: 10) |
+| `max_turns` | int | no | Max agent turns (default: 30) |
 | `model` | string | no | Model override (e.g., `anthropic/claude-haiku-4-5`) |
 | `prefer` | enum | no | `default` or `small` model preference |
 

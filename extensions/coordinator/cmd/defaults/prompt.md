@@ -4,7 +4,7 @@ Return a JSON array of sub-tasks. Each sub-task has:
 - "task": clear instruction for a sub-agent
 - "tools": "all" or "background_safe" (use background_safe for read-only research tasks)
 - "model": "default" or "small" (use small for simple lookups)
-- "max_turns": integer 1-20 (fewer for simple tasks)
+- "max_turns": integer 1-30 (fewer for simple tasks)
 
 Rules:
 - Each sub-task should be independently executable
