@@ -15,7 +15,7 @@ import (
 
 // buildSystemPrompt assembles the system prompt with tool mode applied.
 func buildSystemPrompt(app *ext.App, rt *runtime) string {
-	return prompt.Build(app, rt.settings.SystemPrompt, prompt.BuildOptions{
+	return prompt.Build(app, rt.settings.SystemPrompt, &prompt.BuildOptions{
 		OrderOverrides: rt.settings.PromptOrder,
 		ToolMode:       toolModeForModel(rt.model),
 	})

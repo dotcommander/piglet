@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"sync"
 	"time"
 
-	"github.com/dotcommander/piglet/extensions/internal/xdg"
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
@@ -56,152 +53,34 @@ var repomapToolParams = map[string]any{
 
 // Register wires the repomap extension into a shared SDK extension.
 func Register(e *sdk.Extension) {
-	var (
-		rm      *Map
-		extRef  *sdk.Extension
-		built   bool
-		builtMu sync.RWMutex
-	)
-
-	setBuilt := func(v bool) {
-		builtMu.Lock()
-		built = v
-		builtMu.Unlock()
-	}
-
-	isBuilt := func() bool {
-		builtMu.RLock()
-		defer builtMu.RUnlock()
-		return built
-	}
-
-	buildInBackground := func() {
-		extRef.Notify("Scanning repository...")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		start := time.Now()
-		if err := rm.Build(ctx); err != nil {
-			if errors.Is(err, ErrNotCodeProject) {
-				extRef.Log("debug", "skipping repomap: no source files found")
-			} else {
-				extRef.Notify("Scan failed")
-				extRef.Log("warn", "repomap background build failed: "+err.Error())
-			}
-			return
-		}
-
-		elapsed := time.Since(start).Round(time.Millisecond)
-		out := rm.StringLines()
-		if out == "" {
-			extRef.Notify("No source files found")
-			extRef.Log("warn", "repomap produced empty output")
-			setBuilt(true)
-			return
-		}
-
-		setBuilt(true)
-		extRef.Notify("Map ready")
-		extRef.Log("info", "repomap built in "+elapsed.String())
-	}
+	s := new(initState)
 
 	e.OnInit(func(x *sdk.Extension) {
-		start := time.Now()
-		x.Log("debug", "[repomap] OnInit start")
-
-		extRef = x
-
-		cachedInv := LoadInventory(repomapCacheDir())
-		if cachedInv != nil {
-			x.Log("debug", fmt.Sprintf("[repomap] inventory cache found: %d files", len(cachedInv.Files)))
-		}
-		cfg := loadRepomapConfig()
-		rm = New(x.CWD(), cfg)
-
-		cd := repomapCacheDir()
-		rm.SetCacheDir(cd)
-
-		// Try disk cache first — instant startup
-		if rm.LoadCache(cd) {
-			x.Log("debug", fmt.Sprintf("[repomap] cache hit (%s)", time.Since(start)))
-			setBuilt(true)
-			x.RegisterPromptSection(sdk.PromptSectionDef{
-				Title:   "Repository Map",
-				Content: rm.StringLines(),
-				Order:   95,
-			})
-			go func() {
-				if !rm.Stale() {
-					return
-				}
-				buildCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				if err := rm.Build(buildCtx); err != nil {
-					if !errors.Is(err, ErrNotCodeProject) {
-						x.Log("warn", "repomap background rebuild: "+err.Error())
-					}
-				}
-			}()
-			x.Log("debug", fmt.Sprintf("[repomap] OnInit complete (%s)", time.Since(start)))
-			return
-		}
-
-		x.Log("debug", fmt.Sprintf("[repomap] cache miss — quick build start (%s)", time.Since(start)))
-
-		quickCtx, quickCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		buildErr := rm.Build(quickCtx)
-		quickCancel()
-		if buildErr == nil {
-			x.Log("debug", fmt.Sprintf("[repomap] quick build done (%s)", time.Since(start)))
-			setBuilt(true)
-			x.RegisterPromptSection(sdk.PromptSectionDef{
-				Title:   "Repository Map",
-				Content: rm.StringLines(),
-				Order:   95,
-			})
-			x.Log("debug", fmt.Sprintf("[repomap] OnInit complete (%s)", time.Since(start)))
-			return
-		}
-		if errors.Is(buildErr, ErrNotCodeProject) {
-			x.Log("debug", "skipping repomap: no source files found")
-			x.Log("debug", fmt.Sprintf("[repomap] OnInit complete — not a code project (%s)", time.Since(start)))
-			return
-		}
-
-		x.Log("debug", fmt.Sprintf("[repomap] quick build timed out — continuing in background (%s)", time.Since(start)))
-
-		x.RegisterPromptSection(sdk.PromptSectionDef{
-			Title:   "Repository Map",
-			Content: "",
-			Order:   95,
-		})
-		x.Log("debug", fmt.Sprintf("[repomap] OnInit complete (%s)", time.Since(start)))
-		go buildInBackground()
+		handleOnInit(x, s)
 	})
 
 	e.RegisterEventHandler(sdk.EventHandlerDef{
 		Name:     "repomap-stale-check",
 		Priority: 50,
-		Events:   []string{"turn_end"},
+		Events:   []string{"EventTurnEnd"},
 		Handle: func(ctx context.Context, eventType string, data json.RawMessage) *sdk.Action {
-			if rm == nil {
+			if s.rm == nil {
 				return nil
 			}
 
 			if turnModifiedCode(data) {
-				rm.Dirty()
+				s.rm.Dirty()
 			}
 
-			if !rm.Stale() {
+			if !s.rm.Stale() {
 				return nil
 			}
 			go func() {
 				buildCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				if err := rm.Build(buildCtx); err != nil {
+				if err := s.rm.Build(buildCtx); err != nil {
 					if !errors.Is(err, ErrNotCodeProject) {
-						extRef.Log("warn", "repomap rebuild failed: "+err.Error())
+						s.extRef.Log("warn", "repomap rebuild failed: "+err.Error())
 					}
 				}
 			}()
@@ -212,34 +91,34 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_refresh",
 		Description: "Force rebuild the repository map after major file changes.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  repomapToolParams,
 		PromptHint:  "Rebuild the repository map after major file changes",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if rm == nil {
+			if s.rm == nil {
 				return sdk.ErrorResult("repository map not initialized"), nil
 			}
-			if err := rm.Build(ctx); err != nil {
+			if err := s.rm.Build(ctx); err != nil {
 				return sdk.ErrorResult("rebuild failed: " + err.Error()), nil
 			}
-			setBuilt(true)
-			return sdk.TextResult(formatRepomapOutput(rm, args)), nil
+			s.setBuilt(true)
+			return sdk.TextResult(formatRepomapOutput(s.rm, args)), nil
 		},
 	})
 
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_show",
 		Description: "Show the current repository structure map with source code definitions.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  repomapToolParams,
 		PromptHint:  "Show the current repository structure map (default: source lines, verbose/detail for alternatives)",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if rm == nil {
+			if s.rm == nil {
 				return sdk.TextResult("Repository map not initialized."), nil
 			}
-			out := formatRepomapOutput(rm, args)
+			out := formatRepomapOutput(s.rm, args)
 			if out == "" {
-				if !isBuilt() {
+				if !s.isBuilt() {
 					return sdk.TextResult("Repository map is still building..."), nil
 				}
 				return sdk.TextResult("Repository map is empty (no source files found)."), nil
@@ -251,11 +130,11 @@ Deferred:    true,
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_inventory",
 		Description: "Scan repository files for metrics (lines, imports) and query the inventory.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  inventoryParams,
 		PromptHint:  "Query per-file metrics: lines, imports. Use 'scan' to build, 'query' to filter.",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if extRef == nil {
+			if s.extRef == nil {
 				return sdk.TextResult("repomap not initialized"), nil
 			}
 			action, _ := args["action"].(string)
@@ -263,12 +142,12 @@ Deferred:    true,
 
 			switch action {
 			case "scan":
-				inv, err := ScanInventory(ctx, extRef.CWD())
+				inv, err := ScanInventory(ctx, s.extRef.CWD())
 				if err != nil {
 					return sdk.ErrorResult("scan failed: " + err.Error()), nil
 				}
 				if err := PersistInventory(inv, repomapCacheDir()); err != nil {
-					extRef.Log("warn", "inventory persist failed: "+err.Error())
+					s.extRef.Log("warn", "inventory persist failed: "+err.Error())
 				}
 				header := fmt.Sprintf("Inventory: %d files (scanned %s)\n\n", len(inv.Files), inv.Scanned)
 				if inv.Truncated {
@@ -300,54 +179,4 @@ func formatRepomapOutput(rm *Map, args map[string]any) string {
 	default:
 		return rm.StringLines()
 	}
-}
-
-// pigletConfig mirrors the relevant subset of ~/.config/piglet/config.yaml.
-type pigletConfig struct {
-	Repomap struct {
-		MaxTokens      int `yaml:"maxTokens"`
-		MaxTokensNoCtx int `yaml:"maxTokensNoCtx"`
-	} `yaml:"repomap"`
-}
-
-// loadRepomapConfig reads repomap settings from ~/.config/piglet/config.yaml.
-func loadRepomapConfig() Config {
-	cfg := DefaultConfig()
-	pc := xdg.LoadYAMLExt("repomap", "config.yaml", pigletConfig{})
-
-	if pc.Repomap.MaxTokens > 0 {
-		cfg.MaxTokens = pc.Repomap.MaxTokens
-	}
-	if pc.Repomap.MaxTokensNoCtx > 0 {
-		cfg.MaxTokensNoCtx = pc.Repomap.MaxTokensNoCtx
-	}
-
-	return cfg
-}
-
-// repomapCacheDir returns the repomap cache directory.
-func repomapCacheDir() string {
-	configDir, err := xdg.ConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(configDir, "cache")
-}
-
-// turnModifiedCode checks if the turn's tool results include code-changing tools.
-func turnModifiedCode(data json.RawMessage) bool {
-	var payload struct {
-		ToolResults []struct {
-			ToolName string `json:"toolName"`
-		} `json:"ToolResults"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return false
-	}
-	for _, tr := range payload.ToolResults {
-		if codeChangingTools[tr.ToolName] {
-			return true
-		}
-	}
-	return false
 }

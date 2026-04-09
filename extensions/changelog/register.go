@@ -11,15 +11,18 @@ import (
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
-var (
+// changelogState holds mutable state shared across command handlers.
+type changelogState struct {
 	cfg Config
 	cwd string
-)
+}
 
 func Register(e *sdk.Extension) {
+	st := &changelogState{}
+
 	e.OnInitAppend(func(x *sdk.Extension) {
-		cwd = x.CWD()
-		cfg = loadConfig()
+		st.cwd = x.CWD()
+		st.cfg = loadConfig()
 		x.Log("debug", "[changelog] OnInit complete")
 	})
 
@@ -52,18 +55,18 @@ func Register(e *sdk.Extension) {
 			if showConfig {
 				var b strings.Builder
 				b.WriteString("Changelog type mappings:\n\n")
-				for _, key := range typeOrder(cfg.Types) {
-					tc := cfg.Types[key]
+				for _, key := range typeOrder(st.cfg.Types) {
+					tc := st.cfg.Types[key]
 					fmt.Fprintf(&b, "  %s %-10s %s\n", tc.Emoji, key, tc.Label)
 				}
-				fmt.Fprintf(&b, "\nFallback count: %d\n", cfg.FallbackCount)
+				fmt.Fprintf(&b, "\nFallback count: %d\n", st.cfg.FallbackCount)
 				e.ShowMessage(b.String())
 				return nil
 			}
 
-			ref = DetectRange(cwd, ref, cfg.FallbackCount)
+			ref = DetectRange(st.cwd, ref, st.cfg.FallbackCount)
 
-			commits, err := ParseCommits(cwd, ref)
+			commits, err := ParseCommits(st.cwd, ref)
 			if err != nil {
 				e.ShowMessage(fmt.Sprintf("Error: %v", err))
 				return nil
@@ -74,15 +77,15 @@ func Register(e *sdk.Extension) {
 			}
 
 			if write || dryRun {
-				repoURL := RepoURL(cwd)
-				md := FormatMarkdown(commits, ref, repoURL, cfg.Types)
+				repoURL := RepoURL(st.cwd)
+				md := FormatMarkdown(commits, ref, repoURL, st.cfg.Types)
 
 				if dryRun {
 					e.ShowMessage("Markdown preview (dry run):\n\n" + md)
 					return nil
 				}
 
-				if err := writeChangelog(cwd, md); err != nil {
+				if err := writeChangelog(st.cwd, md); err != nil {
 					e.ShowMessage(fmt.Sprintf("Error writing CHANGELOG.md: %v", err))
 					return nil
 				}
@@ -90,7 +93,7 @@ func Register(e *sdk.Extension) {
 				return nil
 			}
 
-			e.ShowMessage(FormatANSI(commits, ref, cfg.Types))
+			e.ShowMessage(FormatANSI(commits, ref, st.cfg.Types))
 			return nil
 		},
 	})

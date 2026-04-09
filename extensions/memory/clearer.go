@@ -12,6 +12,13 @@ import (
 const defaultClearTurns = 3
 const clearSizeThreshold = 4096
 
+// wireMsg wraps a message with a type discriminator for JSON transport.
+// Matches the host's CompactMessage wire format used by ConversationMessages.
+type wireMsg struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
 // wireToolResult is the wire representation of a ToolResultMessage.
 type wireToolResult struct {
 	ToolCallID string `json:"toolCallId"`

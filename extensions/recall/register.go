@@ -20,48 +20,51 @@ const (
 	defaultSearchLimit = 3
 )
 
-var (
+// recallState holds mutable state shared across tool and command handlers.
+type recallState struct {
 	idx       *Index
 	indexPath string
-)
+}
 
 // Register wires the recall extension into the pack.
 func Register(e *sdk.Extension) {
+	st := &recallState{}
+
 	e.OnInitAppend(func(x *sdk.Extension) {
 		dir, err := xdg.ExtensionDir("recall")
 		if err != nil {
 			x.Log("error", fmt.Sprintf("[recall] ExtensionDir: %v", err))
-			idx = NewIndex(500)
+			st.idx = NewIndex(500)
 			return
 		}
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			x.Log("error", fmt.Sprintf("[recall] MkdirAll: %v", err))
 		}
-		indexPath = filepath.Join(dir, "index.gob")
-		loaded, err := LoadIndex(indexPath)
+		st.indexPath = filepath.Join(dir, "index.gob")
+		loaded, err := LoadIndex(st.indexPath)
 		if err != nil {
-			idx = NewIndex(500)
+			st.idx = NewIndex(500)
 		} else {
-			idx = loaded
+			st.idx = loaded
 		}
-		docCount, termCount := idx.Stats()
+		docCount, termCount := st.idx.Stats()
 		x.Log("debug", fmt.Sprintf("[recall] index loaded: %d docs, %d terms", docCount, termCount))
 	})
 
-	registerEventHandler(e)
-	registerCommand(e)
-	registerTool(e)
-	registerHook(e)
+	registerEventHandler(e, st)
+	registerCommand(e, st)
+	registerTool(e, st)
+	registerHook(e, st)
 }
 
 // registerEventHandler indexes the session at EventAgentEnd.
-func registerEventHandler(e *sdk.Extension) {
+func registerEventHandler(e *sdk.Extension, st *recallState) {
 	e.RegisterEventHandler(sdk.EventHandlerDef{
 		Name:     "recall-index",
 		Priority: 300,
 		Events:   []string{"EventAgentEnd"},
 		Handle: func(ctx context.Context, _ string, data json.RawMessage) *sdk.Action {
-			if idx == nil {
+			if st.idx == nil {
 				return nil
 			}
 
@@ -83,10 +86,10 @@ func registerEventHandler(e *sdk.Extension) {
 			}
 
 			path, title := resolveSessionMeta(ctx, e, sessionID)
-			idx.AddDocument(sessionID, path, title, text)
+			st.idx.AddDocument(sessionID, path, title, text)
 
-			if indexPath != "" {
-				if err := idx.Save(indexPath); err != nil {
+			if st.indexPath != "" {
+				if err := st.idx.Save(st.indexPath); err != nil {
 					e.Log("error", fmt.Sprintf("[recall] save index: %v", err))
 				}
 			}
@@ -96,7 +99,7 @@ func registerEventHandler(e *sdk.Extension) {
 }
 
 // registerCommand wires /recall with subcommand dispatch.
-func registerCommand(e *sdk.Extension) {
+func registerCommand(e *sdk.Extension, st *recallState) {
 	e.RegisterCommand(sdk.CommandDef{
 		Name:        "recall",
 		Description: "Search session history by content (recall <query>, rebuild, stats)",
@@ -104,11 +107,11 @@ func registerCommand(e *sdk.Extension) {
 			sub := strings.TrimSpace(args)
 			switch {
 			case sub == "stats":
-				return handleStats(e)
+				return handleStats(e, st)
 			case sub == "rebuild":
-				return handleRebuild(ctx, e)
+				return handleRebuild(ctx, e, st)
 			case sub != "":
-				return handleSearch(ctx, e, sub)
+				return handleSearch(ctx, e, st, sub)
 			default:
 				e.ShowMessage("Usage: /recall <query> | /recall rebuild | /recall stats")
 			}
@@ -118,7 +121,7 @@ func registerCommand(e *sdk.Extension) {
 }
 
 // registerTool wires the recall_search tool.
-func registerTool(e *sdk.Extension) {
+func registerTool(e *sdk.Extension, st *recallState) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "recall_search",
 		Description: "Search past sessions by content using TF-IDF. Returns matching session excerpts useful for recovering prior context.",
@@ -138,7 +141,7 @@ func registerTool(e *sdk.Extension) {
 		},
 		PromptHint: "Search past sessions for relevant context",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if idx == nil {
+			if st.idx == nil {
 				return sdk.ErrorResult("recall index not available"), nil
 			}
 			query, _ := args["query"].(string)
@@ -150,7 +153,7 @@ func registerTool(e *sdk.Extension) {
 				limit = int(l)
 			}
 
-			results := idx.Search(query, limit)
+			results := st.idx.Search(query, limit)
 			if len(results) == 0 {
 				return sdk.TextResult("No matching sessions found for: " + query), nil
 			}
@@ -162,19 +165,19 @@ func registerTool(e *sdk.Extension) {
 }
 
 // registerHook wires the auto-recall message hook.
-func registerHook(e *sdk.Extension) {
+func registerHook(e *sdk.Extension, st *recallState) {
 	e.RegisterMessageHook(sdk.MessageHookDef{
 		Name:     "recall-auto",
 		Priority: 800,
 		OnMessage: func(_ context.Context, msg string) (string, error) {
-			if idx == nil {
+			if st.idx == nil {
 				return "", nil
 			}
 			if wordCount(msg) < hookMinWords {
 				return "", nil
 			}
 
-			results := idx.Search(msg, 1)
+			results := st.idx.Search(msg, 1)
 			if len(results) == 0 || results[0].Score < hookScoreThreshold {
 				return "", nil
 			}
@@ -198,13 +201,13 @@ func registerHook(e *sdk.Extension) {
 }
 
 // handleSearch executes a /recall <query> command.
-func handleSearch(_ context.Context, e *sdk.Extension, query string) error {
-	if idx == nil {
+func handleSearch(_ context.Context, e *sdk.Extension, st *recallState, query string) error {
+	if st.idx == nil {
 		e.ShowMessage("recall index not available")
 		return nil
 	}
 
-	results := idx.Search(query, defaultSearchLimit)
+	results := st.idx.Search(query, defaultSearchLimit)
 	if len(results) == 0 {
 		e.ShowMessage("No sessions found matching: " + query)
 		return nil
@@ -231,7 +234,7 @@ func handleSearch(_ context.Context, e *sdk.Extension, query string) error {
 }
 
 // handleRebuild re-indexes all known sessions.
-func handleRebuild(ctx context.Context, e *sdk.Extension) error {
+func handleRebuild(ctx context.Context, e *sdk.Extension, st *recallState) error {
 	sessions, err := e.Sessions(ctx)
 	if err != nil {
 		e.ShowMessage("rebuild failed: " + err.Error())
@@ -252,26 +255,26 @@ func handleRebuild(ctx context.Context, e *sdk.Extension) error {
 		count++
 	}
 
-	idx = fresh
-	if indexPath != "" {
-		if err := idx.Save(indexPath); err != nil {
+	st.idx = fresh
+	if st.indexPath != "" {
+		if err := st.idx.Save(st.indexPath); err != nil {
 			e.ShowMessage(fmt.Sprintf("rebuild indexed %d sessions but save failed: %v", count, err))
 			return nil
 		}
 	}
 
-	docs, terms := idx.Stats()
+	docs, terms := st.idx.Stats()
 	e.ShowMessage(fmt.Sprintf("Rebuild complete: %d sessions indexed, %d unique terms", docs, terms))
 	return nil
 }
 
 // handleStats shows index statistics.
-func handleStats(e *sdk.Extension) error {
-	if idx == nil {
+func handleStats(e *sdk.Extension, st *recallState) error {
+	if st.idx == nil {
 		e.ShowMessage("recall index not available")
 		return nil
 	}
-	docs, terms := idx.Stats()
+	docs, terms := st.idx.Stats()
 	e.ShowMessage(fmt.Sprintf("Recall index: %d sessions, %d unique terms", docs, terms))
 	return nil
 }

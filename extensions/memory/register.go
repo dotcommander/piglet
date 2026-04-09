@@ -8,43 +8,45 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dotcommander/piglet/extensions/internal/xdg"
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
 //go:embed defaults/compact-system.md
 var defaultCompactSystem string
 
-var (
+// memoryState holds mutable state shared across tool and command handlers.
+type memoryState struct {
 	store     *Store
 	extractor *Extractor
-)
+}
 
 // Register registers the memory extension's tools, commands, and event handlers
 // onto e, and schedules OnInit work via OnInitAppend.
 func Register(e *sdk.Extension) {
+	s := &memoryState{}
+
 	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()
 		x.Log("debug", "[memory] OnInit start")
 
-		s, err := NewStore(x.CWD())
+		store, err := NewStore(x.CWD())
 		if err != nil {
 			x.Log("debug", fmt.Sprintf("[memory] OnInit complete — store init failed (%s)", time.Since(start)))
 			return
 		}
-		store = s
-		extractor = NewExtractor(s)
+		s.store = store
+		s.extractor = NewExtractor(s.store)
 
 		x.RegisterPromptSection(sdk.PromptSectionDef{
 			Title:   "Project Memory",
-			Content: BuildMemoryPrompt(s),
+			Content: BuildMemoryPrompt(s.store),
 			Order:   50,
 		})
 
 		x.RegisterCompactor(sdk.CompactorDef{
 			Name:      "rolling-memory",
 			Threshold: 50000,
-			Compact:   makeCompactHandler(x, s),
+			Compact:   makeCompactHandler(x, s.store),
 		})
 
 		x.Log("debug", fmt.Sprintf("[memory] OnInit complete (%s)", time.Since(start)))
@@ -56,10 +58,10 @@ func Register(e *sdk.Extension) {
 		Priority: 10,
 		Events:   []string{"EventAgentStart"},
 		Handle: func(_ context.Context, _ string, _ json.RawMessage) *sdk.Action {
-			if store != nil {
-				facts := store.List("_context")
+			if s.store != nil {
+				facts := s.store.List("_context")
 				for _, f := range facts {
-					_ = store.Delete(f.Key)
+					_ = s.store.Delete(f.Key)
 				}
 			}
 			return nil
@@ -72,8 +74,8 @@ func Register(e *sdk.Extension) {
 		Priority: 50,
 		Events:   []string{"EventTurnEnd"},
 		Handle: func(_ context.Context, _ string, data json.RawMessage) *sdk.Action {
-			if extractor != nil {
-				_ = extractor.Extract(data)
+			if s.extractor != nil {
+				_ = s.extractor.Extract(data)
 			}
 			return nil
 		},
@@ -101,7 +103,7 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "Save a fact to project memory",
 		Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if store == nil {
+			if s.store == nil {
 				return sdk.ErrorResult("memory store not available"), nil
 			}
 			key, _ := args["key"].(string)
@@ -110,7 +112,7 @@ func Register(e *sdk.Extension) {
 			if key == "" || value == "" {
 				return sdk.ErrorResult("key and value are required"), nil
 			}
-			if err := store.Set(key, value, category); err != nil {
+			if err := s.store.Set(key, value, category); err != nil {
 				return sdk.ErrorResult(fmt.Sprintf("error: %v", err)), nil
 			}
 			return sdk.TextResult("Saved: " + key), nil
@@ -130,11 +132,11 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "Retrieve a fact from project memory",
 		Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if store == nil {
+			if s.store == nil {
 				return sdk.ErrorResult("memory store not available"), nil
 			}
 			key, _ := args["key"].(string)
-			fact, ok := store.Get(key)
+			fact, ok := s.store.Get(key)
 			if !ok {
 				return sdk.TextResult("not found: " + key), nil
 			}
@@ -155,11 +157,11 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "List all project memory facts",
 		Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if store == nil {
+			if s.store == nil {
 				return sdk.ErrorResult("memory store not available"), nil
 			}
 			category, _ := args["category"].(string)
-			facts := store.List(category)
+			facts := s.store.List(category)
 			if len(facts) == 0 {
 				return sdk.TextResult("No memories stored"), nil
 			}
@@ -188,7 +190,7 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "Link two related facts in memory",
 		Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if store == nil {
+			if s.store == nil {
 				return sdk.ErrorResult("memory store not available"), nil
 			}
 			keyA, _ := args["key_a"].(string)
@@ -196,7 +198,7 @@ func Register(e *sdk.Extension) {
 			if keyA == "" || keyB == "" {
 				return sdk.ErrorResult("key_a and key_b are required"), nil
 			}
-			if err := store.Relate(keyA, keyB); err != nil {
+			if err := s.store.Relate(keyA, keyB); err != nil {
 				return sdk.ErrorResult(err.Error()), nil
 			}
 			return sdk.TextResult(fmt.Sprintf("Linked: %s ↔ %s", keyA, keyB)), nil
@@ -217,7 +219,7 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "Find related facts by traversing memory graph",
 		Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if store == nil {
+			if s.store == nil {
 				return sdk.ErrorResult("memory store not available"), nil
 			}
 			key, _ := args["key"].(string)
@@ -228,7 +230,7 @@ func Register(e *sdk.Extension) {
 			if md, ok := args["max_depth"].(float64); ok && int(md) > 0 {
 				maxDepth = int(md)
 			}
-			facts := Related(store, key, maxDepth)
+			facts := Related(s.store, key, maxDepth)
 			if len(facts) == 0 {
 				return sdk.TextResult("No related facts found for: " + key), nil
 			}
@@ -250,197 +252,8 @@ func Register(e *sdk.Extension) {
 	e.RegisterCommand(sdk.CommandDef{
 		Name:        "memory",
 		Description: "List, delete, or clear project memories",
-		Handler: func(_ context.Context, args string) error {
-			if store == nil {
-				e.ShowMessage("memory store not available")
-				return nil
-			}
-			args = strings.TrimSpace(args)
-			switch {
-			case args == "":
-				facts := store.List("")
-				if len(facts) == 0 {
-					e.ShowMessage("No project memories stored.")
-					return nil
-				}
-				var b strings.Builder
-				fmt.Fprintf(&b, "Project Memory:\n\n")
-				for _, f := range facts {
-					if f.Category != "" {
-						fmt.Fprintf(&b, "  %s: %s (%s)\n", f.Key, f.Value, f.Category)
-					} else {
-						fmt.Fprintf(&b, "  %s: %s\n", f.Key, f.Value)
-					}
-				}
-				fmt.Fprintf(&b, "\n%d fact(s) stored.", len(facts))
-				e.ShowMessage(b.String())
-			case args == "clear":
-				if err := store.Clear(); err != nil {
-					e.ShowMessage(fmt.Sprintf("error: %s", err))
-					return nil
-				}
-				e.ShowMessage("Project memory cleared.")
-			case args == "clear context":
-				facts := store.List("_context")
-				for _, f := range facts {
-					_ = store.Delete(f.Key)
-				}
-				e.ShowMessage(fmt.Sprintf("Cleared %d context fact(s).", len(facts)))
-			case strings.HasPrefix(args, "delete "):
-				key := strings.TrimSpace(strings.TrimPrefix(args, "delete "))
-				if err := store.Delete(key); err != nil {
-					e.ShowMessage(fmt.Sprintf("error: %s", err))
-					return nil
-				}
-				e.ShowMessage(fmt.Sprintf("Deleted: %s", key))
-			case strings.HasPrefix(args, "related "):
-				key := strings.TrimSpace(strings.TrimPrefix(args, "related "))
-				facts := Related(store, key, 3)
-				if len(facts) == 0 {
-					e.ShowMessage(fmt.Sprintf("No facts related to %q", key))
-					return nil
-				}
-				var b strings.Builder
-				fmt.Fprintf(&b, "Facts related to %q:\n\n", key)
-				for _, f := range facts {
-					if len(f.Relations) > 0 {
-						fmt.Fprintf(&b, "  %s: %s [→ %s]\n", f.Key, f.Value, strings.Join(f.Relations, ", "))
-					} else {
-						fmt.Fprintf(&b, "  %s: %s\n", f.Key, f.Value)
-					}
-				}
-				e.ShowMessage(b.String())
-			default:
-				e.ShowMessage("Usage: /memory [clear|clear context|delete <key>|related <key>]")
-			}
-			return nil
+		Handler: func(ctx context.Context, args string) error {
+			return handleMemoryCommand(e, s, ctx, args)
 		},
 	})
-}
-
-// wireMsg wraps a message with a type discriminator for JSON transport.
-// Matches the host's CompactMessage wire format used by ConversationMessages.
-type wireMsg struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
-}
-
-// compactConfig holds configurable parameters for the compaction handler.
-type compactConfig struct {
-	KeepRecent         int `yaml:"keep_recent"`
-	TruncateToolResult int `yaml:"truncate_tool_result"`
-	LightTrimMaxLen    int `yaml:"light_trim_max_len"`
-	SkipLLMThreshold   int `yaml:"skip_llm_threshold"`
-}
-
-func defaultCompactConfig() compactConfig {
-	return compactConfig{
-		KeepRecent:         6,
-		TruncateToolResult: 2000,
-		LightTrimMaxLen:    2000,
-		SkipLLMThreshold:   8000,
-	}
-}
-
-// makeCompactHandler returns the SDK compact handler that works with raw JSON messages.
-// It reads facts from the store, optionally refines with an LLM call, and keeps
-// the last keepRecent messages prepended with a summary reference message.
-func makeCompactHandler(ext *sdk.Extension, s *Store) func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	cfg := xdg.LoadYAMLExt("memory", "compact.yaml", defaultCompactConfig())
-
-	return func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-		// Parse incoming messages
-		var params struct {
-			Messages []wireMsg `json:"messages"`
-		}
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, fmt.Errorf("unmarshal compact params: %w", err)
-		}
-
-		if len(params.Messages) <= cfg.KeepRecent+1 {
-			// Not enough to compact — return as-is
-			return raw, nil
-		}
-
-		// Stage 1: Lightweight pre-pass — microcompact old tool results
-		// (replaces full tool output with one-line summaries, no LLM needed).
-		microcompactToolResults(params.Messages, cfg.KeepRecent)
-
-		// Stage 2: Trim long text blocks in older messages, keeping head+tail.
-		lightTrimMessages(params.Messages, cfg.KeepRecent, cfg.LightTrimMaxLen)
-
-		// Stage 3: Truncate remaining large tool results for the summarizer.
-		truncateToolResults(params.Messages[:len(params.Messages)-cfg.KeepRecent], cfg.TruncateToolResult)
-
-		// Extract prior compaction file lists for cumulative tracking.
-		priorRead, priorModified := extractPriorFileLists(params.Messages)
-
-		// Get fact summary from store
-		result := Compact(s)
-		summary := result.Summary
-
-		// Merge prior compaction file lists into the current summary
-		// so cumulative tracking survives across compaction boundaries.
-		summary = mergeFileLists(summary, priorRead, priorModified)
-
-		// Stage 4: If lightweight passes reduced token count below threshold,
-		// skip the expensive LLM summarization call.
-		skipLLM := cfg.SkipLLMThreshold > 0 && estimateTokens(params.Messages) < cfg.SkipLLMThreshold
-
-		// Try to refine with LLM if we have facts and are above threshold
-		if summary != "" && !skipLLM {
-			resp, err := ext.Chat(ctx, sdk.ChatRequest{
-				System:   strings.TrimSpace(defaultCompactSystem),
-				Messages: []sdk.ChatMessage{{Role: "user", Content: summary}},
-				Model:    "small",
-			})
-			if err == nil && resp.Text != "" {
-				summary = resp.Text
-			}
-		}
-
-		// Write summary back to store
-		WriteSummary(s, summary)
-
-		// Build reference message content
-		var ref strings.Builder
-		ref.WriteString("[Context compacted — session memory updated]\n\n")
-		ref.WriteString("Use memory_list category=_context to see accumulated context.\n")
-		ref.WriteString("Use memory_get to retrieve specific facts.\n")
-		if summary != "" {
-			ref.WriteString("\nSummary: ")
-			ref.WriteString(summary)
-		}
-
-		// Build summary user message as wire format
-		summaryData, err := json.Marshal(map[string]any{
-			"role":    "user",
-			"content": ref.String(),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("marshal summary message: %w", err)
-		}
-
-		// Keep last keepRecent messages, prepend summary
-		kept := params.Messages[len(params.Messages)-cfg.KeepRecent:]
-		wire := make([]wireMsg, 0, len(kept)+2)
-		wire = append(wire, wireMsg{Type: "user", Data: summaryData})
-
-		// Post-compact context re-injection
-		items := gatherCriticalContext(s)
-		reinjectMsg := buildReinjectMessage(items)
-		if reinjectMsg != "" {
-			reinjectData, err := json.Marshal(map[string]any{
-				"role":    "user",
-				"content": reinjectMsg,
-			})
-			if err == nil {
-				wire = append(wire, wireMsg{Type: "user", Data: reinjectData})
-			}
-		}
-
-		wire = append(wire, kept...)
-
-		return json.Marshal(map[string]any{"messages": wire})
-	}
 }

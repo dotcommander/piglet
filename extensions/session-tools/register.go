@@ -9,20 +9,23 @@ import (
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
-var (
+// sessionToolsState holds mutable state shared across tool and command handlers.
+type sessionToolsState struct {
 	cwd string
 	cfg Config
-)
+}
 
 // Register registers the session-tools extension's commands, tools, and prompt
 // section, and schedules OnInit work via OnInitAppend.
 func Register(e *sdk.Extension) {
+	st := &sessionToolsState{}
+
 	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()
 		x.Log("debug", "[session-tools] OnInit start")
 
-		cwd = x.CWD()
-		cfg = LoadConfig()
+		st.cwd = x.CWD()
+		st.cfg = LoadConfig()
 
 		content := LoadPromptContent()
 		if content != "" {
@@ -114,12 +117,12 @@ func Register(e *sdk.Extension) {
 		Name:        "handoff",
 		Description: "Transfer context to a new session with structured summary",
 		Handler: func(ctx context.Context, args string) error {
-			if !cfg.Enabled {
+			if !st.cfg.Enabled {
 				e.ShowMessage("Session handoff is disabled in config.")
 				return nil
 			}
 			focus := strings.TrimSpace(args)
-			if err := Handoff(ctx, e, cwd, focus, cfg); err != nil {
+			if err := Handoff(ctx, e, st.cwd, focus, st.cfg); err != nil {
 				e.ShowMessage("Handoff failed: " + err.Error())
 			}
 			return nil
@@ -153,7 +156,7 @@ func Register(e *sdk.Extension) {
 				return sdk.ErrorResult("session_path and query are required"), nil
 			}
 
-			result, err := QuerySession(path, query, cfg.MaxQuerySize)
+			result, err := QuerySession(path, query, st.cfg.MaxQuerySize)
 			if err != nil {
 				return sdk.ErrorResult(err.Error()), nil
 			}
@@ -181,7 +184,7 @@ func Register(e *sdk.Extension) {
 		},
 		PromptHint: "Fork the session with a structured handoff summary",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
-			if !cfg.Enabled {
+			if !st.cfg.Enabled {
 				return sdk.ErrorResult("session handoff is disabled in config"), nil
 			}
 
@@ -193,7 +196,7 @@ func Register(e *sdk.Extension) {
 				focus = reason
 			}
 
-			if err := Handoff(ctx, e, cwd, focus, cfg); err != nil {
+			if err := Handoff(ctx, e, st.cwd, focus, st.cfg); err != nil {
 				return sdk.ErrorResult("handoff failed: " + err.Error()), nil
 			}
 

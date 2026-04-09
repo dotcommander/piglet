@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -45,38 +44,11 @@ func (j *JinaProvider) Name() string {
 // Fetch retrieves content from the given URL via the Jina reader.
 func (j *JinaProvider) Fetch(ctx context.Context, rawURL string) (string, error) {
 	fetchURL := j.readerBase + rawURL
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("User-Agent", userAgent)
+	headers := make(map[string]string)
 	if j.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+j.apiKey)
+		headers["Authorization"] = "Bearer " + j.apiKey
 	}
-
-	resp, err := j.http.Do(req)
-	if err != nil {
-		return "", &HTTPError{URL: fetchURL, StatusCode: 0, Err: err}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return "", &HTTPError{URL: fetchURL, StatusCode: resp.StatusCode}
-	}
-
-	limited := io.LimitReader(resp.Body, maxBodyBytes+1)
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return "", fmt.Errorf("read body: %w", err)
-	}
-
-	content := string(data)
-	if len(data) > maxBodyBytes {
-		content = content[:maxBodyBytes] + "\n\n[Content truncated at 100KB]"
-	}
-
-	return content, nil
+	return httpGet(ctx, j.http, fetchURL, headers)
 }
 
 // Search queries the Jina search endpoint.

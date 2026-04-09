@@ -16,63 +16,6 @@ import (
 	"time"
 )
 
-// Deliverer injects messages into the agent loop.
-// *sdk.Extension satisfies this interface.
-type Deliverer interface {
-	SendMessage(content string)
-	Steer(content string)
-	Notify(msg string)
-}
-
-// Envelope is an inbound message from an external process.
-type Envelope struct {
-	Version int    `json:"version"`
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Mode    string `json:"mode,omitzero"`
-	Created string `json:"created,omitzero"`
-	TTL     int    `json:"ttl,omitzero"`
-	Source  string `json:"source,omitzero"`
-}
-
-// Ack is written after processing an envelope.
-type Ack struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitzero"`
-	Ts     string `json:"ts"`
-}
-
-// Heartbeat is written periodically to the registry.
-type Heartbeat struct {
-	PID       int    `json:"pid"`
-	CWD       string `json:"cwd"`
-	Started   string `json:"started"`
-	Heartbeat string `json:"heartbeat"`
-}
-
-// Stats tracks delivery counts for the current session.
-type Stats struct {
-	Delivered  int       `json:"delivered"`
-	Failed     int       `json:"failed"`
-	Duplicates int       `json:"duplicates"`
-	Expired    int       `json:"expired"`
-	StartedAt  time.Time `json:"startedAt"`
-}
-
-const (
-	DefaultScanInterval = 750 * time.Millisecond
-	HeartbeatInterval   = 2 * time.Second
-	MaxFileBytes        = 32 * 1024
-	MaxTextRunes        = 8000
-	DedupCap            = 1000
-	AckMaxAge           = time.Hour
-	PruneInterval       = time.Minute
-
-	ModeQueue     = "queue"
-	ModeInterrupt = "interrupt"
-)
-
 // Scanner watches the inbox directory and delivers messages.
 type Scanner struct {
 	inboxDir  string
@@ -242,21 +185,12 @@ func (s *Scanner) processFile(path string) {
 		return
 	}
 
-	if env.TTL > 0 {
-		// Use Created field if present, otherwise fall back to file mtime.
-		created := info.ModTime()
-		if env.Created != "" {
-			if t, err := time.Parse(time.RFC3339, env.Created); err == nil {
-				created = t
-			}
-		}
-		if time.Now().After(created.Add(time.Duration(env.TTL) * time.Second)) {
-			s.mu.Lock()
-			s.stats.Expired++
-			s.mu.Unlock()
-			s.ackAndRemove(path, env.ID, "failed", "expired")
-			return
-		}
+	if isExpired(&env, info.ModTime()) {
+		s.mu.Lock()
+		s.stats.Expired++
+		s.mu.Unlock()
+		s.ackAndRemove(path, env.ID, "failed", "expired")
+		return
 	}
 
 	if s.isDuplicate(env.ID) {
@@ -267,6 +201,22 @@ func (s *Scanner) processFile(path string) {
 		return
 	}
 
+	s.deliver(&env)
+
+	s.mu.Lock()
+	s.stats.Delivered++
+	if len(s.seen) >= DedupCap {
+		clear(s.seen)
+	}
+	s.seen[env.ID] = struct{}{}
+	s.mu.Unlock()
+
+	s.writeAck(env.ID, "delivered", "")
+	_ = os.Remove(path)
+}
+
+// deliver sends the envelope text to the agent loop via the appropriate mode.
+func (s *Scanner) deliver(env *Envelope) {
 	mode := env.Mode
 	if mode == "" {
 		mode = ModeQueue
@@ -284,125 +234,4 @@ func (s *Scanner) processFile(path string) {
 	}
 
 	s.deliverer.Notify(fmt.Sprintf("Inbox: message from %s", source))
-
-	s.mu.Lock()
-	s.stats.Delivered++
-	if len(s.seen) >= DedupCap {
-		clear(s.seen)
-	}
-	s.seen[env.ID] = struct{}{}
-	s.mu.Unlock()
-
-	s.writeAck(env.ID, "delivered", "")
-	_ = os.Remove(path)
-}
-
-// Validate checks an envelope for structural validity.
-func Validate(env *Envelope) (bool, string) {
-	if env.Version != 1 {
-		return false, "unsupported_version"
-	}
-	if env.ID == "" {
-		return false, "missing_id"
-	}
-	if env.Text == "" {
-		return false, "missing_text"
-	}
-	if len([]rune(env.Text)) > MaxTextRunes {
-		return false, "text_too_long"
-	}
-	switch env.Mode {
-	case "", ModeQueue, ModeInterrupt:
-		// valid
-	default:
-		return false, "invalid_mode"
-	}
-	return true, ""
-}
-
-func (s *Scanner) isDuplicate(id string) bool {
-	s.mu.Lock()
-	_, inMem := s.seen[id]
-	s.mu.Unlock()
-	if inMem {
-		return true
-	}
-	ackPath := filepath.Join(s.acksDir(), id+".json")
-	_, err := os.Stat(ackPath)
-	return err == nil
-}
-
-func (s *Scanner) ackAndRemove(path, id, status, reason string) {
-	if id != "" {
-		s.writeAck(id, status, reason)
-	}
-	if status == "failed" {
-		s.mu.Lock()
-		s.stats.Failed++
-		s.mu.Unlock()
-	}
-	_ = os.Remove(path)
-}
-
-func (s *Scanner) writeAck(id, status, reason string) {
-	ack := Ack{
-		ID:     id,
-		Status: status,
-		Reason: reason,
-		Ts:     time.Now().UTC().Format(time.RFC3339),
-	}
-	data, err := json.Marshal(ack)
-	if err != nil {
-		return
-	}
-	dest := filepath.Join(s.acksDir(), id+".json")
-	tmp := dest + ".tmp"
-	if err := os.WriteFile(tmp, data, 0640); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, dest)
-}
-
-func (s *Scanner) writeHeartbeat() {
-	hb := Heartbeat{
-		PID:       s.pid,
-		CWD:       s.cwd,
-		Started:   s.started,
-		Heartbeat: time.Now().UTC().Format(time.RFC3339),
-	}
-	data, err := json.Marshal(hb)
-	if err != nil {
-		return
-	}
-	dest := filepath.Join(s.registryDir(), fmt.Sprintf("%d.json", s.pid))
-	tmp := dest + ".tmp"
-	if err := os.WriteFile(tmp, data, 0640); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, dest)
-}
-
-func (s *Scanner) pruneAcks() {
-	if time.Since(s.lastPrune) < PruneInterval {
-		return
-	}
-	s.lastPrune = time.Now()
-	dir := s.acksDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	now := time.Now()
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if now.Sub(info.ModTime()) > AckMaxAge {
-			_ = os.Remove(filepath.Join(dir, e.Name()))
-		}
-	}
 }
