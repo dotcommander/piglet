@@ -177,6 +177,10 @@ func (a *App) SwitchModel(id string) error {
 		agent.SetProvider(prov)
 	}
 	a.enqueue(ActionSetStatus{Key: "model", Text: mod.DisplayName()})
+	// Rebuild tool set for new model (may change tool mode).
+	if a.onToolActivate != nil {
+		a.onToolActivate()
+	}
 	return nil
 }
 

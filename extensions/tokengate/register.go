@@ -68,6 +68,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "context_budget",
 		Description: "Show current context window token usage breakdown and budget status.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},

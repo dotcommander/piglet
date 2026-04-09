@@ -49,6 +49,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "session_stats",
 		Description: "Get current session token usage statistics. Returns cumulative totals and prompt breakdown.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},

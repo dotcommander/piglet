@@ -53,6 +53,11 @@ type App struct {
 	sessions SessionManager
 	models   ModelManager
 
+	// Progressive tool disclosure
+	activatedTools map[string]bool // deferred tools promoted to full schema
+	toolMode       ToolMode        // current mode (set via SetToolMode)
+	onToolActivate func()          // callback to rebuild agent tool set
+
 	// Background agent callbacks
 	runBackground       func(prompt string) error
 	cancelBackground    func()
@@ -163,6 +168,65 @@ func WithAbortWithMarker(fn func(reason string)) BindOption {
 // WithSteer sets the callback for steering with disposition reporting.
 func WithSteer(fn func(content string) SteerDisposition) BindOption {
 	return func(a *App) { a.steerFn = fn }
+}
+
+// WithToolActivator sets the callback invoked when a deferred tool is promoted
+// to full schema. The callback should rebuild the agent's tool set.
+func WithToolActivator(fn func()) BindOption {
+	return func(a *App) { a.onToolActivate = fn }
+}
+
+// ---------------------------------------------------------------------------
+// ToolMode — progressive tool disclosure
+// ---------------------------------------------------------------------------
+
+// ToolMode controls how deferred tools are presented to the LLM.
+type ToolMode int
+
+const (
+	// ToolModeFull sends all tools with full schemas (cloud models, default).
+	ToolModeFull ToolMode = iota
+	// ToolModeCompact strips parameters from deferred tools (local models).
+	ToolModeCompact
+)
+
+// SetToolMode sets the current tool mode and rebuilds the agent's tool set.
+func (a *App) SetToolMode(mode ToolMode) {
+	a.mu.Lock()
+	a.toolMode = mode
+	cb := a.onToolActivate
+	a.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
+
+// ToolModeCurrent returns the active tool mode.
+func (a *App) ToolModeCurrent() ToolMode {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.toolMode
+}
+
+// ActivateTool promotes a deferred tool to full schema for this session.
+// Returns true if the tool was activated (was deferred and existed).
+func (a *App) ActivateTool(name string) bool {
+	a.mu.Lock()
+	td, ok := a.tools[name]
+	if !ok || !td.Deferred {
+		a.mu.Unlock()
+		return false
+	}
+	if a.activatedTools == nil {
+		a.activatedTools = make(map[string]bool)
+	}
+	a.activatedTools[name] = true
+	cb := a.onToolActivate
+	a.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------

@@ -13,8 +13,8 @@ import (
 
 // BuildOptions controls optional prompt building behavior.
 type BuildOptions struct {
-	OrderOverrides    map[string]int // section title → order override
-	DeferredToolsNote string         // instruction injected when deferred tools are present
+	OrderOverrides map[string]int // section title → order override
+	ToolMode       ext.ToolMode   // controls how deferred tools appear in prompt
 }
 
 // Build constructs the system prompt from:
@@ -58,10 +58,18 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 
 	// Tool hints and guidelines (descriptions already sent via API tool schemas)
 	var toolNotes strings.Builder
-	hasDeferred := false
+	var deferredIndex strings.Builder
+	compact := len(opts) > 0 && opts[0].ToolMode == ext.ToolModeCompact
 	for _, td := range app.ToolDefs() {
 		if td.Deferred {
-			hasDeferred = true
+			if compact {
+				deferredIndex.WriteString("- **")
+				deferredIndex.WriteString(td.Name)
+				deferredIndex.WriteString("**: ")
+				deferredIndex.WriteString(td.Description)
+				deferredIndex.WriteString("\n")
+				continue
+			}
 		}
 		if td.PromptHint == "" && len(td.PromptGuides) == 0 {
 			continue
@@ -84,18 +92,11 @@ func Build(app *ext.App, base string, opts ...BuildOptions) string {
 		b.WriteString("# Tool Usage Notes\n\n")
 		b.WriteString(toolNotes.String())
 	}
-
-	// Deferred tools note
-	if hasDeferred {
-		note := ""
-		if len(opts) > 0 {
-			note = opts[0].DeferredToolsNote
-		}
-		if note != "" {
-			b.WriteString("## Deferred Tools\n\n")
-			b.WriteString(note)
-			b.WriteString("\n\n")
-		}
+	if deferredIndex.Len() > 0 {
+		b.WriteString("# Available Tools\n\n")
+		b.WriteString("These tools are available but their parameter schemas are omitted to save context. Use `tool_search` to look up a tool's complete schema before calling it.\n\n")
+		b.WriteString(deferredIndex.String())
+		b.WriteString("\n")
 	}
 
 	return b.String()

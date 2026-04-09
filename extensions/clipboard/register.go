@@ -11,6 +11,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "clipboard_read",
 		Description: "Read an image from the system clipboard. Returns the image as base64 data. Only works on macOS.",
+Deferred:    true,
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
 		PromptHint:  "Read images from system clipboard (macOS)",
 		Execute: func(_ context.Context, _ map[string]any) (*sdk.ToolResult, error) {

@@ -50,6 +50,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:              "pipeline",
 		Description:       "Run a multi-step workflow. Load a saved pipeline by name from ~/.config/piglet/pipelines/ or provide an inline pipeline definition. Steps execute sequentially with output passing, retries, loops, and error handling.",
+		Deferred:          true,
 		InterruptBehavior: "block",
 		Parameters: map[string]any{
 			"type": "object",
@@ -83,6 +84,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "pipeline_list",
 		Description: "List all saved pipelines in ~/.config/piglet/pipelines/.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},

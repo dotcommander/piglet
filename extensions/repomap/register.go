@@ -212,6 +212,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_refresh",
 		Description: "Force rebuild the repository map after major file changes.",
+Deferred:    true,
 		Parameters:  repomapToolParams,
 		PromptHint:  "Rebuild the repository map after major file changes",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -229,6 +230,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_show",
 		Description: "Show the current repository structure map with source code definitions.",
+Deferred:    true,
 		Parameters:  repomapToolParams,
 		PromptHint:  "Show the current repository structure map (default: source lines, verbose/detail for alternatives)",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -249,6 +251,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "repomap_inventory",
 		Description: "Scan repository files for metrics (lines, imports) and query the inventory.",
+Deferred:    true,
 		Parameters:  inventoryParams,
 		PromptHint:  "Query per-file metrics: lines, imports. Use 'scan' to build, 'query' to filter.",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {

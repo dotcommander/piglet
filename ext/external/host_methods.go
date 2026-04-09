@@ -632,6 +632,21 @@ func (h *Host) handleHostPublish(msg *Message) {
 	h.respond(*msg.ID, struct{}{})
 }
 
+func (h *Host) handleHostActivateTool(msg *Message) {
+	var params HostActivateToolParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	if !h.app.ActivateTool(params.Name) {
+		h.respondError(*msg.ID, -32604, "tool not found or not deferred: "+params.Name)
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
 func (h *Host) handleHostSubscribe(msg *Message) {
 	var params HostSubscribeParams
 	if !h.decodeParams(msg, &params) {

@@ -317,6 +317,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostPublish(msg)
 	case MethodHostSubscribe:
 		h.handleHostSubscribe(msg)
+	case MethodHostActivateTool:
+		h.handleHostActivateTool(msg)
 	default:
 		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
 	}

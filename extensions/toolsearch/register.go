@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	sdk "github.com/dotcommander/piglet/sdk"
@@ -59,6 +59,8 @@ func Register(e *sdk.Extension) {
 					b.WriteString(fmt.Sprintf("## %s\n\nNot found.\n\n", name))
 					continue
 				}
+				// Activate deferred tools so they get full schemas on next turn.
+				_ = e.ActivateHostTool(ctx, name)
 				b.WriteString(fmt.Sprintf("## %s\n\n", info.Name))
 				if info.Description != "" {
 					b.WriteString(info.Description)
@@ -84,12 +86,12 @@ func Register(e *sdk.Extension) {
 	})
 }
 
-// splitNames splits a comma-separated query into individual names.
+// splitNames splits a comma-separated query into individual names, sorted for deterministic output.
 func splitNames(query string) []string {
 	parts := strings.Split(query, ",")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
-	sort.Strings(parts)
+	slices.Sort(parts)
 	return parts
 }

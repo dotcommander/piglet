@@ -246,7 +246,7 @@ func (p *OpenAI) SendRequest(ctx context.Context, body []byte) (io.ReadCloser, e
 		req.Header.Set("Accept", "text/event-stream")
 		if apiKey := p.APIKeyFn(); apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+apiKey)
-		} else if isLoopbackURL(p.Model.BaseURL) {
+		} else if IsLoopbackURL(p.Model.BaseURL) {
 			req.Header.Set("Authorization", "Bearer local")
 		}
 	})

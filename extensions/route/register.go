@@ -81,6 +81,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "route",
 		Description: "Classify a prompt and return ranked piglet extensions/tools most relevant to it. Use when you need to discover which tools or extensions are best suited for a task.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -120,6 +121,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "route_feedback",
 		Description: "Record whether a routing recommendation was correct or wrong. Use after completing a task to improve future routing accuracy.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

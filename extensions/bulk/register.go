@@ -28,6 +28,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:              "bulk",
 		Description:       "Run a shell command across multiple items (directories, files, git repos) in parallel. Discovers items, optionally filters, executes command, returns structured results.",
+		Deferred:          true,
 		InterruptBehavior: "block",
 		Parameters: map[string]any{
 			"type": "object",

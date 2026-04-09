@@ -19,6 +19,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:              "coordinate",
 		Description:       "Decompose a complex task into parallel sub-tasks and dispatch them to independent agents. Each sub-agent runs to completion with scoped tool access. Use for tasks that benefit from parallel execution or capability-scoped delegation.",
+		Deferred:          true,
 		InterruptBehavior: "block",
 		Parameters: map[string]any{
 			"type": "object",

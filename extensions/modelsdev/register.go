@@ -3,6 +3,7 @@ package modelsdev
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dotcommander/piglet/sdk"
@@ -27,6 +28,17 @@ func Register(e *sdk.Extension) {
 			defer cancel()
 
 			if _, err := Refresh(ctx, x); err != nil {
+				// "model manager not configured" is expected when Bind()
+				// hasn't completed yet. Retry once after a short delay.
+				if strings.Contains(err.Error(), "model manager not configured") {
+					time.Sleep(2 * time.Second)
+					ctx2, cancel2 := context.WithTimeout(context.Background(), refreshTimeout)
+					defer cancel2()
+					if _, retryErr := Refresh(ctx2, x); retryErr != nil {
+						x.Log("warn", "modelsdev: "+retryErr.Error())
+					}
+					return
+				}
 				x.Log("warn", "modelsdev: "+err.Error())
 			}
 		}()

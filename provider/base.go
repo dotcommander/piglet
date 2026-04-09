@@ -96,7 +96,7 @@ func (b *BaseProvider) DoHTTPRequest(ctx context.Context, url string, body []byt
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		err := fmt.Errorf("%s API error %d: %s", b.Model.Provider, resp.StatusCode, string(errBody))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			if isLoopbackURL(b.Model.BaseURL) {
+			if IsLoopbackURL(b.Model.BaseURL) {
 				return nil, fmt.Errorf("%s: local server requires authentication. Check your server config.", resp.Status)
 			}
 			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.Model.Provider))

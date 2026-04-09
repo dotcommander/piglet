@@ -620,6 +620,14 @@ type HostBranchSessionSummaryParams struct {
 // Host event bus service: extension → host (request/response)
 // ---------------------------------------------------------------------------
 
+// HostActivateToolParams promotes a deferred tool to full schema.
+type HostActivateToolParams struct {
+	Name string `json:"name"`
+}
+
+// HostActivateToolResult is the host's response after activating a tool.
+type HostActivateToolResult struct{}
+
 // HostPublishParams publishes data to the inter-extension event bus.
 type HostPublishParams struct {
 	Topic string `json:"topic"`
@@ -760,6 +768,7 @@ const (
 	MethodHostBranchSessionSummary    = "host/branchSessionWithSummary"
 	MethodHostPublish                 = "host/publish"
 	MethodHostSubscribe               = "host/subscribe"
+	MethodHostActivateTool            = "host/activateTool"
 	MethodHostEventBusEvent           = "eventBus/event" // host → extension notification
 	MethodRegisterInputTransformer    = "register/inputTransformer"
 	MethodInputTransform              = "inputTransformer/transform" // host → extension callback

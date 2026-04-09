@@ -175,7 +175,7 @@ func TestBuild_OrderOverrides(t *testing.T) {
 	assert.Less(t, idxB, idxA, "B (overridden to 5) should appear before A (10)")
 }
 
-func TestBuild_DeferredToolsNote(t *testing.T) {
+func TestBuild_DeferredTools(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("")
@@ -185,14 +185,16 @@ func TestBuild_DeferredToolsNote(t *testing.T) {
 		Deferred:   true,
 	})
 
-	// Without DeferredToolsNote — deferred tools present but no note → no section
+	// Full mode (default) — deferred tools present but no index section injected.
 	result := prompt.Build(app, "base")
-	assert.NotContains(t, result, "## Deferred Tools")
+	assert.NotContains(t, result, "# Available Tools")
 
-	// With DeferredToolsNote — section appears
+	// Compact mode — deferred index appears with tool_search instruction.
 	result = prompt.Build(app, "base", prompt.BuildOptions{
-		DeferredToolsNote: "Some tools are loaded on first use.",
+		ToolMode: ext.ToolModeCompact,
 	})
-	assert.Contains(t, result, "## Deferred Tools")
-	assert.Contains(t, result, "Some tools are loaded on first use.")
+	assert.Contains(t, result, "# Available Tools")
+	assert.Contains(t, result, "tool_search")
+	assert.Contains(t, result, "lazy_tool")
+	assert.Contains(t, result, "loaded on demand")
 }

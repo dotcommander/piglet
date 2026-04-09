@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -102,11 +101,9 @@ func resolveModel(registry *provider.Registry, settings config.Settings, modelOv
 
 		result, err := provider.ProbeServer(modelURL)
 		if err != nil {
-			u, _ := url.Parse(modelURL)
-			modelQuery = u.Hostname()
-			if modelQuery == "" {
-				modelQuery = "local"
-			}
+			// Probe failed — server may not support /v1/models (e.g. MLX).
+			// Use "default" which is widely accepted by local servers.
+			modelQuery = "default"
 		} else {
 			modelQuery = result.ModelID
 			if modelQuery == "" {
@@ -254,16 +251,21 @@ func registerBuiltins(app *ext.App, rt *runtime) {
 	prompt.RegisterProjectDocs(app, rt.settings.GetProjectDocs())
 }
 
-// buildSystemPrompt assembles the system prompt, resolving deferred tools note.
+// buildSystemPrompt assembles the system prompt with tool mode applied.
 func buildSystemPrompt(app *ext.App, rt *runtime) string {
-	deferredNote := rt.settings.DeferredToolsNote
-	if deferredNote == "" {
-		deferredNote = provider.DeferredToolsNote()
-	}
 	return prompt.Build(app, rt.settings.SystemPrompt, prompt.BuildOptions{
-		OrderOverrides:    rt.settings.PromptOrder,
-		DeferredToolsNote: deferredNote,
+		OrderOverrides: rt.settings.PromptOrder,
+		ToolMode:       toolModeForModel(rt.model),
 	})
+}
+
+// toolModeForModel returns the tool disclosure mode for the given model.
+// Local providers get compact mode (deferred tools stripped); cloud gets full.
+func toolModeForModel(m core.Model) ext.ToolMode {
+	if provider.IsLocalProvider(m.Provider) {
+		return ext.ToolModeCompact
+	}
+	return ext.ToolModeFull
 }
 
 // loadExtensionsWithRetry loads external extensions, auto-installs if none
@@ -310,7 +312,9 @@ func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, str
 
 // buildAgent creates the agent from app state and runtime config.
 func buildAgent(app *ext.App, rt *runtime, system string) *core.Agent {
-	coreTools := app.CoreTools()
+	mode := toolModeForModel(rt.model)
+	coreTools := app.CoreToolsForModel(mode)
+	app.SetToolMode(mode)
 	var opts core.StreamOptions
 	if rt.settings.Agent.MaxTokens > 0 {
 		mt := rt.settings.Agent.MaxTokens
@@ -393,6 +397,9 @@ func buildShell(ctx context.Context, rt *runtime, interactive bool) *shellBundle
 	sh.SetAgent(ag,
 		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
 		ext.WithModelManager(newModelMgr(rt, app)),
+		ext.WithToolActivator(func() {
+			ag.SetTools(app.CoreTools())
+		}),
 	)
 
 	return &shellBundle{

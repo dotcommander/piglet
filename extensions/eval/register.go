@@ -155,6 +155,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "eval_run",
 		Description: "Run an evaluation suite by name and return the results summary",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -178,6 +179,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "eval_list",
 		Description: "List all available evaluation suites",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -190,6 +192,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "eval_compare",
 		Description: "Compare two evaluation run results and show score deltas",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

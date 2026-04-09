@@ -89,6 +89,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "memory_set",
 		Description: "Save a key-value fact to project memory, with an optional category.",
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -119,6 +120,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "memory_get",
 		Description: "Retrieve a fact from project memory by key.",
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -143,6 +145,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "memory_list",
 		Description: "List all facts in project memory, optionally filtered by category.",
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -174,6 +177,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "memory_relate",
 		Description: "Create a bidirectional relation between two memory facts. Both keys must exist.",
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -202,6 +206,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "memory_related",
 		Description: "Find all facts related to a key by traversing memory graph edges. Returns facts within the specified depth.",
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

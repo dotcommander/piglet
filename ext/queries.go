@@ -55,17 +55,28 @@ func (a *App) ToolDefs() []*ToolDef {
 }
 
 // CoreTools converts registered ToolDefs into core.Tool slice for the agent.
-// Wraps each tool's Execute with the interceptor chain.
+// Wraps each tool's Execute with the interceptor chain. Uses current ToolMode.
 func (a *App) CoreTools() []core.Tool {
-	return a.filterTools(nil)
+	a.mu.RLock()
+	mode := a.toolMode
+	a.mu.RUnlock()
+	return a.filterTools(nil, mode)
+}
+
+// CoreToolsForModel returns tools with deferred handling based on the given mode.
+func (a *App) CoreToolsForModel(mode ToolMode) []core.Tool {
+	return a.filterTools(nil, mode)
 }
 
 // BackgroundSafeTools returns core.Tool slice filtered to tools marked BackgroundSafe.
 func (a *App) BackgroundSafeTools() []core.Tool {
-	return a.filterTools(func(td *ToolDef) bool { return td.BackgroundSafe })
+	a.mu.RLock()
+	mode := a.toolMode
+	a.mu.RUnlock()
+	return a.filterTools(func(td *ToolDef) bool { return td.BackgroundSafe }, mode)
 }
 
-func (a *App) filterTools(pred func(*ToolDef) bool) []core.Tool {
+func (a *App) filterTools(pred func(*ToolDef) bool, mode ToolMode) []core.Tool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -91,7 +102,7 @@ func (a *App) filterTools(pred func(*ToolDef) bool) []core.Tool {
 	tools := make([]core.Tool, 0, len(defs))
 	for _, td := range defs {
 		schema := td.ToolSchema
-		if td.Deferred {
+		if td.Deferred && mode == ToolModeCompact && !a.activatedTools[td.Name] {
 			// Send name+description only; parameters are nil → minimal schema in API.
 			schema.Parameters = nil
 		}

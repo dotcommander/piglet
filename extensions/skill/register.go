@@ -57,6 +57,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "skill_list",
 		Description: "List available skills with descriptions and trigger keywords.",
+Deferred:    true,
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
 		Execute: func(_ context.Context, _ map[string]any) (*sdk.ToolResult, error) {
 			if store == nil {
@@ -88,6 +89,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "skill_load",
 		Description: "Load a skill's full methodology and instructions by name.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

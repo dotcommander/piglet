@@ -51,6 +51,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "inbox_status",
 		Description: "Check external inbox health and delivery statistics",
+Deferred:    true,
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
 		Execute: func(_ context.Context, _ map[string]any) (*sdk.ToolResult, error) {
 			s := scanner.Load()

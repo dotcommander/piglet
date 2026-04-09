@@ -47,6 +47,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "plan_create",
 		Description: "Create a plan.md file in the project directory with structured steps. Human-readable, git-visible, session-surviving.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -69,6 +70,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "plan_update",
 		Description: "Update a step in plan.md: change status, set notes, add a step, or remove a step. Checkpoint commits are created automatically when marking steps done/skipped/failed if git is enabled.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -90,6 +92,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "plan_mode",
 		Description: "Switch plan mode between propose (changes blocked, recorded as steps) and execute (changes allowed).",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

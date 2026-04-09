@@ -32,6 +32,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "web_fetch",
 		Description: "Fetch a URL and return its text content. By default uses a reader that converts HTML to clean markdown. Set raw=true to return the raw HTML.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -65,6 +66,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "web_search",
 		Description: "Search the web and return results as a markdown list with titles, URLs, and snippets.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -101,6 +103,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "webfetch_get_stored",
 		Description: "Retrieve cached content from a previous web_fetch or web_search call. Useful when content was truncated in the original response.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

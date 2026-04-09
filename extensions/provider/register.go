@@ -55,7 +55,11 @@ func Register(e *sdk.Extension) {
 		}
 
 		if key == "" {
-			return nil, fmt.Errorf("no API key configured for provider %q", model.Provider)
+			if pigletprovider.IsLocalProvider(model.Provider) || pigletprovider.IsLoopbackURL(model.BaseURL) {
+				key = "local"
+			} else {
+				return nil, fmt.Errorf("no API key configured for provider %q", model.Provider)
+			}
 		}
 
 		apiKeyFn := func() string { return key }

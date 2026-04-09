@@ -60,6 +60,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_definition",
 		Description: "Go to the definition of a symbol. Returns the file and line where the symbol is defined.",
+		Deferred:    true,
 		Parameters:  positionParams,
 		PromptHint:  "Find where a function, type, or variable is defined",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -78,6 +79,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_references",
 		Description: "Find all references to a symbol across the codebase. Returns file paths and line numbers.",
+Deferred:    true,
 		Parameters:  positionParams,
 		PromptHint:  "Find all usages of a function, type, or variable",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -96,6 +98,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_hover",
 		Description: "Get type information and documentation for a symbol.",
+Deferred:    true,
 		Parameters:  positionParams,
 		PromptHint:  "Get type signature and docs for a symbol",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -114,6 +117,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_rename",
 		Description: "Rename a symbol across the entire codebase. Returns a preview of all changes (does not apply them).",
+Deferred:    true,
 		Parameters:  renameParams,
 		PromptHint:  "Rename a symbol across the codebase (preview only)",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -136,6 +140,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_symbols",
 		Description: "List all symbols (functions, types, variables) defined in a file.",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

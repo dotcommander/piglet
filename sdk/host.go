@@ -379,6 +379,11 @@ func (e *Extension) BranchSessionWithSummary(ctx context.Context, entryID, summa
 	})
 }
 
+// ActivateHostTool promotes a deferred tool to full schema.
+func (e *Extension) ActivateHostTool(ctx context.Context, name string) error {
+	return hostCallVoid(e, ctx, "host/activateTool", map[string]any{"name": name})
+}
+
 // Publish sends data to all subscribers of an event bus topic.
 func (e *Extension) Publish(ctx context.Context, topic string, data any) error {
 	return hostCallVoid(e, ctx, "host/publish", map[string]any{

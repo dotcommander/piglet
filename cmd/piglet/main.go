@@ -249,6 +249,9 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 		sh.SetAgent(ag,
 			ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
 			ext.WithModelManager(newModelMgr(rt, app)),
+			ext.WithToolActivator(func() {
+				ag.SetTools(app.CoreTools())
+			}),
 		)
 
 		return tui.AgentReadyMsg{Agent: ag}

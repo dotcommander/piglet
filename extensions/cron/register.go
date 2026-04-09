@@ -298,6 +298,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "cron_list",
 		Description: "List all scheduled cron tasks with their schedules, last run, and next run times",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -338,6 +339,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "cron_history",
 		Description: "Show recent cron task execution history",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -401,6 +403,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "cron_remove",
 		Description: "Remove a scheduled cron task by name",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -433,6 +436,7 @@ func registerTools(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "cron_add",
 		Description: "Add a new scheduled cron task",
+Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
