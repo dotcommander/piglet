@@ -17,14 +17,34 @@ type ProbeResult struct {
 	ContextWindow int    // if discoverable, else 0
 }
 
-// ProbeServer contacts baseURL + "/v1/models" and returns the first
-// available model along with the detected server type.
+// ProbeServer contacts baseURL + "/v1/models" and returns the best
+// available model, preferring chat-capable models over embedding models.
 func ProbeServer(baseURL string) (ProbeResult, error) {
 	results, err := ProbeModels(baseURL)
 	if err != nil {
 		return ProbeResult{}, err
 	}
+	// Prefer non-embedding models — embedding models can't do chat completions.
+	for _, r := range results {
+		if !isEmbeddingModel(r.ModelID) {
+			return r, nil
+		}
+	}
 	return results[0], nil
+}
+
+// isEmbeddingModel returns true if the model ID suggests an embedding-only model.
+func isEmbeddingModel(id string) bool {
+	lower := strings.ToLower(id)
+	for _, p := range []string{
+		"minilm", "e5-", "bge-", "gte-", "-embed",
+		"embed-", "embedding", "instructor", "nomic-embed",
+	} {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // detectServerType inspects response headers and the owned_by field to
@@ -88,8 +108,8 @@ func ProbeModels(baseURL string) ([]ProbeResult, error) {
 	return results, nil
 }
 
-// isLoopbackURL reports whether rawURL points to a loopback or local address.
-func isLoopbackURL(rawURL string) bool {
+// IsLoopbackURL reports whether rawURL points to a loopback or local address.
+func IsLoopbackURL(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return false
@@ -110,5 +130,15 @@ func isLoopbackURL(rawURL string) bool {
 		return true
 	}
 
+	return false
+}
+
+// IsLocalProvider reports whether the provider name indicates a local server
+// (auto-discovered or explicitly configured as local/lmstudio/ollama/vllm).
+func IsLocalProvider(provider string) bool {
+	switch strings.ToLower(provider) {
+	case "local", "lmstudio", "ollama", "vllm", "mlx":
+		return true
+	}
 	return false
 }
