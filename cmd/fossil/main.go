@@ -3,24 +3,15 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/dotcommander/piglet/extensions/fossil"
 )
-
-func printJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(os.Stderr, "fossil: json encode: %v\n", err)
-		os.Exit(1)
-	}
-}
 
 func usage() {
 	fmt.Print(`Usage: fossil <command> [flags] [args]
@@ -101,7 +92,7 @@ func runWhy(cwd string, args []string) {
 	}
 
 	if *jsonOut {
-		printJSON(results)
+		cliutil.PrintJSON(results)
 		return
 	}
 
@@ -154,7 +145,7 @@ func runChanges(cwd string, args []string) {
 	}
 
 	if *jsonOut {
-		printJSON(results)
+		cliutil.PrintJSON(results)
 		return
 	}
 
@@ -187,7 +178,7 @@ func runOwners(cwd string, args []string) {
 	}
 
 	if *jsonOut {
-		printJSON(results)
+		cliutil.PrintJSON(results)
 		return
 	}
 
@@ -218,7 +209,7 @@ func runCoChange(cwd string, args []string) {
 	}
 
 	if *jsonOut {
-		printJSON(results)
+		cliutil.PrintJSON(results)
 		return
 	}
 

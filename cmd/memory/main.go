@@ -3,12 +3,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/dotcommander/piglet/extensions/memory"
 )
 
@@ -106,7 +106,7 @@ doneFlags:
 			os.Exit(1)
 		}
 		if asJSON {
-			printJSON(fact)
+			cliutil.PrintJSON(fact)
 			return
 		}
 		fmt.Println(fact.Value)
@@ -132,7 +132,7 @@ doneFlags:
 		}
 		facts := store.List(category)
 		if asJSON {
-			printJSON(facts)
+			cliutil.PrintJSON(facts)
 			return
 		}
 		if len(facts) == 0 {
@@ -172,15 +172,6 @@ doneFlags:
 	default:
 		fmt.Fprintf(os.Stderr, "memory: unknown command %q\n", cmd)
 		usage()
-		os.Exit(1)
-	}
-}
-
-func printJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(os.Stderr, "memory: json: %v\n", err)
 		os.Exit(1)
 	}
 }

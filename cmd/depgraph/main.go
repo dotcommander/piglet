@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/dotcommander/piglet/extensions/depgraph"
 )
 
@@ -52,7 +53,7 @@ func main() {
 		}
 		entries := g.Deps(pkg, *depth)
 		if *jsonOut {
-			printJSON(entries)
+			cliutil.PrintJSON(entries)
 		} else {
 			fmt.Println(depgraph.FormatDeps(pkg, g.Module, entries, *tokens))
 		}
@@ -69,7 +70,7 @@ func main() {
 		}
 		entries := g.ReverseDeps(pkg, *depth)
 		if *jsonOut {
-			printJSON(entries)
+			cliutil.PrintJSON(entries)
 		} else {
 			fmt.Println(depgraph.FormatDeps(pkg, g.Module, entries, *tokens))
 		}
@@ -81,7 +82,7 @@ func main() {
 		}
 		packages := g.Impact(fs.Arg(0))
 		if *jsonOut {
-			printJSON(packages)
+			cliutil.PrintJSON(packages)
 		} else {
 			fmt.Println(depgraph.FormatImpact(packages, g.Module, *tokens))
 		}
@@ -89,7 +90,7 @@ func main() {
 	case "cycles":
 		cycles := g.DetectCycles()
 		if *jsonOut {
-			printJSON(cycles)
+			cliutil.PrintJSON(cycles)
 		} else {
 			fmt.Println(depgraph.FormatCycles(cycles, g.Module))
 		}
@@ -111,7 +112,7 @@ func main() {
 		}
 		p := g.ShortestPath(src, dst)
 		if *jsonOut {
-			printJSON(p)
+			cliutil.PrintJSON(p)
 		} else {
 			fmt.Println(depgraph.FormatPath(p, g.Module))
 		}
@@ -138,15 +139,6 @@ Flags:
   -json           JSON output
   -no-cache       Force rebuild, ignore cache
 `)
-}
-
-func printJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(os.Stderr, "error: json encode: %v\n", err)
-		os.Exit(1)
-	}
 }
 
 // buildGraph loads from cache if available, otherwise builds and caches.
