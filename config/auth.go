@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -168,10 +167,6 @@ func (a *Auth) save() error {
 	a.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("marshal auth: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(a.path), 0700); err != nil {
-		return fmt.Errorf("create auth dir: %w", err)
 	}
 	return AtomicWrite(a.path, data, 0600)
 }

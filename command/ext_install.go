@@ -110,81 +110,13 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 	}
 
 	var built, failed int
-
 	for _, name := range extensions {
 		fmt.Fprintf(w, "  %-20s ", name)
-
-		destDir := filepath.Join(extDir, name)
-		if err := os.MkdirAll(destDir, 0755); err != nil {
-			fmt.Fprintf(w, "FAIL (mkdir: %v)\n", err)
-			failed++
-			continue
-		}
-
-		var buildPkg, manifestDir, srcRoot string
-		if packName, ok := strings.CutPrefix(name, "pack-"); ok {
-			buildPkg = "./extensions/packs/" + packName + "/"
-			manifestDir = filepath.Join(srcDir, "extensions", "packs", packName)
-			srcRoot = manifestDir
+		if buildExtension(w, name, extDir, srcDir, goEnv) {
+			built++
 		} else {
-			buildPkg = "./extensions/" + name + "/cmd/"
-			manifestDir = filepath.Join(srcDir, "extensions", name, "cmd")
-			srcRoot = filepath.Join(srcDir, "extensions", name)
-		}
-
-		buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
-		buildCmd.Dir = srcDir
-		buildCmd.Env = goEnv
-		if out, err := buildCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
 			failed++
-			continue
 		}
-
-		src := filepath.Join(manifestDir, "manifest.yaml")
-		dst := filepath.Join(destDir, "manifest.yaml")
-		data, err := os.ReadFile(src)
-		if err != nil {
-			fmt.Fprintf(w, "FAIL (manifest: %v)\n", err)
-			failed++
-			continue
-		}
-		if err := os.WriteFile(dst, data, 0644); err != nil {
-			fmt.Fprintf(w, "FAIL (write manifest: %v)\n", err)
-			failed++
-			continue
-		}
-
-		var mf external.Manifest
-		if err := yaml.Unmarshal(data, &mf); err == nil && len(mf.Defaults) > 0 {
-			configDir, cerr := config.ConfigDir()
-			if cerr != nil {
-				fmt.Fprintf(w, "  warning: config dir: %v\n", cerr)
-			} else {
-				for _, entry := range mf.Defaults {
-					destPath := filepath.Join(configDir, entry.Dest)
-					if _, err := os.Stat(destPath); err == nil {
-						continue
-					}
-					srcPath := filepath.Join(srcRoot, entry.Src)
-					contents, rerr := os.ReadFile(srcPath)
-					if rerr != nil {
-						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, rerr)
-						continue
-					}
-					if merr := os.MkdirAll(filepath.Dir(destPath), 0755); merr != nil {
-						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, merr)
-						continue
-					}
-					if werr := os.WriteFile(destPath, contents, 0644); werr != nil {
-						fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, werr)
-					}
-				}
-			}
-		}
-
-		fmt.Fprintln(w, "ok")
-		built++
 	}
 
 	fmt.Fprintf(w, "Extensions: %d built, %d failed\n", built, failed)
@@ -194,22 +126,109 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		writeLastBuildHash(remoteHash)
 	}
 
-	// Update this list when pack contents change.
-	// Includes former standalone extensions that were consolidated into packs.
-	packMembers := []string{
-		"admin", "export", "extensions-list", "undo", "scaffold", "background",
-		"safeguard", "rtk", "autotitle", "clipboard", "subagent", "provider", "loop",
-		"memory", "skill", "gitcontext", "behavior", "prompts", "session-tools", "inbox",
-		"lsp", "repomap", "sift", "plan", "suggest",
-		"pipeline", "bulk", "webfetch", "cache", "usage", "modelsdev",
-		"prompt", "recall", "session-handoff",
-	}
-	for _, old := range packMembers {
-		oldDir := filepath.Join(extDir, old)
-		if _, err := os.Stat(oldDir); err == nil {
-			_ = os.RemoveAll(oldDir)
-		}
-	}
+	cleanStaleExtensions(extDir, extensions)
 
 	return nil
+}
+
+// buildExtension compiles one extension, copies its manifest, and seeds default
+// config files. Returns true on success.
+func buildExtension(w io.Writer, name, extDir, srcDir string, goEnv []string) bool {
+	destDir := filepath.Join(extDir, name)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		fmt.Fprintf(w, "FAIL (mkdir: %v)\n", err)
+		return false
+	}
+
+	var buildPkg, manifestDir, srcRoot string
+	if packName, ok := strings.CutPrefix(name, "pack-"); ok {
+		buildPkg = "./extensions/packs/" + packName + "/"
+		manifestDir = filepath.Join(srcDir, "extensions", "packs", packName)
+		srcRoot = manifestDir
+	} else {
+		buildPkg = "./extensions/" + name + "/cmd/"
+		manifestDir = filepath.Join(srcDir, "extensions", name, "cmd")
+		srcRoot = filepath.Join(srcDir, "extensions", name)
+	}
+
+	buildCmd := exec.Command("go", "build", "-o", filepath.Join(destDir, name), buildPkg)
+	buildCmd.Dir = srcDir
+	buildCmd.Env = goEnv
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "FAIL (%s)\n", strings.TrimSpace(string(out)))
+		return false
+	}
+
+	// Copy manifest and seed default config files.
+	src := filepath.Join(manifestDir, "manifest.yaml")
+	dst := filepath.Join(destDir, "manifest.yaml")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		fmt.Fprintf(w, "FAIL (manifest: %v)\n", err)
+		return false
+	}
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		fmt.Fprintf(w, "FAIL (write manifest: %v)\n", err)
+		return false
+	}
+
+	seedDefaults(w, srcRoot, data)
+
+	fmt.Fprintln(w, "ok")
+	return true
+}
+
+// seedDefaults copies default config files declared in the manifest to the
+// piglet config directory. Existing files are never overwritten.
+func seedDefaults(w io.Writer, srcRoot string, manifestData []byte) {
+	var mf external.Manifest
+	if err := yaml.Unmarshal(manifestData, &mf); err != nil || len(mf.Defaults) == 0 {
+		return
+	}
+	configDir, err := config.ConfigDir()
+	if err != nil {
+		fmt.Fprintf(w, "  warning: config dir: %v\n", err)
+		return
+	}
+	for _, entry := range mf.Defaults {
+		destPath := filepath.Join(configDir, entry.Dest)
+		if _, err := os.Stat(destPath); err == nil {
+			continue
+		}
+		srcPath := filepath.Join(srcRoot, entry.Src)
+		contents, err := os.ReadFile(srcPath)
+		if err != nil {
+			fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, err)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, err)
+			continue
+		}
+		if err := os.WriteFile(destPath, contents, 0644); err != nil {
+			fmt.Fprintf(w, "  warning: seed %s: %v\n", entry.Dest, err)
+		}
+	}
+}
+
+// cleanStaleExtensions removes extension directories that are no longer in
+// the official list. Hidden directories (starting with ".") are preserved.
+func cleanStaleExtensions(extDir string, official []string) {
+	current := make(map[string]bool, len(official))
+	for _, name := range official {
+		current[name] = true
+	}
+	entries, err := os.ReadDir(extDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if !current[name] {
+			_ = os.RemoveAll(filepath.Join(extDir, name))
+		}
+	}
 }

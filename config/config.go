@@ -152,51 +152,41 @@ func ConfigDir() (string, error) {
 	return filepath.Join(dir, "piglet"), nil
 }
 
+// configPath joins ConfigDir() with the given path elements.
+// Reduces boilerplate across all path resolver functions.
+func configPath(suffix ...string) (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(append([]string{dir}, suffix...)...), nil
+}
+
 // ExtensionConfigDir returns the namespaced config directory for an extension:
 // ~/.config/piglet/extensions/<name>/.
 // It does not create the directory.
 func ExtensionConfigDir(name string) (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "extensions", name), nil
+	return configPath("extensions", name)
 }
 
 // SessionsDir returns ~/.config/piglet/sessions/.
 func SessionsDir() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "sessions"), nil
+	return configPath("sessions")
 }
 
 // AuthPath returns ~/.config/piglet/auth.json.
 func AuthPath() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "auth.json"), nil
+	return configPath("auth.json")
 }
 
 // SettingsPath returns ~/.config/piglet/config.yaml.
 func SettingsPath() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "config.yaml"), nil
+	return configPath("config.yaml")
 }
 
 // HistoryPath returns ~/.config/piglet/history.
 func HistoryPath() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "history"), nil
+	return configPath("history")
 }
 
 // Load reads settings from the config file. Returns zero Settings if file
@@ -259,25 +249,26 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			os.Remove(tmpPath)
+		}
+	}()
+
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		os.Remove(tmpPath)
 		return fmt.Errorf("write temp: %w", err)
 	}
 	if err := tmp.Chmod(perm); err != nil {
 		tmp.Close()
-		os.Remove(tmpPath)
 		return fmt.Errorf("chmod temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("close temp: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return nil
+	cleanup = false
+	return os.Rename(tmpPath, path)
 }
 
 // IntOr returns v if positive, otherwise fallback.

@@ -3,6 +3,7 @@ package external
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -31,6 +32,40 @@ func (h *Host) requireApp(msg *Message) bool {
 		return false
 	}
 	return true
+}
+
+// handleAppCall decodes params, requires app, calls fn, and responds.
+// fn receives the decoded params and the bound app.
+// If fn returns an error, responds with error. Otherwise responds with fn's result.
+func handleAppCall[P any, R any](h *Host, msg *Message, fn func(*ext.App, P) (R, error)) {
+	var params P
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	result, err := fn(h.app, params)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, err.Error())
+		return
+	}
+	h.respond(*msg.ID, result)
+}
+
+// resolveProvider resolves a StreamProvider for the given model, responding
+// with error on failure. Returns (provider, true) on success.
+func (h *Host) resolveProvider(msg *Message, model string) (core.StreamProvider, bool) {
+	if h.resolveProviderFn == nil {
+		h.respondError(*msg.ID, -32603, "provider resolver not available")
+		return nil, false
+	}
+	prov, err := h.resolveProviderFn(model)
+	if err != nil {
+		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
+		return nil, false
+	}
+	return prov, true
 }
 
 // requireUndoSnapshots checks h.undoSnapshotsFn is set, responding with error if nil.
@@ -182,14 +217,8 @@ func (h *Host) handleHostChat(msg *Message) {
 		return
 	}
 
-	if h.resolveProviderFn == nil {
-		h.respondError(*msg.ID, -32603, "provider resolver not available")
-		return
-	}
-
-	prov, err := h.resolveProviderFn(params.Model)
-	if err != nil {
-		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
+	prov, ok := h.resolveProvider(msg, params.Model)
+	if !ok {
 		return
 	}
 
@@ -252,14 +281,8 @@ func (h *Host) handleHostAgentRun(msg *Message) {
 		return
 	}
 
-	if h.resolveProviderFn == nil {
-		h.respondError(*msg.ID, -32603, "provider resolver not available")
-		return
-	}
-
-	prov, err := h.resolveProviderFn(params.Model)
-	if err != nil {
-		h.respondError(*msg.ID, -32603, "resolve provider: "+err.Error())
+	prov, ok := h.resolveProvider(msg, params.Model)
+	if !ok {
 		return
 	}
 
@@ -384,18 +407,9 @@ func (h *Host) handleHostSessions(msg *Message) {
 }
 
 func (h *Host) handleHostLoadSession(msg *Message) {
-	var params HostLoadSessionParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.LoadSession(params.Path); err != nil {
-		h.respondError(*msg.ID, -32603, "load session: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostLoadSessionParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("load session: %w", app.LoadSession(p.Path))
+	})
 }
 
 func (h *Host) handleHostForkSession(msg *Message) {
@@ -411,18 +425,9 @@ func (h *Host) handleHostForkSession(msg *Message) {
 }
 
 func (h *Host) handleHostSetSessionTitle(msg *Message) {
-	var params HostSetSessionTitleParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.SetSessionTitle(params.Title); err != nil {
-		h.respondError(*msg.ID, -32603, "set session title: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostSetSessionTitleParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("set session title: %w", app.SetSessionTitle(p.Title))
+	})
 }
 
 func (h *Host) handleHostSyncModels(msg *Message) {
@@ -462,18 +467,9 @@ func (h *Host) handleHostWriteModels(msg *Message) {
 }
 
 func (h *Host) handleHostRunBackground(msg *Message) {
-	var params HostRunBackgroundParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.RunBackground(params.Prompt); err != nil {
-		h.respondError(*msg.ID, -32603, "run background: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostRunBackgroundParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("run background: %w", app.RunBackground(p.Prompt))
+	})
 }
 
 func (h *Host) handleHostCancelBackground(msg *Message) {
@@ -546,90 +542,40 @@ func (h *Host) handleHostLastAssistantText(msg *Message) {
 }
 
 func (h *Host) handleHostAppendSessionEntry(msg *Message) {
-	var params HostAppendSessionEntryParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.AppendSessionEntry(params.Kind, params.Data); err != nil {
-		h.respondError(*msg.ID, -32603, "append session entry: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostAppendSessionEntryParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("append session entry: %w", app.AppendSessionEntry(p.Kind, p.Data))
+	})
 }
 
 func (h *Host) handleHostAppendCustomMessage(msg *Message) {
-	var params HostAppendCustomMessageParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.AppendCustomMessage(params.Role, params.Content); err != nil {
-		h.respondError(*msg.ID, -32603, "append custom message: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostAppendCustomMessageParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("append custom message: %w", app.AppendCustomMessage(p.Role, p.Content))
+	})
 }
 
 func (h *Host) handleHostSetLabel(msg *Message) {
-	var params HostSetLabelParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.SetSessionLabel(params.TargetID, params.Label); err != nil {
-		h.respondError(*msg.ID, -32603, "set label: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostSetLabelParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("set label: %w", app.SetSessionLabel(p.TargetID, p.Label))
+	})
 }
 
 func (h *Host) handleHostBranchSession(msg *Message) {
-	var params HostBranchSessionParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.BranchSession(params.EntryID); err != nil {
-		h.respondError(*msg.ID, -32603, "branch session: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostBranchSessionParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("branch session: %w", app.BranchSession(p.EntryID))
+	})
 }
 
 func (h *Host) handleHostBranchSessionSummary(msg *Message) {
-	var params HostBranchSessionSummaryParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	if err := h.app.BranchSessionWithSummary(params.EntryID, params.Summary); err != nil {
-		h.respondError(*msg.ID, -32603, "branch session: "+err.Error())
-		return
-	}
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostBranchSessionSummaryParams) (struct{}, error) {
+		return struct{}{}, fmt.Errorf("branch session: %w", app.BranchSessionWithSummary(p.EntryID, p.Summary))
+	})
 }
 
 func (h *Host) handleHostPublish(msg *Message) {
-	var params HostPublishParams
-	if !h.decodeParams(msg, &params) {
-		return
-	}
-	if !h.requireApp(msg) {
-		return
-	}
-	h.app.Publish(params.Topic, params.Data)
-	h.respond(*msg.ID, struct{}{})
+	handleAppCall(h, msg, func(app *ext.App, p HostPublishParams) (struct{}, error) {
+		app.Publish(p.Topic, p.Data)
+		return struct{}{}, nil
+	})
 }
 
 func (h *Host) handleHostActivateTool(msg *Message) {

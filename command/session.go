@@ -121,6 +121,17 @@ func buildSessionTree(summaries []ext.SessionSummary) sessionTree {
 	return t
 }
 
+// sessionLabel returns the title, or the first 8 chars of the ID if title is empty.
+func sessionLabel(title, id string) string {
+	if title != "" {
+		return title
+	}
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
 func showSessionTree(a *ext.App) error {
 	summaries, err := a.Sessions()
 	if err != nil {
@@ -140,14 +151,7 @@ func showSessionTree(a *ext.App) error {
 	var walk func(idx int, prefix, connector string)
 	walk = func(idx int, prefix, connector string) {
 		s := tree.summaries[idx]
-		label := s.Title
-		if label == "" {
-			if len(s.ID) > 8 {
-				label = s.ID[:8]
-			} else {
-				label = s.ID
-			}
-		}
+		label := sessionLabel(s.Title, s.ID)
 		ts := s.CreatedAt.Format("01-02 15:04")
 		fmt.Fprintf(&b, "%s%s%s  %s  %d msgs\n", prefix, connector, label, ts, s.Messages)
 
@@ -216,14 +220,7 @@ func sessionPickerItems(summaries []ext.SessionSummary) []ext.PickerItem {
 	var walk func(idx, depth int)
 	walk = func(idx, depth int) {
 		s := tree.summaries[idx]
-		label := s.Title
-		if label == "" {
-			if len(s.ID) > 8 {
-				label = s.ID[:8]
-			} else {
-				label = s.ID
-			}
-		}
+		label := sessionLabel(s.Title, s.ID)
 		if depth > 0 {
 			label = "↳ " + label
 		}

@@ -241,29 +241,34 @@ func (a *App) UnregisterExtension(name string) {
 		delete(a.shortcuts, k)
 	}
 
-	// Remove interceptors by name
+	nameSet := func(names []string) map[string]bool {
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			m[n] = true
+		}
+		return m
+	}
+
+	interceptorNames := nameSet(info.Interceptors)
+	handlerNames := nameSet(info.EventHandlers)
+	hookNames := nameSet(info.MessageHooks)
+	transformerNames := nameSet(info.InputTransformers)
+	sectionTitles := nameSet(info.PromptSections)
+
 	a.interceptors = slices.DeleteFunc(a.interceptors, func(ic Interceptor) bool {
-		return slices.Contains(info.Interceptors, ic.Name)
+		return interceptorNames[ic.Name]
 	})
-
-	// Remove event handlers by name
 	a.eventHandlers = slices.DeleteFunc(a.eventHandlers, func(eh EventHandler) bool {
-		return slices.Contains(info.EventHandlers, eh.Name)
+		return handlerNames[eh.Name]
 	})
-
-	// Remove message hooks by name
 	a.messageHooks = slices.DeleteFunc(a.messageHooks, func(mh MessageHook) bool {
-		return slices.Contains(info.MessageHooks, mh.Name)
+		return hookNames[mh.Name]
 	})
-
-	// Remove input transformers by name
 	a.inputTransformers = slices.DeleteFunc(a.inputTransformers, func(it InputTransformer) bool {
-		return slices.Contains(info.InputTransformers, it.Name)
+		return transformerNames[it.Name]
 	})
-
-	// Remove prompt sections by title
 	a.promptSections = slices.DeleteFunc(a.promptSections, func(ps PromptSection) bool {
-		return slices.Contains(info.PromptSections, ps.Title)
+		return sectionTitles[ps.Title]
 	})
 
 	// Remove compactor if it belongs to this extension

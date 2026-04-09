@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 // providerCandidate holds detected provider info from environment.
@@ -15,11 +14,7 @@ type providerCandidate struct {
 
 // ModelsPath returns the path to models.yaml in the config dir.
 func ModelsPath() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "models.yaml"), nil
+	return configPath("models.yaml")
 }
 
 // NeedsSetup returns true if config.yaml or models.yaml is missing.
@@ -61,7 +56,10 @@ func RunSetup(writeModels func(path string) error, modelDefaults map[string]stri
 	}
 
 	// Write models.yaml
-	modPath := filepath.Join(dir, "models.yaml")
+	modPath, err := ModelsPath()
+	if err != nil {
+		return fmt.Errorf("resolve models path: %w", err)
+	}
 	if _, err := os.Stat(modPath); os.IsNotExist(err) {
 		if err := writeModels(modPath); err != nil {
 			return fmt.Errorf("write models.yaml: %w", err)
@@ -92,7 +90,10 @@ func RunSetup(writeModels func(path string) error, modelDefaults map[string]stri
 	}
 
 	// Write config.yaml
-	cfgPath := filepath.Join(dir, "config.yaml")
+	cfgPath, err := SettingsPath()
+	if err != nil {
+		return fmt.Errorf("resolve config path: %w", err)
+	}
 	if _, err := os.Stat(cfgPath); err == nil {
 		fmt.Println("  config.yaml (exists, skipping)")
 	} else {
