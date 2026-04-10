@@ -26,6 +26,9 @@ func (a *App) filterTools(pred func(*ToolDef) bool, mode ToolMode) []core.Tool {
 		if pred != nil && !pred(td) {
 			continue
 		}
+		if a.toolFilter != nil && !a.toolFilter(td.Name) {
+			continue
+		}
 		defs = append(defs, td)
 	}
 	slices.SortFunc(defs, func(a, b *ToolDef) int {

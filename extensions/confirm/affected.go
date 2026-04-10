@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -101,7 +101,7 @@ func AffectedPackages(changedFiles []string, root string) ([]string, error) {
 	for imp := range visited {
 		result = append(result, imp)
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result, nil
 }
 

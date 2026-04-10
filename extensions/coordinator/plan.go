@@ -9,8 +9,13 @@ import (
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
-// maxSubTaskTurns is the cap applied to each sub-task's MaxTurns during planning.
-const maxSubTaskTurns = 30
+const (
+	// maxSubTaskTurns is the cap applied to each sub-task's MaxTurns during planning.
+	maxSubTaskTurns = 30
+
+	// MaxPlanTasks is the maximum number of sub-tasks the planner can produce.
+	MaxPlanTasks = 5
+)
 
 // SubTask represents a decomposed sub-task.
 type SubTask struct {
@@ -18,6 +23,32 @@ type SubTask struct {
 	Tools    string `json:"tools"`
 	Model    string `json:"model"`
 	MaxTurns int    `json:"max_turns"`
+}
+
+// defaultSubTask returns a single fallback task covering the entire request.
+func defaultSubTask(request string) SubTask {
+	return SubTask{
+		Task:     request,
+		Tools:    "all",
+		Model:    "default",
+		MaxTurns: maxSubTaskTurns,
+	}
+}
+
+// applyDefaults fills in missing or invalid fields in sub-tasks.
+func applyDefaults(tasks []SubTask) []SubTask {
+	for i := range tasks {
+		if tasks[i].Tools == "" {
+			tasks[i].Tools = "all"
+		}
+		if tasks[i].Model == "" {
+			tasks[i].Model = "default"
+		}
+		if tasks[i].MaxTurns <= 0 || tasks[i].MaxTurns > maxSubTaskTurns {
+			tasks[i].MaxTurns = maxSubTaskTurns
+		}
+	}
+	return tasks
 }
 
 // PlanTasks decomposes a user request into sub-tasks using LLM classification.
@@ -42,52 +73,23 @@ func PlanTasks(ctx context.Context, ext *sdk.Extension, request string, caps []C
 		MaxTokens: 1024,
 	})
 	if err != nil {
-		// Fallback: single task with the whole request
-		return []SubTask{{
-			Task:     request,
-			Tools:    "all",
-			Model:    "default",
-			MaxTurns: maxSubTaskTurns,
-		}}, nil
+		return []SubTask{defaultSubTask(request)}, nil
 	}
 
 	var tasks []SubTask
 	if err := json.Unmarshal([]byte(resp.Text), &tasks); err != nil {
-		// JSON parse failed — single task fallback
-		return []SubTask{{
-			Task:     request,
-			Tools:    "all",
-			Model:    "default",
-			MaxTurns: maxSubTaskTurns,
-		}}, nil
+		return []SubTask{defaultSubTask(request)}, nil
 	}
 
-	// Validate and cap
 	if len(tasks) == 0 {
-		return []SubTask{{
-			Task:     request,
-			Tools:    "all",
-			Model:    "default",
-			MaxTurns: maxSubTaskTurns,
-		}}, nil
-	}
-	if len(tasks) > 5 {
-		tasks = tasks[:5]
+		return []SubTask{defaultSubTask(request)}, nil
 	}
 
-	for i := range tasks {
-		if tasks[i].Tools == "" {
-			tasks[i].Tools = "all"
-		}
-		if tasks[i].Model == "" {
-			tasks[i].Model = "default"
-		}
-		if tasks[i].MaxTurns <= 0 || tasks[i].MaxTurns > maxSubTaskTurns {
-			tasks[i].MaxTurns = maxSubTaskTurns
-		}
+	if len(tasks) > MaxPlanTasks {
+		tasks = tasks[:MaxPlanTasks]
 	}
 
-	return tasks, nil
+	return applyDefaults(tasks), nil
 }
 
 // routeHint calls the route tool via the host to get intent/domain classification.

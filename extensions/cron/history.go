@@ -107,6 +107,30 @@ func LastRun(entries []RunEntry, taskName string) time.Time {
 	return time.Time{}
 }
 
+// filterHistory filters entries by task name (empty = no filter) and returns
+// the last limit entries.
+func filterHistory(entries []RunEntry, taskName string, limit int) []RunEntry {
+	if taskName != "" {
+		var filtered []RunEntry
+		for _, en := range entries {
+			if en.Task == taskName {
+				filtered = append(filtered, en)
+			}
+		}
+		entries = filtered
+	}
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	start := 0
+	if len(entries) > limit {
+		start = len(entries) - limit
+	}
+	return entries[start:]
+}
+
 // RotateHistory trims the history file to maxHistoryLines.
 // Called after appending, only when line count exceeds threshold.
 func RotateHistory() error {

@@ -8,6 +8,9 @@ import (
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
+// extName is the extension name used for self-identification and display.
+const extName = "coordinator"
+
 // Capability represents a discovered extension capability.
 type Capability struct {
 	Extension string
@@ -22,9 +25,14 @@ func DiscoverCapabilities(ctx context.Context, ext *sdk.Extension) ([]Capability
 		return nil, fmt.Errorf("discover: %w", err)
 	}
 
+	return filterCapabilities(infos), nil
+}
+
+// filterCapabilities extracts capabilities from extension info, skipping self and toolless extensions.
+func filterCapabilities(infos []sdk.ExtInfo) []Capability {
 	caps := make([]Capability, 0, len(infos))
 	for _, info := range infos {
-		if info.Name == "coordinator" {
+		if info.Name == extName {
 			continue // skip self
 		}
 		if len(info.Tools) == 0 && len(info.Commands) == 0 {
@@ -36,7 +44,7 @@ func DiscoverCapabilities(ctx context.Context, ext *sdk.Extension) ([]Capability
 			Commands:  info.Commands,
 		})
 	}
-	return caps, nil
+	return caps
 }
 
 // FormatCapabilities returns a text summary of discovered capabilities for LLM consumption.

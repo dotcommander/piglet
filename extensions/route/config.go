@@ -17,12 +17,13 @@ var defaultDomains string
 
 // Config holds route extension settings.
 type Config struct {
-	Weights             Weights    `yaml:"weights"`
-	PrimaryThreshold    float64    `yaml:"primary_threshold"`
-	MaxPrimary          int        `yaml:"max_primary"`
-	MaxSecondary        int        `yaml:"max_secondary"`
-	MessageHook         HookConfig `yaml:"message_hook"`
-	TriggerKeywordRatio float64    `yaml:"trigger_keyword_ratio"`
+	Weights             Weights          `yaml:"weights"`
+	PrimaryThreshold    float64          `yaml:"primary_threshold"`
+	MaxPrimary          int              `yaml:"max_primary"`
+	MaxSecondary        int              `yaml:"max_secondary"`
+	MessageHook         HookConfig       `yaml:"message_hook"`
+	TriggerKeywordRatio float64          `yaml:"trigger_keyword_ratio"`
+	ToolFilter          ToolFilterConfig `yaml:"tool_filter"`
 }
 
 // Weights holds scoring signal weights.
@@ -37,6 +38,12 @@ type Weights struct {
 type HookConfig struct {
 	Enabled       bool    `yaml:"enabled"`
 	MinConfidence float64 `yaml:"min_confidence"`
+}
+
+// ToolFilterConfig holds per-turn tool filtering settings.
+type ToolFilterConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	AlwaysInclude []string `yaml:"always_include"`
 }
 
 // IntentsConfig holds the full intent taxonomy.
@@ -78,6 +85,13 @@ func DefaultConfig() Config {
 		MessageHook: HookConfig{
 			Enabled:       true,
 			MinConfidence: 0.10,
+		},
+		ToolFilter: ToolFilterConfig{
+			Enabled: true,
+			AlwaysInclude: []string{
+				"Read", "Write", "Edit", "Bash", "Grep", "Glob",
+				"tool_search", "route",
+			},
 		},
 	}
 }

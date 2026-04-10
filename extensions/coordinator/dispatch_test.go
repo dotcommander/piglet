@@ -44,31 +44,18 @@ func TestMergeResults(t *testing.T) {
 	})
 }
 
-func TestSubTaskDefaults(t *testing.T) {
+func TestApplyDefaults(t *testing.T) {
 	t.Parallel()
 
-	// Test that PlanTasks validates sub-task fields.
-	// Since PlanTasks requires a real host connection for Chat(),
-	// we test the validation logic inline.
 	tasks := []SubTask{
 		{Task: "do something", Tools: "", Model: "", MaxTurns: 0},
 		{Task: "another", Tools: "all", Model: "small", MaxTurns: maxSubTaskTurns + 5},
 	}
 
-	for i := range tasks {
-		if tasks[i].Tools == "" {
-			tasks[i].Tools = "all"
-		}
-		if tasks[i].Model == "" {
-			tasks[i].Model = "default"
-		}
-		if tasks[i].MaxTurns <= 0 || tasks[i].MaxTurns > maxSubTaskTurns {
-			tasks[i].MaxTurns = maxSubTaskTurns
-		}
-	}
+	result := applyDefaults(tasks)
 
-	assert.Equal(t, "all", tasks[0].Tools)
-	assert.Equal(t, "default", tasks[0].Model)
-	assert.Equal(t, maxSubTaskTurns, tasks[0].MaxTurns)
-	assert.Equal(t, maxSubTaskTurns, tasks[1].MaxTurns, "should cap at maxSubTaskTurns when exceeded")
+	assert.Equal(t, "all", result[0].Tools)
+	assert.Equal(t, "default", result[0].Model)
+	assert.Equal(t, maxSubTaskTurns, result[0].MaxTurns)
+	assert.Equal(t, maxSubTaskTurns, result[1].MaxTurns, "should cap at maxSubTaskTurns when exceeded")
 }

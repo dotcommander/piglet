@@ -17,6 +17,19 @@ func Register(e *sdk.Extension) {
 	registerEventHandler(e)
 }
 
+// countTaskStatus returns the number of enabled and overdue tasks.
+func countTaskStatus(summaries []TaskSummary) (enabled, overdue int) {
+	for _, s := range summaries {
+		if s.Enabled {
+			enabled++
+		}
+		if s.Overdue {
+			overdue++
+		}
+	}
+	return enabled, overdue
+}
+
 // formatHistoryEntry formats a single history entry with an optional prefix.
 func formatHistoryEntry(entry RunEntry, prefix string) string {
 	status := "ok"

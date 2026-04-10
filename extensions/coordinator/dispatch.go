@@ -76,7 +76,7 @@ func MergeResults(results []DispatchResult) string {
 		totalOut += r.OutputTok
 	}
 
-	fmt.Fprintf(&b, "[coordinator: %d task(s), %d turns, %dk in / %dk out]\n\n",
+	fmt.Fprintf(&b, "[%s: %d task(s), %d turns, %dk in / %dk out]\n\n", extName,
 		len(results), totalTurns, totalIn/1000, totalOut/1000)
 
 	for i, r := range results {

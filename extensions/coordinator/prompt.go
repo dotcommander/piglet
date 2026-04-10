@@ -11,5 +11,5 @@ import (
 var defaultPlanPrompt string
 
 func LoadPlanPrompt() string {
-	return xdg.LoadOrCreateExt("coordinator", "prompt.md", strings.TrimSpace(defaultPlanPrompt))
+	return xdg.LoadOrCreateExt(extName, "prompt.md", strings.TrimSpace(defaultPlanPrompt))
 }

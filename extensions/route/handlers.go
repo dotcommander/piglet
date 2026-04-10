@@ -155,22 +155,79 @@ func handleRouteCommand(e *sdk.Extension, s *state, _ context.Context, args stri
 }
 
 // handleRouteHook handles the message hook: auto-classify and inject routing context.
-func handleRouteHook(s *state, _ context.Context, msg string) (string, error) {
+// When tool filtering is enabled, it also sets a per-turn tool filter on the host
+// to reduce the number of tool schemas sent to the LLM.
+func handleRouteHook(s *state, ctx context.Context, msg string) (string, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	ready := s.ready
+	reg := s.reg
+	hookEnabled := s.config.MessageHook.Enabled
+	filterEnabled := s.config.ToolFilter.Enabled
+	alwaysInclude := s.config.ToolFilter.AlwaysInclude
+	minConfidence := s.config.MessageHook.MinConfidence
+	s.mu.RUnlock()
 
-	if !s.ready || s.reg == nil || !s.config.MessageHook.Enabled {
-		return "", nil
+	clearFilter := func() error {
+		if filterEnabled {
+			return s.ext.SetToolFilter(ctx, nil)
+		}
+		return nil
 	}
 
-	result := s.scorer.Score(msg, s.cwd, s.reg)
+	if !ready || reg == nil || !hookEnabled {
+		return "", clearFilter()
+	}
 
-	if result.Confidence < s.config.MessageHook.MinConfidence && len(result.Primary) == 0 {
-		return "", nil
+	result := s.scorer.Score(msg, s.cwd, reg)
+
+	if result.Confidence < minConfidence && len(result.Primary) == 0 {
+		// Low confidence — clear filter so all tools are available
+		return "", clearFilter()
+	}
+
+	// Apply per-turn tool filter based on routing results
+	if filterEnabled {
+		allowlist := buildToolAllowlist(result, alwaysInclude)
+		if err := s.ext.SetToolFilter(ctx, allowlist); err != nil {
+			return "", err
+		}
 	}
 
 	logRoute(s.fbDir, result, hashPrompt(msg), "hook")
 	return FormatHookContext(result), nil
+}
+
+// buildToolAllowlist constructs the list of tool names to include for this turn.
+// Includes all primary and secondary tools plus essential always-include tools.
+func buildToolAllowlist(result RouteResult, alwaysInclude []string) []string {
+	capacity := len(alwaysInclude) + len(result.Primary) + len(result.Secondary)
+	seen := make(map[string]bool, capacity)
+	names := make([]string, 0, capacity)
+
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	for _, t := range alwaysInclude {
+		add(t)
+	}
+	for _, sc := range result.Primary {
+		add(sc.Name)
+		if sc.Extension != "" {
+			add(sc.Extension)
+		}
+	}
+	for _, sc := range result.Secondary {
+		add(sc.Name)
+		if sc.Extension != "" {
+			add(sc.Extension)
+		}
+	}
+
+	return names
 }
 
 // mergeLearnedIntoRegistry adds learned triggers and anti-triggers to matching

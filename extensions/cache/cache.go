@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/dotcommander/piglet/extensions/internal/xdg"
@@ -140,8 +140,8 @@ func GC(namespace string, maxEntries int) error {
 	if len(files) <= maxEntries {
 		return nil
 	}
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].modTime.Before(files[j].modTime)
+	slices.SortFunc(files, func(a, b fileInfo) int {
+		return a.modTime.Compare(b.modTime)
 	})
 	toRemove := len(files) - maxEntries
 	for i := range toRemove {

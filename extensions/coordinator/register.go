@@ -12,8 +12,8 @@ import (
 func Register(e *sdk.Extension) {
 	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()
-		x.Log("debug", "[coordinator] OnInit start")
-		x.Log("debug", fmt.Sprintf("[coordinator] OnInit complete (%s)", time.Since(start)))
+		x.Log("debug", fmt.Sprintf("[%s] OnInit start", extName))
+		x.Log("debug", fmt.Sprintf("[%s] OnInit complete (%s)", extName, time.Since(start)))
 	})
 
 	e.RegisterTool(sdk.ToolDef{
@@ -44,13 +44,13 @@ func Register(e *sdk.Extension) {
 
 			maxTasks := 3
 			if mt, ok := args["max_tasks"].(float64); ok && int(mt) > 0 {
-				maxTasks = min(int(mt), 5)
+				maxTasks = min(int(mt), MaxPlanTasks)
 			}
 
 			// Discover capabilities
 			caps, err := DiscoverCapabilities(ctx, e)
 			if err != nil {
-				e.Log("warn", fmt.Sprintf("[coordinator] discover failed: %v", err))
+				e.Log("warn", fmt.Sprintf("[%s] discover failed: %v", extName, err))
 				// Continue without capability info
 			}
 

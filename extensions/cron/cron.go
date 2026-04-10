@@ -17,6 +17,13 @@ type RunOptions struct {
 	Force    bool   // bypass schedule check
 }
 
+// taskRun holds a task and its parsed schedule for execution.
+type taskRun struct {
+	name   string
+	config TaskConfig
+	sched  Schedule
+}
+
 // taskResult carries the outcome of a single task execution.
 type taskResult struct {
 	name   string
@@ -26,7 +33,6 @@ type taskResult struct {
 // Run executes the cron cycle: load config, check schedules, execute due tasks.
 func Run(ctx context.Context, opts RunOptions) error {
 	cfg := LoadConfig()
-
 	if len(cfg.Tasks) == 0 {
 		if opts.Verbose {
 			slog.Info("no tasks configured")
@@ -37,17 +43,23 @@ func Run(ctx context.Context, opts RunOptions) error {
 	entries, err := ReadHistory()
 	if err != nil {
 		slog.Warn("reading history", "error", err)
-		// Continue with empty history — all tasks will appear as first run.
 	}
 
-	type taskRun struct {
-		name   string
-		config TaskConfig
-		sched  Schedule
+	toRun := selectDueTasks(cfg, entries, opts)
+	if len(toRun) == 0 {
+		if opts.Verbose {
+			slog.Info("no tasks due")
+		}
+		return nil
 	}
 
+	results := executeTasks(ctx, toRun, opts.Verbose)
+	return recordResults(results, opts.Verbose)
+}
+
+// selectDueTasks filters tasks by schedule and returns those ready to run.
+func selectDueTasks(cfg Config, entries []RunEntry, opts RunOptions) []taskRun {
 	var toRun []taskRun
-
 	for name, task := range cfg.Tasks {
 		if !task.IsEnabled() {
 			if opts.Verbose {
@@ -56,7 +68,6 @@ func Run(ctx context.Context, opts RunOptions) error {
 			continue
 		}
 
-		// If targeting a specific task, skip others.
 		if opts.TaskName != "" && opts.TaskName != name {
 			continue
 		}
@@ -67,33 +78,23 @@ func Run(ctx context.Context, opts RunOptions) error {
 			continue
 		}
 
-		if opts.Force {
-			toRun = append(toRun, taskRun{name: name, config: task, sched: sched})
-			continue
-		}
-
-		lastRunTime := LastRun(entries, name)
-		if sched.ShouldRun(lastRunTime) {
+		if opts.Force || sched.ShouldRun(LastRun(entries, name)) {
 			toRun = append(toRun, taskRun{name: name, config: task, sched: sched})
 		} else if opts.Verbose {
-			next := sched.Next(lastRunTime)
+			next := sched.Next(LastRun(entries, name))
 			slog.Info("not due", "task", name, "next", next.Format(time.RFC3339))
 		}
 	}
+	return toRun
+}
 
-	if len(toRun) == 0 {
-		if opts.Verbose {
-			slog.Info("no tasks due")
-		}
-		return nil
-	}
-
-	// Execute due tasks in parallel — all run to completion regardless of failures.
+// executeTasks runs tasks in parallel with panic recovery, collecting all results.
+func executeTasks(ctx context.Context, tasks []taskRun, verbose bool) []taskResult {
 	var mu sync.Mutex
-	collected := make([]taskResult, 0, len(toRun))
+	collected := make([]taskResult, 0, len(tasks))
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	for _, tr := range toRun {
+	for _, tr := range tasks {
 		eg.Go(func() error {
 			defer func() {
 				if r := recover(); r != nil {
@@ -106,7 +107,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 				}
 			}()
 
-			if opts.Verbose {
+			if verbose {
 				slog.Info("running", "task", tr.name, "action", tr.config.Action)
 			}
 
@@ -119,8 +120,13 @@ func Run(ctx context.Context, opts RunOptions) error {
 	}
 	eg.Wait() //nolint:errcheck // always nil — goroutines never return non-nil
 
+	return collected
+}
+
+// recordResults appends results to history and rotates if needed.
+func recordResults(results []taskResult, verbose bool) error {
 	var appendErr error
-	for _, r := range collected {
+	for _, r := range results {
 		entry := RunEntry{
 			Task:       r.name,
 			RanAt:      nowFunc().Format(time.RFC3339),
@@ -129,7 +135,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 			Error:      r.result.Error,
 		}
 
-		if opts.Verbose {
+		if verbose {
 			if r.result.Success {
 				slog.Info("completed", "task", r.name, "duration_ms", r.result.DurationMs)
 			} else {
@@ -143,7 +149,6 @@ func Run(ctx context.Context, opts RunOptions) error {
 		}
 	}
 
-	// Rotate history if needed.
 	if err := RotateHistory(); err != nil {
 		slog.Warn("rotating history", "error", err)
 	}

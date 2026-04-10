@@ -593,6 +593,13 @@ func (h *Host) handleHostActivateTool(msg *Message) {
 	h.respond(*msg.ID, struct{}{})
 }
 
+func (h *Host) handleHostSetToolFilter(msg *Message) {
+	handleAppCall(h, msg, func(app *ext.App, p HostSetToolFilterParams) (struct{}, error) {
+		app.SetToolFilterByName(p.Names)
+		return struct{}{}, nil
+	})
+}
+
 func (h *Host) handleHostSubscribe(msg *Message) {
 	var params HostSubscribeParams
 	if !h.decodeParams(msg, &params) {

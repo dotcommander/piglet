@@ -1,8 +1,8 @@
 name: clipboard
 version: 0.1.0
 runtime: ./clipboard
-description: Copy tool results to system clipboard and paste clipboard content
+description: Read images from the system clipboard (macOS)
 capabilities:
   - tools
   - shortcuts
-triggers: [clipboard, copy, paste]
+triggers: [clipboard, image, paste]

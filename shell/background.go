@@ -2,11 +2,20 @@ package shell
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
 )
+
+// bgEntry tracks a single named background task.
+type bgEntry struct {
+	agent   *core.Agent
+	eventCh <-chan core.Event
+	prompt  string
+	result  strings.Builder
+}
 
 // startBackground is the callback wired into ext.App via WithRunBackground.
 // Uses the prompt as the task name (truncated to 20 runes).

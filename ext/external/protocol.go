@@ -625,6 +625,11 @@ type HostActivateToolParams struct {
 	Name string `json:"name"`
 }
 
+// HostSetToolFilterParams sets a per-turn tool filter by name allowlist.
+type HostSetToolFilterParams struct {
+	Names []string `json:"names"` // empty = clear filter (include all)
+}
+
 // HostActivateToolResult is the host's response after activating a tool.
 type HostActivateToolResult struct{}
 
@@ -769,6 +774,7 @@ const (
 	MethodHostPublish                 = "host/publish"
 	MethodHostSubscribe               = "host/subscribe"
 	MethodHostActivateTool            = "host/activateTool"
+	MethodHostSetToolFilter           = "host/setToolFilter"
 	MethodHostEventBusEvent           = "eventBus/event" // host → extension notification
 	MethodRegisterInputTransformer    = "register/inputTransformer"
 	MethodInputTransform              = "inputTransformer/transform" // host → extension callback

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // ExtractSessionText reads a session JSONL file and returns concatenated
@@ -82,7 +85,7 @@ func extractEntryText(data json.RawMessage) string {
 		return ""
 	}
 
-	role := strings.Title(msg.Role) //nolint:staticcheck // acceptable for display
+	role := cases.Title(language.English).String(msg.Role)
 	return role + ": " + text + "\n"
 }
 

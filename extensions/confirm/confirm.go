@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -122,6 +122,6 @@ func changedFiles(root string) ([]string, error) {
 			merged = append(merged, f)
 		}
 	}
-	sort.Strings(merged)
+	slices.Sort(merged)
 	return merged, nil
 }

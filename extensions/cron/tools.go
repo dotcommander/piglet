@@ -66,27 +66,13 @@ func registerTools(e *sdk.Extension) {
 				limit = int(l)
 			}
 
-			if taskFilter != "" {
-				var filtered []RunEntry
-				for _, en := range entries {
-					if en.Task == taskFilter {
-						filtered = append(filtered, en)
-					}
-				}
-				entries = filtered
-			}
-
-			if len(entries) == 0 {
+			filtered := filterHistory(entries, taskFilter, limit)
+			if len(filtered) == 0 {
 				return sdk.TextResult("No history found."), nil
 			}
 
-			start := 0
-			if len(entries) > limit {
-				start = len(entries) - limit
-			}
-
 			var b strings.Builder
-			for _, entry := range entries[start:] {
+			for _, entry := range filtered {
 				b.WriteString(formatHistoryEntry(entry, ""))
 			}
 			return sdk.TextResult(b.String()), nil
@@ -216,16 +202,7 @@ func registerEventHandler(e *sdk.Extension) {
 				return nil
 			}
 
-			enabled := 0
-			overdue := 0
-			for _, s := range summaries {
-				if s.Enabled {
-					enabled++
-				}
-				if s.Overdue {
-					overdue++
-				}
-			}
+			enabled, overdue := countTaskStatus(summaries)
 
 			status := fmt.Sprintf("%d tasks", enabled)
 			if overdue > 0 {

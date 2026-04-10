@@ -48,6 +48,29 @@ func Execute(ctx context.Context, name string, task TaskConfig) ExecuteResult {
 	return result
 }
 
+// truncateOutput truncates s to maxLen bytes, appending a marker if truncated.
+func truncateOutput(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "...(truncated)"
+}
+
+// runCommand executes cmd, captures combined output, truncates to 4KB, and returns the result.
+func runCommand(ctx context.Context, cmd *exec.Cmd) ExecuteResult {
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+
+	err := cmd.Run()
+	output := truncateOutput(buf.String(), 4096)
+
+	if err != nil {
+		return ExecuteResult{Error: err.Error(), Output: output}
+	}
+	return ExecuteResult{Success: true, Output: output}
+}
+
 func executeShell(ctx context.Context, task TaskConfig) ExecuteResult {
 	if task.Command == "" {
 		return ExecuteResult{Error: "shell action requires command"}
@@ -60,23 +83,7 @@ func executeShell(ctx context.Context, task TaskConfig) ExecuteResult {
 	if len(task.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), mapToEnv(task.Env)...)
 	}
-
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-
-	err := cmd.Run()
-	output := buf.String()
-	// Truncate output to 4KB for history storage.
-	const maxOutput = 4096
-	if len(output) > maxOutput {
-		output = output[:maxOutput] + "...(truncated)"
-	}
-
-	if err != nil {
-		return ExecuteResult{Error: err.Error(), Output: output}
-	}
-	return ExecuteResult{Success: true, Output: output}
+	return runCommand(ctx, cmd)
 }
 
 func executePrompt(ctx context.Context, task TaskConfig) ExecuteResult {
@@ -84,24 +91,8 @@ func executePrompt(ctx context.Context, task TaskConfig) ExecuteResult {
 		return ExecuteResult{Error: "prompt action requires prompt"}
 	}
 
-	// Shell out to piglet CLI with --prompt flag.
 	cmd := exec.CommandContext(ctx, "piglet", "--prompt", task.Prompt)
-
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-
-	err := cmd.Run()
-	output := buf.String()
-	const maxOutput = 4096
-	if len(output) > maxOutput {
-		output = output[:maxOutput] + "...(truncated)"
-	}
-
-	if err != nil {
-		return ExecuteResult{Error: err.Error(), Output: output}
-	}
-	return ExecuteResult{Success: true, Output: output}
+	return runCommand(ctx, cmd)
 }
 
 func executeWebhook(ctx context.Context, task TaskConfig) ExecuteResult {

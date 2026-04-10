@@ -1,7 +1,7 @@
 package changelog
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/dotcommander/piglet/extensions/internal/xdg"
 )
@@ -30,8 +30,8 @@ func typeOrder(types map[string]TypeConfig) []string {
 	for k := range types {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		return types[keys[i]].Order < types[keys[j]].Order
+	slices.SortFunc(keys, func(a, b string) int {
+		return types[a].Order - types[b].Order
 	})
 	return keys
 }

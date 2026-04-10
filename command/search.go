@@ -65,46 +65,6 @@ func forkHandler(args string, a *ext.App) error {
 	return nil
 }
 
-func registerBg(app *ext.App) {
-	app.RegisterCommand(&ext.Command{
-		Name:        "bg",
-		Description: "Run a prompt in the background",
-		Handler: func(args string, a *ext.App) error {
-			prompt := strings.TrimSpace(args)
-			if prompt == "" {
-				a.ShowMessage("Usage: /bg <prompt>")
-				return nil
-			}
-			if a.IsBackgroundRunning() {
-				a.ShowMessage("Background agent already running — /bg-cancel to stop it")
-				return nil
-			}
-			if err := a.RunBackground(prompt); err != nil {
-				a.ShowMessage("Failed to start background agent: " + err.Error())
-				return nil
-			}
-			a.ShowMessage("Background agent started: " + prompt)
-			return nil
-		},
-	})
-}
-
-func registerBgCancel(app *ext.App) {
-	app.RegisterCommand(&ext.Command{
-		Name:        "bg-cancel",
-		Description: "Cancel the background agent",
-		Handler: func(args string, a *ext.App) error {
-			if !a.IsBackgroundRunning() {
-				a.ShowMessage("No background agent running")
-				return nil
-			}
-			a.CancelBackground()
-			a.ShowMessage("Background agent cancelled")
-			return nil
-		},
-	})
-}
-
 func registerTitle(app *ext.App) {
 	app.RegisterCommand(&ext.Command{
 		Name:        "title",

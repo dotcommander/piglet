@@ -14,7 +14,6 @@ var convCommitRegex = regexp.MustCompile(`^(\w+)(?:\(([^)]+)\))?(!)?:\s*(.+)`)
 type Commit struct {
 	Hash     string
 	Date     string
-	Author   string
 	Subject  string
 	Type     string
 	Scope    string
@@ -25,7 +24,7 @@ type Commit struct {
 // ParseCommits runs git log for the given ref and parses conventional commits.
 func ParseCommits(cwd, ref string) ([]Commit, error) {
 	cmd := exec.Command("git", "log", ref,
-		"--pretty=format:%H|%ai|%an|%s",
+		"--pretty=format:%H|%ai|%s",
 		"--no-merges",
 	)
 	cmd.Dir = cwd
@@ -55,8 +54,8 @@ func ParseCommits(cwd, ref string) ([]Commit, error) {
 }
 
 func parseCommitLine(line string) (Commit, error) {
-	parts := strings.SplitN(line, "|", 4)
-	if len(parts) < 4 {
+	parts := strings.SplitN(line, "|", 3)
+	if len(parts) < 3 {
 		return Commit{}, fmt.Errorf("malformed line: %s", line)
 	}
 
@@ -70,11 +69,10 @@ func parseCommitLine(line string) (Commit, error) {
 		date = date[:10]
 	}
 
-	subject := parts[3]
+	subject := parts[2]
 	c := Commit{
 		Hash:    hash,
 		Date:    date,
-		Author:  parts[2],
 		Subject: subject,
 	}
 

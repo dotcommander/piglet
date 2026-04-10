@@ -94,43 +94,54 @@ func main() {
 }
 
 func buildScanner(useGit, useDirs, useFiles bool, listArg, root, pattern string, depth int) (bulk.Scanner, string, error) {
+	var source string
 	switch {
 	case useGit:
-		return bulk.GitRepoScanner(root, depth), "git repos", nil
+		source = bulk.SourceGitRepos
 	case useDirs:
-		matchFn := dirMatchFunc(pattern)
-		return &bulk.DirScanner{Root: root, Depth: depth, Match: matchFn}, "directories", nil
+		source = bulk.SourceDirs
 	case useFiles:
-		return &bulk.GlobScanner{Pattern: pattern, Root: root}, "files", nil
+		source = bulk.SourceFiles
 	case listArg != "":
-		paths := strings.Split(listArg, ",")
-		return &bulk.ListScanner{Paths: paths}, "list", nil
+		source = bulk.SourceList
 	default:
 		return nil, "", fmt.Errorf("specify a source: -git, -dirs, -files, or -list")
 	}
+
+	var items []string
+	if source == bulk.SourceList {
+		items = strings.Split(listArg, ",")
+	}
+
+	scanner, err := bulk.BuildScanner(source, root, pattern, depth, items)
+	if err != nil {
+		return nil, "", err
+	}
+
+	label := sourceLabel(source)
+	return scanner, label, nil
 }
 
 func buildFilter(isGit bool, filterArg string) (bulk.Filter, error) {
-	if filterArg == "" {
-		return nil, nil
-	}
+	source := ""
 	if isGit {
-		f, err := bulk.GitFilter(filterArg)
-		if err == nil {
-			return f, nil
-		}
-		// Unknown git keyword — fall back to shell predicate.
+		source = bulk.SourceGitRepos
 	}
-	return bulk.ShellFilter(filterArg), nil
+	return bulk.BuildFilter(source, filterArg)
 }
 
-func dirMatchFunc(pattern string) func(string) bool {
-	if pattern == "" {
-		return nil
-	}
-	return func(path string) bool {
-		_, err := os.Stat(filepath.Join(path, pattern))
-		return err == nil
+func sourceLabel(source string) string {
+	switch source {
+	case bulk.SourceGitRepos:
+		return "git repos"
+	case bulk.SourceDirs:
+		return "directories"
+	case bulk.SourceFiles:
+		return "files"
+	case bulk.SourceList:
+		return "list"
+	default:
+		return source
 	}
 }
 

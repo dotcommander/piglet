@@ -36,8 +36,6 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerTitle(app)
 	registerBranch(app)
 	registerFork(app)
-	registerBg(app)
-	registerBgCancel(app)
 	registerTree(app)
 	registerUpdate(app, version)
 	app.RegisterCommand(&ext.Command{

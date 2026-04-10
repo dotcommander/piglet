@@ -10,6 +10,8 @@ import (
 
 	"github.com/dotcommander/piglet/extensions/internal/xdg"
 	sdk "github.com/dotcommander/piglet/sdk"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -309,7 +311,7 @@ func formatMessagesText(messages []json.RawMessage) string {
 		if text == "" {
 			continue
 		}
-		role := strings.Title(msg.Role) //nolint:staticcheck // acceptable for display
+		role := cases.Title(language.English).String(msg.Role)
 		fmt.Fprintf(&b, "%s: %s\n", role, text)
 	}
 	return b.String()

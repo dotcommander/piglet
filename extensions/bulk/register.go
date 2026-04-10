@@ -105,12 +105,12 @@ func executeBulk(ctx context.Context, args map[string]any) (*sdk.ToolResult, err
 
 	dryRun := dryRunArg(args, command)
 
-	scanner, err := buildScanner(source, directory, pattern, depth, items)
+	scanner, err := BuildScanner(source, directory, pattern, depth, items)
 	if err != nil {
 		return sdk.ErrorResult(fmt.Sprintf("invalid source: %s", err)), nil
 	}
 
-	filter, err := buildFilter(source, filterArg)
+	filter, err := BuildFilter(source, filterArg)
 	if err != nil {
 		return sdk.ErrorResult(fmt.Sprintf("invalid filter: %s", err)), nil
 	}
@@ -134,8 +134,8 @@ func executeBulk(ctx context.Context, args map[string]any) (*sdk.ToolResult, err
 	return sdk.TextResult(string(data)), nil
 }
 
-// buildScanner creates the appropriate Scanner for the given source type.
-func buildScanner(source, directory, pattern string, depth int, items []string) (Scanner, error) {
+// BuildScanner creates the appropriate Scanner for the given source type.
+func BuildScanner(source, directory, pattern string, depth int, items []string) (Scanner, error) {
 	switch source {
 	case SourceGitRepos:
 		return GitRepoScanner(directory, depth), nil
@@ -163,8 +163,8 @@ func dirMatchFunc(pattern string) func(string) bool {
 	}
 }
 
-// buildFilter creates the appropriate Filter for the given source and filter string.
-func buildFilter(source, filterArg string) (Filter, error) {
+// BuildFilter creates the appropriate Filter for the given source and filter string.
+func BuildFilter(source, filterArg string) (Filter, error) {
 	if filterArg == "" {
 		return nil, nil
 	}

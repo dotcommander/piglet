@@ -55,9 +55,10 @@ type App struct {
 	models   ModelManager
 
 	// Progressive tool disclosure
-	activatedTools map[string]bool // deferred tools promoted to full schema
-	toolMode       ToolMode        // current mode (set via SetToolMode)
-	onToolActivate func()          // callback to rebuild agent tool set
+	activatedTools map[string]bool   // deferred tools promoted to full schema
+	toolMode       ToolMode          // current mode (set via SetToolMode)
+	onToolActivate func()            // callback to rebuild agent tool set
+	toolFilter     func(string) bool // per-turn tool name filter; nil = include all
 
 	// Background agent callbacks
 	runBackground       func(prompt string) error
@@ -122,11 +123,13 @@ func NewApp(cwd string) *App {
 
 // Bind wires the runtime references after the agent and session are created.
 // Must be called before runtime methods (SendMessage, Model, etc.) are used.
+// Clears per-turn state (toolFilter, actions) so new sessions start clean.
 func (a *App) Bind(agent AgentAPI, opts ...BindOption) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.agent = agent
 	a.actions = a.actions[:0] // clear stale actions
+	a.toolFilter = nil        // clear per-turn filter from previous session
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -228,6 +231,39 @@ func (a *App) ActivateTool(name string) bool {
 		cb()
 	}
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// Tool filtering — per-turn dynamic tool set
+// ---------------------------------------------------------------------------
+
+// SetToolFilter sets a per-turn predicate that controls which tools are
+// included in the agent's tool set. Pass nil to clear (include all).
+// Triggers tool set rebuild via the onToolActivate callback.
+func (a *App) SetToolFilter(fn func(string) bool) {
+	a.mu.Lock()
+	a.toolFilter = fn
+	cb := a.onToolActivate
+	a.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
+
+// SetToolFilterByName sets a per-turn filter that includes only the named tools.
+// Empty names clears the filter (include all). Triggers tool set rebuild.
+func (a *App) SetToolFilterByName(names []string) {
+	if len(names) == 0 {
+		a.SetToolFilter(nil)
+		return
+	}
+	allowed := make(map[string]bool, len(names))
+	for _, n := range names {
+		allowed[n] = true
+	}
+	a.SetToolFilter(func(name string) bool {
+		return allowed[name]
+	})
 }
 
 // ---------------------------------------------------------------------------

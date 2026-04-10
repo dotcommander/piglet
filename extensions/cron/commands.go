@@ -82,16 +82,7 @@ func handleCronStatus(e *sdk.Extension) error {
 
 	// Show task summary.
 	summaries, _ := ListTasks()
-	enabled := 0
-	overdue := 0
-	for _, s := range summaries {
-		if s.Enabled {
-			enabled++
-		}
-		if s.Overdue {
-			overdue++
-		}
-	}
+	enabled, overdue := countTaskStatus(summaries)
 	fmt.Fprintf(&b, "\nTasks: %d total, %d enabled", len(summaries), enabled)
 	if overdue > 0 {
 		fmt.Fprintf(&b, ", **%d overdue**", overdue)
@@ -137,30 +128,15 @@ func handleCronHistory(e *sdk.Extension, name string) error {
 		return nil
 	}
 
-	if name != "" {
-		var filtered []RunEntry
-		for _, entry := range entries {
-			if entry.Task == name {
-				filtered = append(filtered, entry)
-			}
-		}
-		entries = filtered
-	}
-
-	if len(entries) == 0 {
+	filtered := filterHistory(entries, name, 20)
+	if len(filtered) == 0 {
 		e.ShowMessage("No history found.")
 		return nil
 	}
 
-	// Show last 20 entries.
-	start := 0
-	if len(entries) > 20 {
-		start = len(entries) - 20
-	}
-
 	var b strings.Builder
 	b.WriteString("**Recent History**\n\n")
-	for _, entry := range entries[start:] {
+	for _, entry := range filtered {
 		b.WriteString(formatHistoryEntry(entry, "- "))
 	}
 	e.ShowMessage(b.String())

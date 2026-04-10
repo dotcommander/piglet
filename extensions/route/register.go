@@ -20,11 +20,12 @@ type state struct {
 	cwd      string
 	fbDir    string
 	ready    bool
+	ext      *sdk.Extension // host extension for SetToolFilter calls
 }
 
 // Register wires the route extension into a shared SDK extension.
 func Register(e *sdk.Extension) {
-	s := &state{}
+	s := &state{ext: e}
 
 	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()

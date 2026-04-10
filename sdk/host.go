@@ -384,6 +384,12 @@ func (e *Extension) ActivateHostTool(ctx context.Context, name string) error {
 	return hostCallVoid(e, ctx, "host/activateTool", map[string]any{"name": name})
 }
 
+// SetToolFilter sets a per-turn tool filter. Only the named tools will be
+// included in the agent's tool set. Empty/nil names clears the filter.
+func (e *Extension) SetToolFilter(ctx context.Context, names []string) error {
+	return hostCallVoid(e, ctx, "host/setToolFilter", map[string]any{"names": names})
+}
+
 // Publish sends data to all subscribers of an event bus topic.
 func (e *Extension) Publish(ctx context.Context, topic string, data any) error {
 	return hostCallVoid(e, ctx, "host/publish", map[string]any{

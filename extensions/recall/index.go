@@ -3,11 +3,12 @@ package recall
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/gob"
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -255,8 +256,8 @@ func (idx *Index) Search(query string, limit int) []SearchResult {
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
+	slices.SortFunc(results, func(a, b SearchResult) int {
+		return cmp.Compare(b.Score, a.Score)
 	})
 
 	if len(results) > limit {
