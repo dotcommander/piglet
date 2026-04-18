@@ -79,7 +79,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_references",
 		Description: "Find all references to a symbol across the codebase. Returns file paths and line numbers.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  positionParams,
 		PromptHint:  "Find all usages of a function, type, or variable",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -98,7 +98,7 @@ Deferred:    true,
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_hover",
 		Description: "Get type information and documentation for a symbol.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  positionParams,
 		PromptHint:  "Get type signature and docs for a symbol",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -117,7 +117,7 @@ Deferred:    true,
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_rename",
 		Description: "Rename a symbol across the entire codebase. Returns a preview of all changes (does not apply them).",
-Deferred:    true,
+		Deferred:    true,
 		Parameters:  renameParams,
 		PromptHint:  "Rename a symbol across the codebase (preview only)",
 		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
@@ -140,7 +140,7 @@ Deferred:    true,
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "lsp_symbols",
 		Description: "List all symbols (functions, types, variables) defined in a file.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -170,9 +170,14 @@ Deferred:    true,
 	})
 }
 
+// findColumnFn is the signature for locating a symbol's column on a given line.
+// It mirrors FindSymbolColumn and is accepted as a parameter by resolvePosition
+// so callers can inject a stub in tests without touching the filesystem.
+type findColumnFn func(file string, line int, symbol string) (int, error)
+
 // prepareClient resolves position args, gets the LSP client, and opens the file.
 func prepareClient(ctx context.Context, mgr *Manager, args map[string]any) (*Client, string, int, int, error) {
-	file, line, col, err := resolvePosition(mgr, args)
+	file, line, col, err := resolvePosition(mgr, args, FindSymbolColumn)
 	if err != nil {
 		return nil, "", 0, 0, err
 	}
@@ -187,7 +192,9 @@ func prepareClient(ctx context.Context, mgr *Manager, args map[string]any) (*Cli
 }
 
 // resolvePosition extracts file, line (0-based), and column (0-based) from tool args.
-func resolvePosition(mgr *Manager, args map[string]any) (file string, line, col int, err error) {
+// findColumn is called only when a symbol is provided and no explicit column is given;
+// pass FindSymbolColumn for production use or a stub in tests.
+func resolvePosition(mgr *Manager, args map[string]any, findColumn findColumnFn) (file string, line, col int, err error) {
 	file = resolveFile(mgr, args)
 	if file == "" {
 		return "", 0, 0, fmt.Errorf("file is required")
@@ -205,7 +212,7 @@ func resolvePosition(mgr *Manager, args map[string]any) (file string, line, col 
 	}
 
 	if symbol, ok := args["symbol"].(string); ok && symbol != "" {
-		col, err = FindSymbolColumn(file, line, symbol)
+		col, err = findColumn(file, line, symbol)
 		if err != nil {
 			return "", 0, 0, err
 		}

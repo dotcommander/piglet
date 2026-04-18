@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,7 @@ func TestResolvePositionWithColumn(t *testing.T) {
 		"column": float64(3),
 	}
 
-	file, line, col, err := resolvePosition(m, args)
+	file, line, col, err := resolvePosition(m, args, FindSymbolColumn)
 	require.NoError(t, err)
 	require.Equal(t, "/project/main.go", file)
 	require.Equal(t, 4, line) // 5-1
@@ -96,7 +97,7 @@ func TestResolvePositionDefaultsColumnZero(t *testing.T) {
 		"line": float64(1),
 	}
 
-	_, _, col, err := resolvePosition(m, args)
+	_, _, col, err := resolvePosition(m, args, FindSymbolColumn)
 	require.NoError(t, err)
 	require.Equal(t, 0, col)
 }
@@ -108,7 +109,7 @@ func TestResolvePositionMissingFile(t *testing.T) {
 	m := NewManager("/project")
 	args := map[string]any{"line": float64(1)}
 
-	_, _, _, err := resolvePosition(m, args)
+	_, _, _, err := resolvePosition(m, args, FindSymbolColumn)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "file is required")
 }
@@ -124,7 +125,7 @@ func TestResolvePositionLineZero(t *testing.T) {
 		"line": float64(0),
 	}
 
-	_, _, _, err := resolvePosition(m, args)
+	_, _, _, err := resolvePosition(m, args, FindSymbolColumn)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "line must be >= 1")
 }
@@ -151,7 +152,7 @@ func TestResolvePositionWithSymbol(t *testing.T) {
 		"symbol": "targetFn",
 	}
 
-	file, line, col, err := resolvePosition(m, args)
+	file, line, col, err := resolvePosition(m, args, FindSymbolColumn)
 	require.NoError(t, err)
 	require.Equal(t, fpath, file)
 	require.Equal(t, 1, line) // 2-1
@@ -175,7 +176,96 @@ func TestResolvePositionColumnTakesPrecedenceOverSymbol(t *testing.T) {
 		"symbol": "foo",      // would give col=5 if used
 	}
 
-	_, _, col, err := resolvePosition(m, args)
+	_, _, col, err := resolvePosition(m, args, FindSymbolColumn)
 	require.NoError(t, err)
 	require.Equal(t, 6, col) // 7-1, not 5
+}
+
+// ---------------------------------------------------------------------------
+// resolvePosition — injected findColumn (no filesystem)
+// ---------------------------------------------------------------------------
+
+// stubColumn returns a findColumnFn that always yields fixedCol, nil.
+func stubColumn(fixedCol int) findColumnFn {
+	return func(_ string, _ int, _ string) (int, error) {
+		return fixedCol, nil
+	}
+}
+
+// TestResolvePositionSymbolFoundViaMock verifies that the column returned by
+// the injected findColumn is used directly, without touching the filesystem.
+func TestResolvePositionSymbolFoundViaMock(t *testing.T) {
+	t.Parallel()
+
+	m := NewManager("/project")
+	args := map[string]any{
+		"file":   "/project/main.go",
+		"line":   float64(3),
+		"symbol": "myFunc",
+	}
+
+	_, line, col, err := resolvePosition(m, args, stubColumn(7))
+	require.NoError(t, err)
+	require.Equal(t, 2, line) // 3-1
+	require.Equal(t, 7, col)  // returned by stub
+}
+
+// TestResolvePositionSymbolNotFoundViaMock verifies that an error from the
+// injected findColumn propagates out of resolvePosition unchanged.
+func TestResolvePositionSymbolNotFoundViaMock(t *testing.T) {
+	t.Parallel()
+
+	notFound := func(_ string, _ int, symbol string) (int, error) {
+		return 0, fmt.Errorf("symbol %q not found on line", symbol)
+	}
+
+	m := NewManager("/project")
+	args := map[string]any{
+		"file":   "/project/main.go",
+		"line":   float64(1),
+		"symbol": "missing",
+	}
+
+	_, _, _, err := resolvePosition(m, args, notFound)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing")
+}
+
+// TestResolvePositionEmptySymbolSkipsFindColumn verifies that an empty symbol
+// string does not invoke findColumn — the function falls through to the
+// column-zero default.
+func TestResolvePositionEmptySymbolSkipsFindColumn(t *testing.T) {
+	t.Parallel()
+
+	panic := func(_ string, _ int, _ string) (int, error) {
+		return 0, fmt.Errorf("findColumn must not be called with empty symbol")
+	}
+
+	m := NewManager("/project")
+	args := map[string]any{
+		"file":   "/project/main.go",
+		"line":   float64(2),
+		"symbol": "",
+	}
+
+	_, _, col, err := resolvePosition(m, args, panic)
+	require.NoError(t, err)
+	require.Equal(t, 0, col) // falls through to default
+}
+
+// TestResolvePositionColumnZeroFromMock verifies that a column value of 0
+// returned by findColumn is preserved (not treated as "missing").
+func TestResolvePositionColumnZeroFromMock(t *testing.T) {
+	t.Parallel()
+
+	m := NewManager("/project")
+	args := map[string]any{
+		"file":   "/project/main.go",
+		"line":   float64(1),
+		"symbol": "atStart",
+	}
+
+	_, _, col, err := resolvePosition(m, args, stubColumn(0))
+	require.NoError(t, err)
+	require.Equal(t, 0, col) // col=0 is valid (first byte of line)
 }
