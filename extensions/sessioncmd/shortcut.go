@@ -17,3 +17,15 @@ func registerSessionShortcut(e *sdk.Extension) {
 		},
 	})
 }
+
+func registerModelShortcut(e *sdk.Extension) {
+	e.RegisterShortcut(sdk.ShortcutDef{
+		Key:         "ctrl+p",
+		Description: "Open model selector",
+		Handler: func(ctx context.Context) (*sdk.Action, error) {
+			// Equivalent to `/model` with no args.
+			_ = openModelPicker(ctx, e)
+			return nil, nil
+		},
+	})
+}

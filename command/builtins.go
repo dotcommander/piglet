@@ -13,22 +13,20 @@ import (
 	"github.com/dotcommander/piglet/ext"
 )
 
-// Default keyboard shortcut bindings.
-const (
-	shortcutModel = "model"
-	keyModel      = "ctrl+p"
-)
-
-// RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
+// RegisterBuiltins registers all built-in slash commands.
+// Keyboard shortcuts for session (ctrl+s) and model (ctrl+p) live in
+// extensions/sessioncmd and are registered there.
 // All commands operate exclusively through the ext.App SDK.
+//
+// The shortcuts parameter is reserved for future use and is currently ignored.
 func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string) {
+	_ = shortcuts // reserved for future shortcut customization
 	registerStatusSections(app)
 	registerPromptBudgetHandler(app)
 	registerHelp(app)
 	registerClear(app)
 	registerStep(app)
 	registerCompact(app)
-	registerModel(app)
 	registerUpdate(app, version)
 	app.RegisterCommand(&ext.Command{
 		Name:        "upgrade",
@@ -42,32 +40,6 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 		},
 	})
 	registerQuit(app)
-
-	// Keyboard shortcuts — delegate to the corresponding commands
-	keys := map[string]string{
-		shortcutModel: keyModel,
-	}
-	for action, key := range shortcuts {
-		keys[action] = key
-	}
-
-	for _, sc := range []struct {
-		action, desc string
-	}{
-		{shortcutModel, "Open model selector"},
-	} {
-		cmdName := sc.action
-		app.RegisterShortcut(&ext.Shortcut{
-			Key:         keys[sc.action],
-			Description: sc.desc,
-			Handler: func(a *ext.App) (ext.Action, error) {
-				if cmd, ok := a.Commands()[cmdName]; ok {
-					return nil, cmd.Handler("", a)
-				}
-				return nil, nil
-			},
-		})
-	}
 }
 
 func registerStatusSections(app *ext.App) {
@@ -126,7 +98,7 @@ func registerHelp(app *ext.App) {
 
 			b.WriteString("\nShortcuts:\n")
 			b.WriteString("  ctrl+c    — stop agent / quit\n")
-			fmt.Fprintf(&b, "  %-10s — model selector\n", keyModel)
+			b.WriteString("  (more shortcuts available via extensions)\n")
 			b.WriteString("\nExtensions: /extensions to see loaded extensions\n")
 
 			a.ShowMessage(b.String())

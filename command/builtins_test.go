@@ -2,7 +2,6 @@ package command
 
 import (
 	"testing"
-	"time"
 
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
@@ -90,7 +89,7 @@ func TestHelpShowsCommandNames(t *testing.T) {
 	assert.Contains(t, msg, "/compact")
 }
 
-func TestHelpShowsModelShortcut(t *testing.T) {
+func TestHelpShowsShortcuts(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -99,7 +98,7 @@ func TestHelpShowsModelShortcut(t *testing.T) {
 
 	msg := firstMessage(t, app)
 	assert.Contains(t, msg, "ctrl+c")
-	assert.Contains(t, msg, keyModel)
+	assert.Contains(t, msg, "Shortcuts:")
 }
 
 // ---------------------------------------------------------------------------
@@ -237,41 +236,24 @@ func TestRegisterBuiltinsRegistersExpectedCommands(t *testing.T) {
 	RegisterBuiltins(app, nil, "test")
 
 	cmds := app.Commands()
-	// Session commands (session, fork, branch, search, tree, title) have moved to
-	// extensions/sessioncmd and are no longer compiled-in. Only the model command
-	// and core lifecycle commands remain.
+	// Session commands (session, fork, branch, search, tree, title) and the model
+	// command have moved to extensions/sessioncmd and are no longer compiled-in.
 	expected := []string{
-		"help", "clear", "step", "compact",
-		"model", "quit",
+		"help", "clear", "step", "compact", "quit",
 	}
 	for _, name := range expected {
 		assert.Contains(t, cmds, name, "expected command %q to be registered", name)
 	}
 }
 
-func TestRegisterBuiltinsRegistersModelShortcut(t *testing.T) {
+func TestRegisterBuiltinsNoShortcuts(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("/tmp")
 	RegisterBuiltins(app, nil, "test")
 
+	// Model (ctrl+p) and session (ctrl+s) shortcuts have moved to sessioncmd extension.
+	// No shortcuts should be registered by compiled-in builtins.
 	shortcuts := app.Shortcuts()
-	assert.Contains(t, shortcuts, keyModel)
-	// ctrl+s (session picker) has moved to sessioncmd extension — not registered here.
-	assert.NotContains(t, shortcuts, "ctrl+s")
+	assert.Empty(t, shortcuts)
 }
-
-func TestRegisterBuiltinsCustomShortcutOverride(t *testing.T) {
-	t.Parallel()
-
-	app := ext.NewApp("/tmp")
-	RegisterBuiltins(app, map[string]string{
-		shortcutModel: "ctrl+m",
-	}, "test")
-
-	shortcuts := app.Shortcuts()
-	assert.Contains(t, shortcuts, "ctrl+m", "custom key should override default")
-}
-
-// Keep the time import used by legacy test helpers.
-var _ = time.Now

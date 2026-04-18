@@ -195,6 +195,16 @@ func (a *App) CurrentModelID() string {
 	return a.currentModelID
 }
 
+// SetCurrentModelID initializes the current model ID at startup, before any
+// user-initiated switch. Call this once after the initial model is resolved,
+// so that AvailableModels / host/availableModels can mark the current model
+// correctly even before the first SwitchModel call.
+func (a *App) SetCurrentModelID(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.currentModelID = id
+}
+
 // SyncModels updates the model catalog from an external source.
 func (a *App) SyncModels() (int, error) {
 	mm := a.modelMgr()

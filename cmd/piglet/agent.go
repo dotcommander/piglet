@@ -95,6 +95,8 @@ func buildShell(ctx context.Context, rt *runtime) *shellBundle {
 
 // attachManagers wires the session manager, model manager, and tool activator
 // onto the shell. Shared by buildShell and runInteractive to ensure consistent wiring.
+// Also initializes currentModelID so the /model picker correctly marks the active
+// model at startup, before any user-initiated SwitchModel call.
 func attachManagers(sh *shell.Shell, ag *core.Agent, app *ext.App, rt *runtime, sessPtr **session.Session) {
 	sh.SetAgent(ag,
 		ext.WithSessionManager(&sessionMgr{dir: rt.sessDir, current: sessPtr}),
@@ -103,4 +105,7 @@ func attachManagers(sh *shell.Shell, ag *core.Agent, app *ext.App, rt *runtime, 
 			ag.SetTools(app.CoreTools())
 		}),
 	)
+	// Initialize current model ID so AvailableModels marks the correct model
+	// even before the first user-initiated switch.
+	app.SetCurrentModelID(rt.model.Provider + "/" + rt.model.ID)
 }

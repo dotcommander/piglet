@@ -6,8 +6,8 @@ import (
 	"github.com/dotcommander/piglet/sdk"
 )
 
-// Register wires /session, /search, /fork, /branch, /tree, /title and the
-// ctrl+s shortcut. All commands use only the SDK; no ext.App access.
+// Register wires /session, /search, /fork, /branch, /tree, /title, /model,
+// ctrl+s and ctrl+p shortcuts. All commands use only the SDK; no ext.App access.
 func Register(e *sdk.Extension) {
 	registerSession(e)
 	registerSearch(e)
@@ -15,5 +15,7 @@ func Register(e *sdk.Extension) {
 	registerBranch(e)
 	registerTree(e)
 	registerTitle(e)
+	registerModel(e)
 	registerSessionShortcut(e)
+	registerModelShortcut(e)
 }
