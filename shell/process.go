@@ -24,27 +24,7 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 
 	switch e := evt.(type) {
 	case core.EventToolEnd:
-		// Steer queued prompts mid-turn
-		s.mu.Lock()
-		agent := s.agent
-		queue := s.queue
-		s.mu.Unlock()
-
-		if agent != nil && len(queue) > 0 {
-			prompts := s.drainPromptQueue()
-			if len(prompts) > 0 {
-				content := mergePrompts(prompts)
-				userMsg := &core.UserMessage{
-					Content:   content,
-					Timestamp: time.Now(),
-				}
-				s.persistMessage(userMsg)
-				s.notify(Notification{Kind: NotifyQueuedSubmit, Text: content})
-				agent.Steer(userMsg)
-			}
-		}
-		_ = e // used for type switch
-
+		s.handleToolEnd(e)
 	case core.EventTurnEnd:
 		if e.Assistant != nil {
 			s.persistMessage(e.Assistant)
@@ -52,51 +32,10 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 		for _, tr := range e.ToolResults {
 			s.persistMessage(tr)
 		}
-
 	case core.EventAgentEnd:
-		// Repair any orphaned tool calls before anything else.
-		s.mu.Lock()
-		agent := s.agent
-		s.mu.Unlock()
-		if agent != nil {
-			msgs := agent.Messages()
-			repaired := repairMessageSequence(msgs)
-			if len(repaired) != len(msgs) {
-				agent.SetMessages(repaired)
-			}
+		if complete := s.handleAgentEnd(); complete {
+			return true
 		}
-
-		// Check if any bg task is still running
-		s.mu.Lock()
-		bgRunning := false
-		for _, entry := range s.bgTasks {
-			if entry.agent != nil && entry.agent.IsRunning() {
-				bgRunning = true
-				break
-			}
-		}
-		s.mu.Unlock()
-
-		if bgRunning {
-			s.mu.Lock()
-			s.heldBackEnd = true
-			s.mu.Unlock()
-			s.drainActions()
-			return false
-		}
-
-		s.stopRunning()
-		s.drainAndSubmitQueued()
-
-		s.mu.Lock()
-		restarted := s.running
-		s.mu.Unlock()
-
-		if restarted {
-			return false // agent was restarted with queued input
-		}
-		return true
-
 	case core.EventCompact:
 		// Persist compacted state
 		s.mu.Lock()
@@ -115,6 +54,78 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 	}
 
 	return false
+}
+
+// handleToolEnd steers queued prompts into the running agent after a tool call
+// completes, allowing mid-turn injection of queued user input.
+func (s *Shell) handleToolEnd(_ core.EventToolEnd) {
+	s.mu.Lock()
+	agent := s.agent
+	queue := s.queue
+	s.mu.Unlock()
+
+	if agent == nil || len(queue) == 0 {
+		return
+	}
+
+	prompts := s.drainPromptQueue()
+	if len(prompts) == 0 {
+		return
+	}
+
+	content := mergePrompts(prompts)
+	userMsg := &core.UserMessage{
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+	s.persistMessage(userMsg)
+	s.notify(Notification{Kind: NotifyQueuedSubmit, Text: content})
+	agent.Steer(userMsg)
+}
+
+// handleAgentEnd processes EventAgentEnd: repairs orphaned tool calls, holds
+// back completion if background tasks are still running, otherwise stops the
+// agent and drains any queued input. Returns true when the run is fully done.
+func (s *Shell) handleAgentEnd() (complete bool) {
+	// Repair any orphaned tool calls before anything else.
+	s.mu.Lock()
+	agent := s.agent
+	s.mu.Unlock()
+	if agent != nil {
+		msgs := agent.Messages()
+		repaired := repairMessageSequence(msgs)
+		if len(repaired) != len(msgs) {
+			agent.SetMessages(repaired)
+		}
+	}
+
+	// Check if any bg task is still running
+	s.mu.Lock()
+	bgRunning := false
+	for _, entry := range s.bgTasks {
+		if entry.agent != nil && entry.agent.IsRunning() {
+			bgRunning = true
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if bgRunning {
+		s.mu.Lock()
+		s.heldBackEnd = true
+		s.mu.Unlock()
+		s.drainActions()
+		return false
+	}
+
+	s.stopRunning()
+	s.drainAndSubmitQueued()
+
+	s.mu.Lock()
+	restarted := s.running
+	s.mu.Unlock()
+
+	return !restarted
 }
 
 // ProcessBgEvent handles one background agent event for the given task name.
