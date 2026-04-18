@@ -24,7 +24,6 @@ type Settings struct {
 	Bash                   BashSettings      `yaml:"bash,omitempty"`
 	Shortcuts              map[string]string `yaml:"shortcuts,omitempty"`              // action → keybind (e.g. "model": "ctrl+p")
 	PromptOrder            map[string]int    `yaml:"promptOrder,omitempty"`            // section title → order override
-	ProjectDocs            *[]ProjectDoc     `yaml:"projectDocs,omitempty"`            // files to auto-read for context; nil means use defaults
 	RTK                    *bool             `yaml:"rtk,omitempty"`                    // nil = auto-detect; true/false = explicit
 	Debug                  bool              `yaml:"debug,omitempty"`                  // log all request/response payloads
 	Safeguard              *bool             `yaml:"safeguard,omitempty"`              // nil/true = enabled; false = disabled
@@ -35,12 +34,6 @@ type Settings struct {
 	LocalServers           []string          `yaml:"localServers,omitempty"` // URLs of local model servers to probe on startup
 	LocalDefaults          LocalDefaults     `yaml:"localDefaults,omitempty"`
 	DeferredToolsNote      string            `yaml:"deferredToolsNote,omitempty"` // instruction shown when deferred tools are present
-}
-
-// ProjectDoc maps a filename to a prompt section title.
-type ProjectDoc struct {
-	Name  string `yaml:"name"`
-	Title string `yaml:"title"`
 }
 
 // DefaultMaxTurns is the application-wide default for agent max turns.
@@ -113,13 +106,6 @@ type LocalDefaults struct {
 
 // applyDefaults fills in zero-value fields with their defaults.
 func applyDefaults(s *Settings) {
-	if s.ProjectDocs == nil {
-		docs := []ProjectDoc{
-			{Name: "CLAUDE.md", Title: "Project Instructions"},
-			{Name: "agents.md", Title: "Agents"},
-		}
-		s.ProjectDocs = &docs
-	}
 	if s.ExtInstall.RepoURL == "" || s.ExtInstall.RepoURL == "https://github.com/dotcommander/piglet-extensions.git" {
 		s.ExtInstall.RepoURL = "https://github.com/dotcommander/piglet.git"
 	}
@@ -303,13 +289,4 @@ func (s Settings) ResolveDefaultModel() string {
 // IsExtensionDisabled reports whether the named extension is in the disabled list.
 func (s Settings) IsExtensionDisabled(name string) bool {
 	return slices.Contains(s.DisabledExtensions, name)
-}
-
-// GetProjectDocs returns the configured project docs slice.
-// Callers should prefer this over dereferencing ProjectDocs directly.
-func (s Settings) GetProjectDocs() []ProjectDoc {
-	if s.ProjectDocs == nil {
-		return nil
-	}
-	return *s.ProjectDocs
 }

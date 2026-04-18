@@ -42,7 +42,6 @@ func registerBuiltins(app *ext.App, rt *runtime) {
 		Tools:    app.Tools(),
 		Commands: slices.Sorted(maps.Keys(app.Commands())),
 	})
-	prompt.RegisterProjectDocs(app, rt.settings.GetProjectDocs())
 }
 
 // loadExtensionsWithRetry loads external extensions, auto-installs if none

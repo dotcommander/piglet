@@ -177,9 +177,6 @@ func TestSaveToAndLoadFrom_NestedStructs(t *testing.T) {
 		},
 		Shortcuts:   map[string]string{"model": "ctrl+p"},
 		PromptOrder: map[string]int{"repomap": 10, "memory": 50},
-		ProjectDocs: &[]config.ProjectDoc{
-			{Name: "README.md", Title: "Project readme"},
-		},
 	}
 
 	require.NoError(t, config.SaveTo(s, path))
@@ -214,7 +211,6 @@ func TestSaveToAndLoadFrom_NestedStructs(t *testing.T) {
 	assert.Equal(t, s.SubAgent, loaded.SubAgent)
 	assert.Equal(t, s.Shortcuts, loaded.Shortcuts)
 	assert.Equal(t, s.PromptOrder, loaded.PromptOrder)
-	assert.Equal(t, s.ProjectDocs, loaded.ProjectDocs)
 }
 
 // ── Load / Save (top-level wrappers, redirect via XDG) ─────────────────────
@@ -456,24 +452,4 @@ func TestAuth_RawHyphenEnvVar(t *testing.T) {
 
 	a := config.NewAuth("")
 	assert.Equal(t, "hyphen-key", a.GetAPIKey("google-vertex"))
-}
-
-// ── Settings: ProjectDoc roundtrip ────────────────────────────────────────
-
-func TestProjectDoc_Roundtrip(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-
-	s := config.Settings{
-		ProjectDocs: &[]config.ProjectDoc{
-			{Name: "ARCHITECTURE.md", Title: "Architecture"},
-			{Name: "CONTRIBUTING.md", Title: "Contributing guide"},
-		},
-	}
-	require.NoError(t, config.SaveTo(s, path))
-
-	loaded, err := config.LoadFrom(path)
-	require.NoError(t, err)
-	assert.Equal(t, s.ProjectDocs, loaded.ProjectDocs)
 }

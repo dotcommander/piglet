@@ -7,6 +7,7 @@ import (
 	"github.com/dotcommander/piglet/extensions/inbox"
 	"github.com/dotcommander/piglet/extensions/memory"
 	"github.com/dotcommander/piglet/extensions/packs/internal/safety"
+	"github.com/dotcommander/piglet/extensions/projectdocs"
 	"github.com/dotcommander/piglet/extensions/prompts"
 	"github.com/dotcommander/piglet/extensions/recall"
 	"github.com/dotcommander/piglet/extensions/route"
@@ -21,6 +22,7 @@ func main() {
 	safety.Register(e, "skill", skill.Register)
 	safety.Register(e, "gitcontext", gitcontext.Register)
 	safety.Register(e, "behavior", behavior.Register)
+	safety.Register(e, "projectdocs", projectdocs.Register)
 	safety.Register(e, "prompts", prompts.Register)
 	safety.Register(e, "session-tools", sessiontools.Register)
 	safety.Register(e, "inbox", inbox.Register)
