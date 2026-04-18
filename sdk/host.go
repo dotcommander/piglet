@@ -260,3 +260,29 @@ func (e *Extension) ActivateHostTool(ctx context.Context, name string) error {
 func (e *Extension) SetToolFilter(ctx context.Context, names []string) error {
 	return hostCallVoid(e, ctx, "host/setToolFilter", map[string]any{"names": names})
 }
+
+// PickerItem is one item in a ShowPicker dialog.
+type PickerItem struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Desc  string `json:"desc,omitempty"`
+}
+
+// ShowPicker asks the host to display a modal picker and blocks until the user
+// selects an item. Returns the ID of the selected PickerItem. If the user
+// dismisses the picker without selecting, the call blocks until the context
+// is cancelled or the host-side request timeout (5 minutes) elapses; in that
+// case, err is non-nil and selected is "".
+func (e *Extension) ShowPicker(ctx context.Context, title string, items []PickerItem) (string, error) {
+	type resp struct {
+		Selected string `json:"selected"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/showPicker", map[string]any{
+		"title": title,
+		"items": items,
+	})
+	if err != nil {
+		return "", err
+	}
+	return r.Selected, nil
+}

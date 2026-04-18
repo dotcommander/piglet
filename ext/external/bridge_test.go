@@ -2,6 +2,7 @@ package external
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dotcommander/piglet/core"
@@ -884,6 +885,10 @@ func TestMethodNameConstants(t *testing.T) {
 		{"hostAuthGetKey", MethodHostAuthGetKey, "host/auth.getKey"},
 		{"hostChat", MethodHostChat, "host/chat"},
 		{"hostAgentRun", MethodHostAgentRun, "host/agent.run"},
+		{"hostSessionEntryInfos", MethodHostSessionEntryInfos, "host/sessionEntryInfos"},
+		{"hostSessionFullTree", MethodHostSessionFullTree, "host/sessionFullTree"},
+		{"hostSessionTitle", MethodHostSessionTitle, "host/sessionTitle"},
+		{"hostShowPicker", MethodHostShowPicker, "host/showPicker"},
 		{"notify", MethodNotify, "notify"},
 		{"log", MethodLog, "log"},
 		{"showMessage", MethodShowMessage, "showMessage"},
@@ -1098,6 +1103,94 @@ func TestHandleMessageBadJSONParamsSkipped(t *testing.T) {
 	// Bad JSON — tool should NOT be registered, no panic
 	assert.NotPanics(t, func() { h.handleMessage(msg) })
 	assert.Empty(t, h.tools)
+}
+
+func TestHostSessionEntryInfosResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostSessionEntryInfosResult{
+		Entries: []WireEntryInfo{
+			{ID: "e1", ParentID: "", Type: "user", Timestamp: "2026-04-18T16:00:00Z", Children: 2},
+			{ID: "e2", ParentID: "e1", Type: "assistant", Timestamp: "2026-04-18T16:00:05Z", Children: 0},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostSessionEntryInfosResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Entries, 2)
+	assert.Equal(t, "e1", decoded.Entries[0].ID)
+	assert.Equal(t, "e1", decoded.Entries[1].ParentID)
+	assert.Equal(t, 2, decoded.Entries[0].Children)
+}
+
+func TestHostSessionFullTreeResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostSessionFullTreeResult{
+		Nodes: []WireTreeNode{
+			{ID: "n1", Type: "user", Timestamp: "2026-04-18T16:00:00Z", Depth: 0, OnActivePath: true, Label: "start"},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostSessionFullTreeResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Nodes, 1)
+	assert.True(t, decoded.Nodes[0].OnActivePath)
+	assert.Equal(t, "start", decoded.Nodes[0].Label)
+}
+
+func TestHostSessionTitleResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostSessionTitleResult{Title: "my session"}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostSessionTitleResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, "my session", decoded.Title)
+}
+
+func TestHostShowPickerParamsRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostShowPickerParams{
+		Title: "Pick one",
+		Items: []WirePickerItem{
+			{ID: "a", Label: "Alpha", Desc: "first"},
+			{ID: "b", Label: "Beta"},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostShowPickerParams
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, "Pick one", decoded.Title)
+	require.Len(t, decoded.Items, 2)
+	assert.Equal(t, "a", decoded.Items[0].ID)
+	assert.Equal(t, "first", decoded.Items[0].Desc)
+	assert.Empty(t, decoded.Items[1].Desc)
+}
+
+func TestHostShowPickerResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostShowPickerResult{Selected: "a"}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostShowPickerResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, "a", decoded.Selected)
+}
+
+func TestNewSessionMethodsUseHostPrefix(t *testing.T) {
+	t.Parallel()
+	methods := []string{
+		MethodHostSessionEntryInfos,
+		MethodHostSessionFullTree,
+		MethodHostSessionTitle,
+		MethodHostShowPicker,
+	}
+	for _, m := range methods {
+		assert.NotEmpty(t, m)
+		assert.True(t, strings.HasPrefix(m, "host/"), "method %q must use host/ prefix", m)
+	}
 }
 
 // ---------------------------------------------------------------------------

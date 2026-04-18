@@ -313,6 +313,14 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostBranchSession(msg)
 	case MethodHostBranchSessionSummary:
 		h.handleHostBranchSessionSummary(msg)
+	case MethodHostSessionEntryInfos:
+		h.handleHostSessionEntryInfos(msg)
+	case MethodHostSessionFullTree:
+		h.handleHostSessionFullTree(msg)
+	case MethodHostSessionTitle:
+		h.handleHostSessionTitle(msg)
+	case MethodHostShowPicker:
+		h.handleHostShowPicker(msg)
 	case MethodHostPublish:
 		h.handleHostPublish(msg)
 	case MethodHostSubscribe:

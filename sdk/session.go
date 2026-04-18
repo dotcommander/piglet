@@ -67,6 +67,70 @@ func (e *Extension) SetSessionTitle(ctx context.Context, title string) error {
 	return hostCallVoid(e, ctx, "host/setSessionTitle", map[string]any{"title": title})
 }
 
+// LoadSession opens a session by path on the host side.
+// The host enqueues a swap action; the session takes effect on the next agent turn.
+func (e *Extension) LoadSession(ctx context.Context, path string) error {
+	return hostCallVoid(e, ctx, "host/loadSession", map[string]any{"path": path})
+}
+
+// EntryInfo is the SDK view of a session entry for display.
+type EntryInfo struct {
+	ID        string `json:"id"`
+	ParentID  string `json:"parentId,omitempty"`
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"` // RFC3339
+	Children  int    `json:"children"`
+}
+
+// SessionEntryInfos returns info about entries on the current branch for display.
+func (e *Extension) SessionEntryInfos(ctx context.Context) ([]EntryInfo, error) {
+	type resp struct {
+		Entries []EntryInfo `json:"entries"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/sessionEntryInfos", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	return r.Entries, nil
+}
+
+// TreeNode is the SDK view of a full-tree node for DAG rendering.
+type TreeNode struct {
+	ID           string `json:"id"`
+	ParentID     string `json:"parentId,omitempty"`
+	Type         string `json:"type"`
+	Timestamp    string `json:"timestamp"` // RFC3339
+	Children     int    `json:"children"`
+	OnActivePath bool   `json:"onActivePath"`
+	Depth        int    `json:"depth"`
+	Preview      string `json:"preview,omitempty"`
+	Label        string `json:"label,omitempty"`
+}
+
+// SessionFullTree returns every entry in the session for DAG rendering.
+func (e *Extension) SessionFullTree(ctx context.Context) ([]TreeNode, error) {
+	type resp struct {
+		Nodes []TreeNode `json:"nodes"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/sessionFullTree", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	return r.Nodes, nil
+}
+
+// SessionTitle returns the current session's title (empty if unset).
+func (e *Extension) SessionTitle(ctx context.Context) (string, error) {
+	type resp struct {
+		Title string `json:"title"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/sessionTitle", struct{}{})
+	if err != nil {
+		return "", err
+	}
+	return r.Title, nil
+}
+
 // WriteModels regenerates models.yaml from the embedded curated list with
 // the given API overrides, writes to disk, and reloads the registry.
 func (e *Extension) WriteModels(ctx context.Context, overrides map[string]ModelOverride) (int, error) {

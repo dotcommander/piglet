@@ -140,3 +140,74 @@ func (h *Host) handleHostBranchSessionSummary(msg *Message) {
 		return struct{}{}, fmt.Errorf("branch session: %w", app.BranchSessionWithSummary(p.EntryID, p.Summary))
 	})
 }
+
+func (h *Host) handleHostSessionEntryInfos(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	infos := h.app.SessionEntryInfos()
+	wire := make([]WireEntryInfo, len(infos))
+	for i, e := range infos {
+		wire[i] = WireEntryInfo{
+			ID:        e.ID,
+			ParentID:  e.ParentID,
+			Type:      e.Type,
+			Timestamp: e.Timestamp.Format(time.RFC3339),
+			Children:  e.Children,
+		}
+	}
+	h.respond(*msg.ID, HostSessionEntryInfosResult{Entries: wire})
+}
+
+func (h *Host) handleHostSessionFullTree(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	nodes := h.app.SessionFullTree()
+	wire := make([]WireTreeNode, len(nodes))
+	for i, n := range nodes {
+		wire[i] = WireTreeNode{
+			ID:           n.ID,
+			ParentID:     n.ParentID,
+			Type:         n.Type,
+			Timestamp:    n.Timestamp.Format(time.RFC3339),
+			Children:     n.Children,
+			OnActivePath: n.OnActivePath,
+			Depth:        n.Depth,
+			Preview:      n.Preview,
+			Label:        n.Label,
+		}
+	}
+	h.respond(*msg.ID, HostSessionFullTreeResult{Nodes: wire})
+}
+
+func (h *Host) handleHostSessionTitle(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	h.respond(*msg.ID, HostSessionTitleResult{Title: h.app.SessionTitle()})
+}
+
+func (h *Host) handleHostShowPicker(msg *Message) {
+	var params HostShowPickerParams
+	if !h.decodeParams(msg, &params) {
+		return
+	}
+	if !h.requireApp(msg) {
+		return
+	}
+	items := make([]ext.PickerItem, len(params.Items))
+	for i, it := range params.Items {
+		items[i] = ext.PickerItem{ID: it.ID, Label: it.Label, Desc: it.Desc}
+	}
+	// Capture msg.ID by value — the closure may fire on a different goroutine
+	// after the TUI processes the picker action.
+	id := *msg.ID
+	h.app.ShowPicker(params.Title, items, func(selected ext.PickerItem) {
+		h.respond(id, HostShowPickerResult{Selected: selected.ID})
+	})
+	// Do NOT call respond here — the callback will send the response when the
+	// user selects. If no selection occurs within hostRequestTimeout, the
+	// extension's request will time out and the orphaned callback becomes
+	// a no-op (h.respond writes to the already-closed or ignored response path).
+}

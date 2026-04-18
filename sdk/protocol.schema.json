@@ -824,6 +824,93 @@
         "path": { "type": "string" }
       }
     },
+    "WireEntryInfo": {
+      "description": "Wire representation of ext.EntryInfo.",
+      "type": "object",
+      "required": ["id", "type", "timestamp", "children"],
+      "additionalProperties": false,
+      "properties": {
+        "id":        { "type": "string" },
+        "parentId":  { "type": "string" },
+        "type":      { "type": "string" },
+        "timestamp": { "type": "string", "description": "RFC3339." },
+        "children":  { "type": "integer" }
+      }
+    },
+    "HostSessionEntryInfosResult": {
+      "description": "Host's response to host/sessionEntryInfos.",
+      "type": "object",
+      "required": ["entries"],
+      "additionalProperties": false,
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/WireEntryInfo" } }
+      }
+    },
+    "WireTreeNode": {
+      "description": "Wire representation of ext.TreeNode.",
+      "type": "object",
+      "required": ["id", "type", "timestamp", "children", "onActivePath", "depth"],
+      "additionalProperties": false,
+      "properties": {
+        "id":           { "type": "string" },
+        "parentId":     { "type": "string" },
+        "type":         { "type": "string" },
+        "timestamp":    { "type": "string", "description": "RFC3339." },
+        "children":     { "type": "integer" },
+        "onActivePath": { "type": "boolean" },
+        "depth":        { "type": "integer" },
+        "preview":      { "type": "string" },
+        "label":        { "type": "string" }
+      }
+    },
+    "HostSessionFullTreeResult": {
+      "description": "Host's response to host/sessionFullTree.",
+      "type": "object",
+      "required": ["nodes"],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/WireTreeNode" } }
+      }
+    },
+    "HostSessionTitleResult": {
+      "description": "Host's response to host/sessionTitle.",
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" }
+      }
+    },
+    "WirePickerItem": {
+      "description": "Wire representation of ext.PickerItem.",
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id":    { "type": "string" },
+        "label": { "type": "string" },
+        "desc":  { "type": "string" }
+      }
+    },
+    "HostShowPickerParams": {
+      "description": "Extension → host request to show a picker and await selection.",
+      "type": "object",
+      "required": ["title", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/WirePickerItem" } }
+      }
+    },
+    "HostShowPickerResult": {
+      "description": "Host's response to host/showPicker after user selection.",
+      "type": "object",
+      "required": ["selected"],
+      "additionalProperties": false,
+      "properties": {
+        "selected": { "type": "string", "description": "ID of the selected PickerItem." }
+      }
+    },
 
     "Methods": {
       "description": "All method name constants defined in the protocol.",
@@ -871,6 +958,10 @@
         "host/extensionsDir",
         "host/undoSnapshots",
         "host/undoRestore",
+        "host/sessionEntryInfos",
+        "host/sessionFullTree",
+        "host/sessionTitle",
+        "host/showPicker",
         "notify",
         "log",
         "showMessage",
@@ -929,7 +1020,11 @@
         "host/extInfos":                 { "description": "Ext→Host request. Params: empty. Result: HostExtInfosResult." },
         "host/extensionsDir":            { "description": "Ext→Host request. Params: empty. Result: HostExtensionsDirResult." },
         "host/undoSnapshots":            { "description": "Ext→Host request. Params: empty. Result: HostUndoSnapshotsResult." },
-        "host/undoRestore":              { "description": "Ext→Host request. Params: HostUndoRestoreParams. Result: empty." }
+        "host/undoRestore":              { "description": "Ext→Host request. Params: HostUndoRestoreParams. Result: empty." },
+        "host/sessionEntryInfos":        { "description": "Ext→Host request. Params: empty. Result: HostSessionEntryInfosResult." },
+        "host/sessionFullTree":          { "description": "Ext→Host request. Params: empty. Result: HostSessionFullTreeResult." },
+        "host/sessionTitle":             { "description": "Ext→Host request. Params: empty. Result: HostSessionTitleResult." },
+        "host/showPicker":               { "description": "Ext→Host request. Params: HostShowPickerParams. Result: HostShowPickerResult." }
       }
     }
   }

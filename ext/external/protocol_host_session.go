@@ -151,3 +151,67 @@ type EventBusEventParams struct {
 	SubscriptionID int             `json:"subscriptionId"`
 	Data           json.RawMessage `json:"data"`
 }
+
+// ---------------------------------------------------------------------------
+// Host session display service: extension → host (request/response)
+// Added for T5a — supports session-command extraction (T5b).
+// ---------------------------------------------------------------------------
+
+// WireEntryInfo is the wire representation of ext.EntryInfo.
+// Timestamp serialized as RFC3339 to match WireSessionInfo convention.
+type WireEntryInfo struct {
+	ID        string `json:"id"`
+	ParentID  string `json:"parentId,omitempty"`
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"` // RFC3339
+	Children  int    `json:"children"`
+}
+
+// HostSessionEntryInfosResult is the host's response to host/sessionEntryInfos.
+type HostSessionEntryInfosResult struct {
+	Entries []WireEntryInfo `json:"entries"`
+}
+
+// WireTreeNode is the wire representation of ext.TreeNode.
+type WireTreeNode struct {
+	ID           string `json:"id"`
+	ParentID     string `json:"parentId,omitempty"`
+	Type         string `json:"type"`
+	Timestamp    string `json:"timestamp"` // RFC3339
+	Children     int    `json:"children"`
+	OnActivePath bool   `json:"onActivePath"`
+	Depth        int    `json:"depth"`
+	Preview      string `json:"preview,omitempty"`
+	Label        string `json:"label,omitempty"`
+}
+
+// HostSessionFullTreeResult is the host's response to host/sessionFullTree.
+type HostSessionFullTreeResult struct {
+	Nodes []WireTreeNode `json:"nodes"`
+}
+
+// HostSessionTitleResult is the host's response to host/sessionTitle.
+type HostSessionTitleResult struct {
+	Title string `json:"title"`
+}
+
+// WirePickerItem mirrors ext.PickerItem.
+type WirePickerItem struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Desc  string `json:"desc,omitempty"`
+}
+
+// HostShowPickerParams is the extension's request to display a picker.
+type HostShowPickerParams struct {
+	Title string           `json:"title"`
+	Items []WirePickerItem `json:"items"`
+}
+
+// HostShowPickerResult is the host's response after the user selects an item.
+// Selected is the ID of the chosen item. If the user dismisses the picker,
+// the RPC call blocks until hostRequestTimeout (the OnSelect callback in
+// ActionShowPicker is never invoked for dismissal in the current TUI).
+type HostShowPickerResult struct {
+	Selected string `json:"selected"`
+}
