@@ -22,15 +22,23 @@ func (h *Host) Start(ctx context.Context) error {
 	h.cmd = exec.CommandContext(ctx, bin, args...)
 	h.cmd.Dir = h.manifest.Dir
 
-	if err := h.connectPipes(); err != nil {
+	childRead, childWrite, err := h.connectPipes()
+	if err != nil {
 		return err
 	}
 
 	if err := h.cmd.Start(); err != nil {
+		_ = childRead.Close()
+		_ = childWrite.Close()
 		h.stdin.Close()
 		h.rpcRead.Close()
 		return fmt.Errorf("start %s: %w", h.manifest.Name, err)
 	}
+	// Close parent's copies of the child-side FDs now that the child has
+	// inherited them via ExtraFiles. Keeping them open would prevent EOF
+	// from propagating correctly.
+	_ = childRead.Close()
+	_ = childWrite.Close()
 
 	// Start reading messages in background
 	go h.readLoop()
@@ -66,19 +74,19 @@ func (h *Host) Start(ctx context.Context) error {
 // connectPipes creates two anonymous pipe pairs for JSON-RPC communication
 // (FD 3/4 in the child process), wires them into h.cmd.ExtraFiles, and
 // assigns h.stdin, h.rpcRead, and h.stdout on the host side.
-// The child-side ends are closed after cmd.Start() returns.
-func (h *Host) connectPipes() error {
+// Returns the child-side ends so the caller can close them after cmd.Start().
+func (h *Host) connectPipes() (childRead, childWrite *os.File, err error) {
 	// Pair 1: host→ext (host writes, child reads on FD 3)
 	extRead, hostWrite, err := os.Pipe()
 	if err != nil {
-		return fmt.Errorf("create host→ext pipe: %w", err)
+		return nil, nil, fmt.Errorf("create host→ext pipe: %w", err)
 	}
 	// Pair 2: ext→host (child writes on FD 4, host reads)
 	hostRead, extWrite, err := os.Pipe()
 	if err != nil {
 		extRead.Close()
 		hostWrite.Close()
-		return fmt.Errorf("create ext→host pipe: %w", err)
+		return nil, nil, fmt.Errorf("create ext→host pipe: %w", err)
 	}
 
 	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
@@ -92,10 +100,9 @@ func (h *Host) connectPipes() error {
 	h.stdout = bufio.NewScanner(hostRead)
 	h.stdout.Buffer(make([]byte, 0, 256*1024), 4*1024*1024)
 
-	// Close child-side pipe ends after fork (cmd.Start duplicates them into child)
-	extRead.Close()
-	extWrite.Close()
-	return nil
+	// Return the child-side ends: caller must close them AFTER cmd.Start()
+	// so the child inherits valid FDs via ExtraFiles before we close our copies.
+	return extRead, extWrite, nil
 }
 
 // Stop performs an ordered shutdown of the extension process:
