@@ -74,7 +74,7 @@ func InstallOfficialExtensions(w io.Writer, settings config.Settings) error {
 		if len(fields) > 0 {
 			remoteHash = fields[0]
 			if cached := readLastBuildHash(); cached != "" && cached == remoteHash {
-				fmt.Fprintln(w, "Extensions already up to date.")
+				slog.Info("extensions already up to date")
 				return nil
 			}
 		}

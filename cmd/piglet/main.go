@@ -249,6 +249,13 @@ func run() error {
 	defer debugCleanup()
 
 	if interactive {
+		// Redirect slog to file so extension-init warnings and other log calls
+		// do not corrupt the bubbletea TUI frames. Skip when --debug is set
+		// because loadRuntime already installed the debug file handler.
+		if !flags.debug && !rt.settings.Debug {
+			tuiLogCleanup := setupTUILogging()
+			defer tuiLogCleanup()
+		}
 		if flags.repl {
 			return runREPL(ctx, rt)
 		}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -229,4 +230,28 @@ func openDebugLog() (*slog.Logger, func(), error) {
 	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	fmt.Fprintf(os.Stderr, "debug: logging to %s\n", path)
 	return logger, func() { _ = f.Close() }, nil
+}
+
+// setupTUILogging installs a slog handler that writes at Warn+ to
+// ~/.config/piglet/debug.log so that extension-init warnings and other
+// slog calls do not corrupt the bubbletea TUI frames. Falls back to
+// io.Discard if the log file cannot be opened.
+// Must only be called when the TUI will run and --debug was not set
+// (debug mode already installed its own handler via openDebugLog).
+// Returns a cleanup function that closes the log file.
+func setupTUILogging() func() {
+	dir, err := config.ConfigDir()
+	if err != nil {
+		slog.SetDefault(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+		return func() {}
+	}
+	path := filepath.Join(dir, "debug.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) //nolint:gosec // path is app-controlled config dir
+	if err != nil {
+		slog.SetDefault(slog.New(slog.NewJSONHandler(io.Discard, nil)))
+		return func() {}
+	}
+	logger := slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	slog.SetDefault(logger)
+	return func() { _ = f.Close() }
 }
