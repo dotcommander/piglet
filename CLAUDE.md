@@ -119,7 +119,7 @@ func main() {
 
 ```
 cmd/piglet/    Wiring layer — creates ext.App, calls Register(), loads externals, runs TUI
-cmd/*/         Standalone CLI tools (repomap, pipeline, bulk, confirm, depgraph, etc.)
+cmd/*/         Standalone CLI tools (repomap, pipeline, bulk, confirm, etc.)
 core/          Agent loop, streaming, types. Imports nothing from piglet.
 ext/           Registration surface (ext.App) — the central API
   app.go       Struct, NewApp, Bind, action queue
