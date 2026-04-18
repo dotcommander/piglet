@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 // ServerConfig describes how to start a language server.
@@ -55,6 +54,7 @@ var extToLanguage = map[string]string{
 type Manager struct {
 	cwd       string // immutable after construction
 	mu        sync.Mutex
+	cond      *sync.Cond         // signals clients/starting changes; bound to mu
 	clients   map[string]*Client // keyed by language ID
 	starting  map[string]bool    // languages currently being started
 	openFiles map[string]bool    // files already sent via didOpen
@@ -62,12 +62,14 @@ type Manager struct {
 
 // NewManager creates a new server manager rooted at the given directory.
 func NewManager(cwd string) *Manager {
-	return &Manager{
+	m := &Manager{
 		cwd:       cwd,
 		clients:   make(map[string]*Client),
 		starting:  make(map[string]bool),
 		openFiles: make(map[string]bool),
 	}
+	m.cond = sync.NewCond(&m.mu)
+	return m
 }
 
 // CWD returns the root working directory (immutable).
@@ -87,23 +89,35 @@ func (m *Manager) ForFile(ctx context.Context, file string) (*Client, string, er
 		return c, lang, nil
 	}
 
-	// Wait for a server that's already starting
+	// Wait for a server that's already starting, signaled via m.cond.
 	if m.starting[lang] {
-		for range 3 {
-			m.mu.Unlock()
-			time.Sleep(200 * time.Millisecond)
-			m.mu.Lock()
-			if client, ok := m.clients[lang]; ok {
+		// Single watcher goroutine to wake all waiters on ctx cancellation.
+		// Runs until ctx is Done OR the deferred stop signal fires.
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-ctx.Done():
+				m.mu.Lock()
+				m.cond.Broadcast()
 				m.mu.Unlock()
-				return client, lang, nil
+			case <-stop:
 			}
-			if !m.starting[lang] {
-				break // startup failed, fall through to start new
+		}()
+
+		for m.starting[lang] {
+			if err := ctx.Err(); err != nil {
+				m.mu.Unlock()
+				return nil, lang, fmt.Errorf("waiting for %s server: %w", lang, err)
 			}
+			m.cond.Wait() // releases m.mu; reacquires before returning
 		}
-		if m.starting[lang] {
+		// Post-wait state:
+		//   - m.clients[lang] set     -> predecessor succeeded, return it
+		//   - m.clients[lang] missing -> predecessor failed, fall through to start
+		if c, ok := m.clients[lang]; ok {
 			m.mu.Unlock()
-			return nil, lang, fmt.Errorf("%s language server still starting after retries", lang)
+			return c, lang, nil
 		}
 	}
 	m.starting[lang] = true
@@ -117,6 +131,7 @@ func (m *Manager) ForFile(ctx context.Context, file string) (*Client, string, er
 	if err == nil {
 		m.clients[lang] = c
 	}
+	m.cond.Broadcast() // wake all ForFile waiters on this language
 	m.mu.Unlock()
 
 	if err != nil {
