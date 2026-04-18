@@ -67,8 +67,8 @@ type shellBundle struct {
 
 // buildShell runs the shell-construction sequence shared by run() and runREPL():
 // setup app → resolve provider → open session → build agent → create shell → attach managers.
-func buildShell(ctx context.Context, rt *runtime, interactive bool) *shellBundle {
-	app, system, extCleanup := setupApp(ctx, rt, interactive)
+func buildShell(ctx context.Context, rt *runtime) *shellBundle {
+	app, system, extCleanup := setupApp(ctx, rt)
 
 	if p, ok := app.StreamProvider(string(rt.model.API), rt.model); ok {
 		rt.prov = p

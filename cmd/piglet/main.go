@@ -262,7 +262,7 @@ func run() error {
 		return runInteractive(ctx, rt)
 	}
 
-	b := buildShell(ctx, rt, false)
+	b := buildShell(ctx, rt)
 	defer b.cleanup()
 	if b.sess != nil {
 		defer b.sess.Close()

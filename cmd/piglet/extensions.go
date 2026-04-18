@@ -72,13 +72,19 @@ func loadExtensionsWithRetry(ctx context.Context, app *ext.App, rt *runtime, aut
 	return cleanup
 }
 
+// autoInstallEnabled returns false when PIGLET_SKIP_INSTALL=1 is set,
+// allowing CI or scripted callers to suppress the first-run extension install.
+func autoInstallEnabled() bool {
+	return os.Getenv("PIGLET_SKIP_INSTALL") == ""
+}
+
 // setupApp creates the extension app, registers tools/commands/extensions,
 // builds the system prompt, and returns the app with cleanup.
-func setupApp(ctx context.Context, rt *runtime, interactive bool) (*ext.App, string, func()) {
+func setupApp(ctx context.Context, rt *runtime) (*ext.App, string, func()) {
 	app := ext.NewApp(rt.cwd)
 	registerBuiltins(app, rt)
 
-	extCleanup := loadExtensionsWithRetry(ctx, app, rt, interactive)
+	extCleanup := loadExtensionsWithRetry(ctx, app, rt, autoInstallEnabled())
 
 	prompt.RegisterSelfKnowledge(app)
 

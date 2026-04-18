@@ -13,7 +13,7 @@ import (
 )
 
 func runREPL(ctx context.Context, rt *runtime) error {
-	b := buildShell(ctx, rt, true)
+	b := buildShell(ctx, rt)
 	defer b.cleanup()
 	if b.sess != nil {
 		defer b.sess.Close()
