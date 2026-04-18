@@ -83,7 +83,7 @@ func clearOldToolResults(ctx context.Context, x *sdk.Extension, turnThreshold in
 	cutoff := len(messages) - turnThreshold
 	cleared := 0
 
-	for i := 0; i < cutoff; i++ {
+	for i := range cutoff {
 		msg := messages[i]
 		if msg.Type != "tool_result" {
 			continue

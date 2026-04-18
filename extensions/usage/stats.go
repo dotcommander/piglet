@@ -16,11 +16,11 @@ type TokenUsage struct {
 
 // ComponentBreakdown shows token usage per prompt component.
 type ComponentBreakdown struct {
-	SystemPrompt int                `json:"system_prompt"`
-	Extensions   []ExtensionTokens  `json:"extensions"`
-	RepoMap      int                `json:"repo_map"`
-	Tools        int                `json:"tools"`
-	History      int                `json:"history"`
+	SystemPrompt int               `json:"system_prompt"`
+	Extensions   []ExtensionTokens `json:"extensions"`
+	RepoMap      int               `json:"repo_map"`
+	Tools        int               `json:"tools"`
+	History      int               `json:"history"`
 }
 
 // ExtensionTokens is token usage for a single extension's prompt section.
@@ -190,7 +190,7 @@ func intToStr(n int) string {
 
 func repeat(s string, n int) string {
 	result := make([]byte, 0, len(s)*n)
-	for i := 0; i < n; i++ {
+	for range n {
 		result = append(result, s...)
 	}
 	return string(result)

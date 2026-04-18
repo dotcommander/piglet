@@ -140,7 +140,7 @@ func pollEvents(ch <-chan core.Event) tea.Cmd {
 		}
 		events := make([]core.Event, 1, 10)
 		events[0] = first
-		for i := 0; i < 9; i++ {
+		for range 9 {
 			select {
 			case evt, ok := <-ch:
 				if !ok {

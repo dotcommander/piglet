@@ -172,7 +172,7 @@ func stripSingleQuotes(s string) string {
 	b.Grow(len(s))
 	inSingle := false
 	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
+	for i := range runes {
 		r := runes[i]
 		if r == '\'' && !inSingle {
 			inSingle = true
