@@ -333,7 +333,7 @@ Before EVERY commit:
 4. **Smoke test**: `go build -o piglet ./cmd/piglet/ && ./piglet --version`
 5. **Architecture test**: `go test ./ext/... -run TestArchitecture` — dependency boundaries enforced
 6. **No WIP commits**: `git log v<prev>..HEAD --oneline` — every commit should be shippable
-7. **Extensions build**: `for p in core agent context code workflow cron eval; do go build ./extensions/packs/$p/; done`
+7. **Extensions build**: `for p in core agent context code workflow cron eval; do go build -o /dev/null ./extensions/packs/$p/; done` — compile check only; `-o /dev/null` prevents stray binaries in repo root
 8. **Extension list current**: `defaultOfficialExtensions` in `config/config.go` must list all packs (`pack-core`, `pack-agent`, `pack-context`, `pack-code`, `pack-workflow`, `pack-cron`) plus standalone extensions (`mcp`). Verify pack contents match `extensions/packs/*/main.go` imports.
 
 ### Pre-Push Gate

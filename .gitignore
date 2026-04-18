@@ -20,5 +20,11 @@ auth.json
 # Repomix output
 repomix-output.md
 
-# Stray build artifact
+# Stray pack build artifacts (go build ./extensions/packs/X/ without -o drops here).
+# /core omitted because core/ is a tracked source directory.
+/agent
+/code
 /context
+/cron
+/eval
+/workflow
