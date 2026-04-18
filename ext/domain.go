@@ -176,12 +176,23 @@ func (a *App) SwitchModel(id string) error {
 		agent.SetModel(mod)
 		agent.SetProvider(prov)
 	}
+	a.mu.Lock()
+	a.currentModelID = mod.Provider + "/" + mod.ID
+	a.mu.Unlock()
 	a.enqueue(ActionSetStatus{Key: "model", Text: mod.DisplayName()})
 	// Rebuild tool set for new model (may change tool mode).
 	if a.onToolActivate != nil {
 		a.onToolActivate()
 	}
 	return nil
+}
+
+// CurrentModelID returns the "provider/id" key of the last activated model.
+// Returns empty string if no model has been switched via SwitchModel.
+func (a *App) CurrentModelID() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.currentModelID
 }
 
 // SyncModels updates the model catalog from an external source.

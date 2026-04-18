@@ -54,6 +54,9 @@ type App struct {
 	sessions SessionManager
 	models   ModelManager
 
+	// Model tracking
+	currentModelID string // "provider/id" key of the last model switched to
+
 	// Progressive tool disclosure
 	activatedTools map[string]bool   // deferred tools promoted to full schema
 	toolMode       ToolMode          // current mode (set via SetToolMode)

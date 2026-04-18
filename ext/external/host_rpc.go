@@ -321,6 +321,10 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostSessionTitle(msg)
 	case MethodHostShowPicker:
 		h.handleHostShowPicker(msg)
+	case MethodHostAvailableModels:
+		h.handleHostAvailableModels(msg)
+	case MethodHostSwitchModel:
+		h.handleHostSwitchModel(msg)
 	case MethodHostPublish:
 		h.handleHostPublish(msg)
 	case MethodHostSubscribe:

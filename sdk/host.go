@@ -180,6 +180,43 @@ func (e *Extension) SyncModels(ctx context.Context) (int, error) {
 	return r.Updated, nil
 }
 
+// ModelInfo describes a configured model as returned by AvailableModels.
+type ModelInfo struct {
+	ID            string  `json:"id"`
+	API           string  `json:"api"`
+	DisplayName   string  `json:"displayName"`
+	Provider      string  `json:"provider"`
+	ContextWindow int     `json:"contextWindow,omitempty"`
+	MaxTokens     int     `json:"maxTokens,omitempty"`
+	Reasoning     bool    `json:"reasoning,omitempty"`
+	CostInput     float64 `json:"costInput,omitempty"`
+	CostOutput    float64 `json:"costOutput,omitempty"`
+	Current       bool    `json:"current"`
+}
+
+// AvailableModels returns all models configured in the host, with Current set
+// to true for the model currently active in the agent.
+func (e *Extension) AvailableModels(ctx context.Context) ([]ModelInfo, error) {
+	type resp struct {
+		Models []ModelInfo `json:"models"`
+	}
+	r, err := hostCall[resp](e, ctx, "host/availableModels", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	return r.Models, nil
+}
+
+// SwitchModel switches the agent's active model to the given model ID
+// (format "provider/id"). If persistDefault is true, the host also writes
+// DefaultModel to ~/.config/piglet/config.yaml.
+func (e *Extension) SwitchModel(ctx context.Context, modelID string, persistDefault bool) error {
+	return hostCallVoid(e, ctx, "host/switchModel", map[string]any{
+		"modelId":        modelID,
+		"persistDefault": persistDefault,
+	})
+}
+
 // ModelOverride holds API-sourced values that replace curated defaults.
 type ModelOverride struct {
 	Name          string `json:"name,omitempty"`

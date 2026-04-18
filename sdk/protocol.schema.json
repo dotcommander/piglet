@@ -912,6 +912,44 @@
       }
     },
 
+    "WireModelInfo": {
+      "description": "Wire representation of a configured model.",
+      "type": "object",
+      "required": ["id", "api", "displayName", "provider", "current"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string", "description": "Model ID within the provider." },
+        "api":           { "type": "string", "description": "Wire protocol: openai, anthropic, google." },
+        "displayName":   { "type": "string", "description": "Human-readable 'provider/name' label." },
+        "provider":      { "type": "string", "description": "Provider name, e.g. 'anthropic'." },
+        "contextWindow": { "type": "integer", "description": "Context window in tokens." },
+        "maxTokens":     { "type": "integer", "description": "Maximum output tokens." },
+        "reasoning":     { "type": "boolean", "description": "True if the model supports extended thinking." },
+        "costInput":     { "type": "number", "description": "Per-million-token input cost." },
+        "costOutput":    { "type": "number", "description": "Per-million-token output cost." },
+        "current":       { "type": "boolean", "description": "True if this is the currently active model." }
+      }
+    },
+    "HostAvailableModelsResult": {
+      "description": "Host's response to host/availableModels.",
+      "type": "object",
+      "required": ["models"],
+      "additionalProperties": false,
+      "properties": {
+        "models": { "type": "array", "items": { "$ref": "#/$defs/WireModelInfo" } }
+      }
+    },
+    "HostSwitchModelParams": {
+      "description": "Extension → host request to switch the agent's active model.",
+      "type": "object",
+      "required": ["modelId"],
+      "additionalProperties": false,
+      "properties": {
+        "modelId":        { "type": "string", "description": "'provider/id' key of the target model." },
+        "persistDefault": { "type": "boolean", "description": "If true, also writes DefaultModel to ~/.config/piglet/config.yaml." }
+      }
+    },
+
     "Methods": {
       "description": "All method name constants defined in the protocol.",
       "type": "string",
@@ -962,6 +1000,8 @@
         "host/sessionFullTree",
         "host/sessionTitle",
         "host/showPicker",
+        "host/availableModels",
+        "host/switchModel",
         "notify",
         "log",
         "showMessage",
@@ -1024,7 +1064,9 @@
         "host/sessionEntryInfos":        { "description": "Ext→Host request. Params: empty. Result: HostSessionEntryInfosResult." },
         "host/sessionFullTree":          { "description": "Ext→Host request. Params: empty. Result: HostSessionFullTreeResult." },
         "host/sessionTitle":             { "description": "Ext→Host request. Params: empty. Result: HostSessionTitleResult." },
-        "host/showPicker":               { "description": "Ext→Host request. Params: HostShowPickerParams. Result: HostShowPickerResult." }
+        "host/showPicker":               { "description": "Ext→Host request. Params: HostShowPickerParams. Result: HostShowPickerResult." },
+        "host/availableModels":          { "description": "Ext→Host request. Params: empty. Result: HostAvailableModelsResult." },
+        "host/switchModel":              { "description": "Ext→Host request. Params: HostSwitchModelParams. Result: empty." }
       }
     }
   }

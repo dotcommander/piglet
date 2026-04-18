@@ -1193,6 +1193,83 @@ func TestNewSessionMethodsUseHostPrefix(t *testing.T) {
 	}
 }
 
+func TestHostAvailableModelsResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostAvailableModelsResult{
+		Models: []WireModelInfo{
+			{
+				ID:            "claude-opus-4-5",
+				API:           "anthropic",
+				DisplayName:   "anthropic/Claude Opus 4.5",
+				Provider:      "anthropic",
+				ContextWindow: 200000,
+				MaxTokens:     32000,
+				Reasoning:     true,
+				CostInput:     15.0,
+				CostOutput:    75.0,
+				Current:       true,
+			},
+			{
+				ID:          "claude-3-5-haiku",
+				API:         "anthropic",
+				DisplayName: "anthropic/claude-3-5-haiku",
+				Provider:    "anthropic",
+				Current:     false,
+			},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostAvailableModelsResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Models, 2)
+	assert.Equal(t, "claude-opus-4-5", decoded.Models[0].ID)
+	assert.Equal(t, "anthropic", decoded.Models[0].API)
+	assert.Equal(t, "anthropic/Claude Opus 4.5", decoded.Models[0].DisplayName)
+	assert.True(t, decoded.Models[0].Reasoning)
+	assert.True(t, decoded.Models[0].Current)
+	assert.Equal(t, 200000, decoded.Models[0].ContextWindow)
+	assert.Equal(t, 75.0, decoded.Models[0].CostOutput)
+	assert.False(t, decoded.Models[1].Current)
+}
+
+func TestHostSwitchModelParamsRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostSwitchModelParams{
+		ModelID:        "anthropic/claude-opus-4-5",
+		PersistDefault: true,
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostSwitchModelParams
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, "anthropic/claude-opus-4-5", decoded.ModelID)
+	assert.True(t, decoded.PersistDefault)
+}
+
+func TestHostSwitchModelParamsNoPersistRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostSwitchModelParams{ModelID: "anthropic/claude-3-5-haiku"}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostSwitchModelParams
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, "anthropic/claude-3-5-haiku", decoded.ModelID)
+	assert.False(t, decoded.PersistDefault)
+}
+
+func TestNewModelMethodsUseHostPrefix(t *testing.T) {
+	t.Parallel()
+	methods := []string{
+		MethodHostAvailableModels,
+		MethodHostSwitchModel,
+	}
+	for _, m := range methods {
+		assert.NotEmpty(t, m)
+		assert.True(t, strings.HasPrefix(m, "host/"), "method %q must use host/ prefix", m)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // logWriter
 // ---------------------------------------------------------------------------
