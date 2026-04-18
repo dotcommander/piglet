@@ -48,10 +48,10 @@ tui/, cmd/  → anything (wiring layer)
 
 | Pack | Contains | Registers |
 |------|----------|-----------|
-| `pack-context` | memory, skill, gitcontext, behavior, prompts, session-tools, inbox, sessioncmd | 6 tools, 13+ commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook, 2 shortcuts |
-| `pack-code` | lsp, repomap, sift, plan, suggest | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
+| `pack-context` | memory, skill, gitcontext, behavior, projectdocs, prompts, session-tools, inbox, distill, recall, route | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
+| `pack-code` | lsp, repomap, sift, plan, suggest, filetools, toolsearch, fossil | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
 | `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
-| `pack-core` | admin, export, extensions-list, undo, scaffold, background | 8 commands |
+| `pack-core` | admin, export, extensions-list, undo, scaffold, background, sessioncmd | 8 commands, 2 shortcuts |
 | `pack-workflow` | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
 | `pack-cron` | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
