@@ -7,6 +7,7 @@ import (
 	extlist "github.com/dotcommander/piglet/extensions/extensions-list"
 	"github.com/dotcommander/piglet/extensions/packs/internal/safety"
 	"github.com/dotcommander/piglet/extensions/scaffold"
+	"github.com/dotcommander/piglet/extensions/sessioncmd"
 	"github.com/dotcommander/piglet/extensions/undo"
 	"github.com/dotcommander/piglet/sdk"
 )
@@ -19,5 +20,6 @@ func main() {
 	safety.Register(e, "undo", undo.Register)
 	safety.Register(e, "scaffold", scaffold.Register)
 	safety.Register(e, "background", background.Register)
+	safety.Register(e, "sessioncmd", sessioncmd.Register)
 	e.Run()
 }

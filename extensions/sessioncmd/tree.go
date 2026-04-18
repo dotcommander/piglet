@@ -1,30 +1,31 @@
-package command
+package sessioncmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/sdk"
 )
 
-func registerTree(app *ext.App) {
-	app.RegisterCommand(&ext.Command{
+func registerTree(e *sdk.Extension) {
+	e.RegisterCommand(sdk.CommandDef{
 		Name:        "tree",
 		Description: "Show branching tree of current session",
-		Handler: func(args string, a *ext.App) error {
-			nodes := a.SessionFullTree()
-			if len(nodes) == 0 {
-				a.ShowMessage("No entries in current session")
+		Handler: func(ctx context.Context, args string) error {
+			nodes, err := e.SessionFullTree(ctx)
+			if err != nil {
+				e.ShowMessage("Failed to load tree: " + err.Error())
 				return nil
 			}
-
+			if len(nodes) == 0 {
+				e.ShowMessage("No entries in current session")
+				return nil
+			}
 			var b strings.Builder
 			b.WriteString("Session tree:\n\n")
-
 			for _, node := range nodes {
 				indent := strings.Repeat("  ", node.Depth)
-
-				// Connector
 				connector := ""
 				if node.Depth > 0 {
 					if node.OnActivePath {
@@ -33,35 +34,26 @@ func registerTree(app *ext.App) {
 						connector = "└─ "
 					}
 				}
-
-				// Active marker
 				marker := "  "
 				if node.OnActivePath {
 					marker = "● "
 				}
-
-				// Label
 				label := nodeLabel(node)
-
-				// Bookmark
 				bookmark := ""
 				if node.Label != "" {
 					bookmark = fmt.Sprintf(" [%s]", node.Label)
 				}
-
 				fmt.Fprintf(&b, "%s%s%s%s%s\n", indent, connector, marker, label, bookmark)
 			}
-
-			a.ShowMessage(b.String())
+			e.ShowMessage(b.String())
 			return nil
 		},
 	})
 }
 
 // nodeLabel returns a display label for a tree node.
-func nodeLabel(node ext.TreeNode) string {
-	ts := node.Timestamp.Format("15:04:05")
-
+func nodeLabel(node sdk.TreeNode) string {
+	ts := formatShortTimestamp(node.Timestamp)
 	switch node.Type {
 	case "user":
 		preview := node.Preview
@@ -91,7 +83,6 @@ func nodeLabel(node ext.TreeNode) string {
 		}
 		return fmt.Sprintf("[msg] %s  %s", preview, ts)
 	default:
-		// Extension entries (e.g., "ext:memory:facts")
 		return fmt.Sprintf("[%s] %s", node.Type, ts)
 	}
 }

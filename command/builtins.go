@@ -15,10 +15,8 @@ import (
 
 // Default keyboard shortcut bindings.
 const (
-	shortcutModel   = "model"
-	shortcutSession = "session"
-	keyModel        = "ctrl+p"
-	keySession      = "ctrl+s"
+	shortcutModel = "model"
+	keyModel      = "ctrl+p"
 )
 
 // RegisterBuiltins registers all built-in slash commands and keyboard shortcuts.
@@ -31,12 +29,6 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerStep(app)
 	registerCompact(app)
 	registerModel(app)
-	registerSession(app)
-	registerSearch(app)
-	registerTitle(app)
-	registerBranch(app)
-	registerFork(app)
-	registerTree(app)
 	registerUpdate(app, version)
 	app.RegisterCommand(&ext.Command{
 		Name:        "upgrade",
@@ -53,8 +45,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 
 	// Keyboard shortcuts — delegate to the corresponding commands
 	keys := map[string]string{
-		shortcutModel:   keyModel,
-		shortcutSession: keySession,
+		shortcutModel: keyModel,
 	}
 	for action, key := range shortcuts {
 		keys[action] = key
@@ -64,7 +55,6 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 		action, desc string
 	}{
 		{shortcutModel, "Open model selector"},
-		{shortcutSession, "Open session picker"},
 	} {
 		cmdName := sc.action
 		app.RegisterShortcut(&ext.Shortcut{
@@ -137,7 +127,6 @@ func registerHelp(app *ext.App) {
 			b.WriteString("\nShortcuts:\n")
 			b.WriteString("  ctrl+c    — stop agent / quit\n")
 			fmt.Fprintf(&b, "  %-10s — model selector\n", keyModel)
-			fmt.Fprintf(&b, "  %-10s — session picker\n", keySession)
 			b.WriteString("\nExtensions: /extensions to see loaded extensions\n")
 
 			a.ShowMessage(b.String())

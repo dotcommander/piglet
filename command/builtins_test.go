@@ -90,7 +90,7 @@ func TestHelpShowsCommandNames(t *testing.T) {
 	assert.Contains(t, msg, "/compact")
 }
 
-func TestHelpShowsShortcuts(t *testing.T) {
+func TestHelpShowsModelShortcut(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -100,7 +100,6 @@ func TestHelpShowsShortcuts(t *testing.T) {
 	msg := firstMessage(t, app)
 	assert.Contains(t, msg, "ctrl+c")
 	assert.Contains(t, msg, keyModel)
-	assert.Contains(t, msg, keySession)
 }
 
 // ---------------------------------------------------------------------------
@@ -228,109 +227,6 @@ func TestQuitEnqueuesQuitAction(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// sessionPickerItems (pure function)
-// ---------------------------------------------------------------------------
-
-func TestSessionPickerItemsFallbackTitle(t *testing.T) {
-	t.Parallel()
-
-	summaries := []ext.SessionSummary{
-		{
-			ID:        "abcdefgh1234",
-			Title:     "",
-			Path:      "/tmp/s.jsonl",
-			CreatedAt: time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
-		},
-	}
-	items := sessionPickerItems(summaries)
-	require.Len(t, items, 1)
-	// Falls back to first 8 chars of ID.
-	assert.Equal(t, "abcdefgh", items[0].Label)
-}
-
-func TestSessionPickerItemsWithTitle(t *testing.T) {
-	t.Parallel()
-
-	summaries := []ext.SessionSummary{
-		{
-			ID:        "abcdefgh1234",
-			Title:     "My Session",
-			Path:      "/tmp/s.jsonl",
-			CreatedAt: time.Date(2025, 3, 1, 9, 0, 0, 0, time.UTC),
-		},
-	}
-	items := sessionPickerItems(summaries)
-	require.Len(t, items, 1)
-	assert.Equal(t, "My Session", items[0].Label)
-	assert.Equal(t, "/tmp/s.jsonl", items[0].ID)
-}
-
-func TestSessionPickerItemsWithCWD(t *testing.T) {
-	t.Parallel()
-
-	summaries := []ext.SessionSummary{
-		{
-			ID:        "aabbcc001122",
-			Title:     "Work",
-			CWD:       "/home/gary/project",
-			Path:      "/tmp/s.jsonl",
-			CreatedAt: time.Now(),
-		},
-	}
-	items := sessionPickerItems(summaries)
-	require.Len(t, items, 1)
-	assert.Contains(t, items[0].Desc, "/home/gary/project")
-}
-
-func TestSessionPickerItemsWithParent(t *testing.T) {
-	t.Parallel()
-
-	summaries := []ext.SessionSummary{
-		{
-			ID:        "parent00-0000-0000",
-			Title:     "Parent",
-			Path:      "/tmp/parent.jsonl",
-			CreatedAt: time.Now(),
-		},
-		{
-			ID:        "child123",
-			Title:     "Child",
-			ParentID:  "parent00-0000-0000",
-			Path:      "/tmp/child.jsonl",
-			CreatedAt: time.Now(),
-		},
-	}
-	items := sessionPickerItems(summaries)
-	require.Len(t, items, 2)
-	assert.Equal(t, "Parent", items[0].Label)
-	assert.Equal(t, "↳ Child", items[1].Label) // tree indentation
-}
-
-func TestSessionPickerItemsOrphanedFork(t *testing.T) {
-	t.Parallel()
-
-	summaries := []ext.SessionSummary{
-		{
-			ID:        "child123",
-			Title:     "Orphan",
-			ParentID:  "deleted-parent",
-			Path:      "/tmp/s.jsonl",
-			CreatedAt: time.Now(),
-		},
-	}
-	items := sessionPickerItems(summaries)
-	require.Len(t, items, 1)
-	assert.Equal(t, "Orphan", items[0].Label) // orphaned fork becomes root
-}
-
-func TestSessionPickerItemsEmpty(t *testing.T) {
-	t.Parallel()
-
-	items := sessionPickerItems(nil)
-	assert.Empty(t, items)
-}
-
-// ---------------------------------------------------------------------------
 // RegisterBuiltins — registration completeness
 // ---------------------------------------------------------------------------
 
@@ -341,16 +237,19 @@ func TestRegisterBuiltinsRegistersExpectedCommands(t *testing.T) {
 	RegisterBuiltins(app, nil, "test")
 
 	cmds := app.Commands()
+	// Session commands (session, fork, branch, search, tree, title) have moved to
+	// extensions/sessioncmd and are no longer compiled-in. Only the model command
+	// and core lifecycle commands remain.
 	expected := []string{
 		"help", "clear", "step", "compact",
-		"model", "session", "quit", "fork",
+		"model", "quit",
 	}
 	for _, name := range expected {
 		assert.Contains(t, cmds, name, "expected command %q to be registered", name)
 	}
 }
 
-func TestRegisterBuiltinsRegistersShortcuts(t *testing.T) {
+func TestRegisterBuiltinsRegistersModelShortcut(t *testing.T) {
 	t.Parallel()
 
 	app := ext.NewApp("/tmp")
@@ -358,7 +257,8 @@ func TestRegisterBuiltinsRegistersShortcuts(t *testing.T) {
 
 	shortcuts := app.Shortcuts()
 	assert.Contains(t, shortcuts, keyModel)
-	assert.Contains(t, shortcuts, keySession)
+	// ctrl+s (session picker) has moved to sessioncmd extension — not registered here.
+	assert.NotContains(t, shortcuts, "ctrl+s")
 }
 
 func TestRegisterBuiltinsCustomShortcutOverride(t *testing.T) {
@@ -372,3 +272,6 @@ func TestRegisterBuiltinsCustomShortcutOverride(t *testing.T) {
 	shortcuts := app.Shortcuts()
 	assert.Contains(t, shortcuts, "ctrl+m", "custom key should override default")
 }
+
+// Keep the time import used by legacy test helpers.
+var _ = time.Now
