@@ -38,17 +38,17 @@ tui/, cmd/  → anything (wiring layer)
 
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
-| Tools | 7 | `tool/` | `RegisterTool` |
-| Commands | 16 | `command/` | `RegisterCommand` |
-| Shortcuts | 1 | `command/` | `RegisterShortcut` |
-| Status sections | 6 | `command/` | `RegisterStatusSection` |
-| Prompt sections | 2 | `prompt/` (selfknowledge, projectdocs) | `RegisterPromptSection` |
+| Tools | 4 | `tool/` (read, write, edit, bash) | `RegisterTool` |
+| Commands | 7 | `command/` (help, clear, compact, step, update, upgrade, quit) | `RegisterCommand` |
+| Shortcuts | 0 | — (session/model shortcuts are in extensions/sessioncmd) | `RegisterShortcut` |
+| Status sections | 7 | `command/` | `RegisterStatusSection` |
+| Prompt sections | 1 | `prompt/` (selfknowledge only — projectdocs moved to extensions) | `RegisterPromptSection` |
 
 **External** (consolidated packs — single Go binaries via JSON-RPC, source in `extensions/packs/`):
 
 | Pack | Contains | Registers |
 |------|----------|-----------|
-| `pack-context` | memory, skill, gitcontext, behavior, prompts, session-tools, inbox | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
+| `pack-context` | memory, skill, gitcontext, behavior, prompts, session-tools, inbox, sessioncmd | 6 tools, 13+ commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook, 2 shortcuts |
 | `pack-code` | lsp, repomap, sift, plan, suggest | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
 | `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
 | `pack-core` | admin, export, extensions-list, undo, scaffold, background | 8 commands |
@@ -74,10 +74,9 @@ All extensions map to these primitives — no special access:
 
 | Extension | Primitive | How | Where |
 |-----------|-----------|-----|-------|
-| `prompt/behavior.go` | Inject | Prompt section loads `behavior.md` | compiled-in |
 | `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts | compiled-in |
 | `command/` | React | Commands respond to user slash input | compiled-in |
-| `pack-context` | Inject + React + Hook + Observe | Memory, skills, git context, behavior, prompts, session tools | external pack |
+| `pack-context` | Inject + React + Hook + Observe | Memory, skills, git context, behavior, prompts, session tools, sessioncmd (model/session/tree commands + shortcuts) | external pack |
 | `pack-code` | Inject + Intercept + React + Observe | LSP, repo map, sift, plan, suggest | external pack |
 | `pack-agent` | Inject + Intercept + React + Observe | Safeguard, RTK, autotitle, clipboard, subagent, provider, loop | external pack |
 | `pack-core` | React | Admin, export, extensions-list, undo, scaffold, background | external pack |

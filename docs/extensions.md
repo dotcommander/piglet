@@ -29,7 +29,7 @@ Extensions can add:
 - **Compactors** — conversation compaction strategy (LLM-based summarization)
 - **Stream providers** — custom LLM streaming backends
 
-Without extensions, piglet starts with 7 built-in tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) and 16 built-in commands. With extensions installed, the full feature set is available.
+Without extensions, piglet starts with 4 built-in tools (`read`, `write`, `edit`, `bash`) and 7 built-in commands. With extensions installed, the full feature set is available (`grep`, `find`, `ls` are provided by pack-code; session/model commands are provided by pack-context/sessioncmd).
 
 ## How Extensions Work
 
@@ -137,9 +137,9 @@ After restarting, run `/extensions` to confirm the disabled extensions are no lo
 
 ### Load Order
 
-1. **Built-in tools** — `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
-2. **Built-in commands** — `/help`, `/clear`, `/model`, `/session`, etc.
-3. **Built-in prompt sections** — self-knowledge, project docs
+1. **Built-in tools** — `read`, `write`, `edit`, `bash`
+2. **Built-in commands** — `/help`, `/clear`, `/compact`, `/step`, `/update`, `/upgrade`, `/quit`
+3. **Built-in prompt sections** — self-knowledge
 4. **External extensions** — from `~/.config/piglet/extensions/`, alphabetical by directory name
 
 Later registrations with the same name overwrite earlier ones. This means external extensions can replace built-in tools and commands.

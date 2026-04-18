@@ -213,6 +213,11 @@ Extensions should send these notifications **during the handshake phase** (after
 **Params:**
 - `api` (string): The API type this extension can stream (e.g., "openai", "anthropic", "google").
 
+### `register/inputTransformer`
+**Params:**
+- `name` (string): Transformer name.
+- `priority` (integer, optional): Higher numbers run first.
+
 ---
 
 ## Extension to Host Methods (Runtime)
@@ -328,6 +333,22 @@ Executes a tool on the host.
 - `content` (array): [Content Blocks](#content-blocks).
 - `isError` (boolean): Whether execution failed.
 
+### `host/activateTool` (Request)
+Activates a previously deferred tool, sending its full schema to the LLM.
+
+**Params:**
+- `name` (string): Tool name to activate.
+
+**Response (Result):** Empty.
+
+### `host/setToolFilter` (Request)
+Sets a filter controlling which tools are visible to the LLM for the current session.
+
+**Params:**
+- `filter` (string): Filter mode — `"all"` or `"background_safe"`.
+
+**Response (Result):** Empty.
+
 ---
 
 ### Session Management
@@ -340,6 +361,14 @@ Returns the current conversation's message history.
 **Response (Result):**
 - `messages` (array): Raw JSON array of conversation messages.
 
+### `host/llmSnapshot` (Request)
+Returns the current conversation messages as they will be sent to the LLM (after compaction, with system prompt applied).
+
+**Params:** None.
+
+**Response (Result):**
+- `messages` (array): Raw JSON array of messages in LLM wire format.
+
 ### `host/setConversationMessages` (Request)
 Replaces the current conversation's message history.
 
@@ -347,6 +376,14 @@ Replaces the current conversation's message history.
 - `messages` (array): Array of `{ "type": "user"|"assistant"|"tool_result", "data": ... }` objects.
 
 **Response (Result):** Empty.
+
+### `host/lastAssistantText` (Request)
+Returns the text content of the most recent assistant message.
+
+**Params:** None.
+
+**Response (Result):**
+- `text` (string): The last assistant message text, or empty string if none.
 
 ---
 
@@ -383,9 +420,101 @@ Updates the current session's title.
 
 **Response (Result):** Empty.
 
+### `host/appendSessionEntry` (Request)
+Appends a raw entry to the current session file (used by extensions that need to record custom events).
+
+**Params:**
+- `entry` (object): Session entry object.
+
+**Response (Result):** Empty.
+
+### `host/appendCustomMessage` (Request)
+Appends a custom (non-LLM) message into the conversation display without sending it to the model.
+
+**Params:**
+- `role` (string): Display role (e.g., "system", "tool").
+- `content` (string): Message content.
+
+**Response (Result):** Empty.
+
+### `host/setLabel` (Request)
+Sets a label/bookmark on the current session leaf entry.
+
+**Params:**
+- `label` (string): Label text. Empty string clears the label.
+
+**Response (Result):** Empty.
+
+### `host/branchSession` (Request)
+Branches the current session from a specific entry ID (rewinds the active path).
+
+**Params:**
+- `entryId` (string): The entry ID to branch from.
+
+**Response (Result):** Empty.
+
+### `host/branchSessionWithSummary` (Request)
+Branches the session from a specific entry ID and generates a summary of the abandoned branch.
+
+**Params:**
+- `entryId` (string): The entry ID to branch from.
+
+**Response (Result):**
+- `summary` (string): LLM-generated summary of the abandoned branch.
+
+### `host/sessionEntryInfos` (Request)
+Returns metadata about all entries in the current session tree (for building branch pickers).
+
+**Params:** None.
+
+**Response (Result):**
+- `entries` (array): Array of entry info objects with `id`, `parentId`, `kind`, `summary`, and `timestamp` fields.
+
+### `host/sessionFullTree` (Request)
+Returns the full session tree as a rendered string for display.
+
+**Params:** None.
+
+**Response (Result):**
+- `tree` (string): ASCII-art tree representation of the session.
+
+### `host/sessionTitle` (Request)
+Returns the current session's title.
+
+**Params:** None.
+
+**Response (Result):**
+- `title` (string): The session title (auto-generated or manually set).
+
+### `host/showPicker` (Request)
+Opens a modal picker in the TUI and returns the user's selection.
+
+**Params:**
+- `title` (string): Picker title.
+- `items` (array): Array of `{ "id": "...", "label": "...", "description": "..." }` objects.
+
+**Response (Result):**
+- `id` (string): The `id` of the selected item, or empty string if cancelled.
+
 ---
 
 ### Models
+
+### `host/availableModels` (Request)
+Returns the list of models available to the host.
+
+**Params:** None.
+
+**Response (Result):**
+- `models` (array): Array of model definition objects (same structure as `models.yaml` entries).
+
+### `host/switchModel` (Request)
+Switches the active model for the current session.
+
+**Params:**
+- `modelId` (string): Model ID to switch to.
+
+**Response (Result):** Empty.
 
 ### `host/syncModels` (Request)
 Syncs the model catalog from models.dev.
@@ -441,6 +570,27 @@ Returns the path to the extensions directory.
 
 **Response (Result):**
 - `path` (string): Absolute path to `~/.config/piglet/extensions/`.
+
+---
+
+### Inter-Extension Event Bus
+
+### `host/publish` (Request)
+Publishes an event on the inter-extension event bus.
+
+**Params:**
+- `topic` (string): Event topic (e.g., `"memory:updated"`).
+- `data` (any): Event payload.
+
+**Response (Result):** Empty.
+
+### `host/subscribe` (Request)
+Subscribes to events on the inter-extension event bus. The host sends `eventBus/event` notifications to the extension when matching events are published.
+
+**Params:**
+- `topic` (string): Topic pattern to subscribe to.
+
+**Response (Result):** Empty.
 
 ---
 

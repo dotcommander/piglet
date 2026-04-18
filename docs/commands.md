@@ -18,19 +18,11 @@ These commands are compiled into the piglet binary and always available:
 | `/clear` | Clear the conversation history |
 | `/compact` | Compact conversation to reduce token usage |
 | `/step` | Toggle step-by-step tool approval mode |
-| `/model` | Open the model selector |
-| `/session` | Open the session picker |
-| `/session new` | Create a new blank session |
-| `/search <query>` | Search across sessions |
-| `/title <text>` | Set the current session title |
-| `/branch` | Open the branch picker for in-place branching |
-| `/fork` | Fork the current session to a new file |
-| `/tree` | Display the session tree structure |
-| `/bg <prompt>` | Run a prompt in the background agent |
-| `/bg-cancel` | Cancel the running background agent |
 | `/update` | Upgrade piglet binary and rebuild extensions |
 | `/upgrade` | Alias for `/update` |
 | `/quit` | Exit piglet |
+
+Session and model commands (`/model`, `/session`, `/search`, `/title`, `/branch`, `/fork`, `/tree`) are provided by the **sessioncmd** extension (bundled in pack-context). Background commands (`/bg`, `/bg-cancel`) are provided by **pack-core**.
 
 ### /help
 
@@ -47,66 +39,6 @@ Manually triggers conversation compaction. Requires at least 4 messages. If an e
 ### /step
 
 Toggles step mode. When enabled, the agent pauses before each tool call and shows an overlay asking you to approve, skip, or abort. Useful for reviewing what the agent wants to do before it does it.
-
-### /model
-
-Opens a filterable picker showing all available models. Type to filter, arrow keys to navigate, Enter to select. The model switch takes effect immediately for the next message.
-
-**Shortcut:** `Ctrl+P`
-
-### /session
-
-Opens the session picker showing all sessions, newest first. Each entry shows the title, model, working directory, and message count. Select a session to switch to it.
-
-Pass `new` to create a blank session linked to the current one:
-
-```
-/session new
-```
-
-**Shortcut:** `Ctrl+S`
-
-### /search
-
-Search across all sessions by title or content:
-
-```
-/search auth refactor
-```
-
-Results open in a picker. Select one to switch to that session.
-
-### /title
-
-Set a custom title for the current session:
-
-```
-/title Refactoring the auth middleware
-```
-
-Overrides the auto-generated title.
-
-### /branch
-
-Opens a picker showing all entries on the current branch. Select an entry to branch from that point — the conversation rewinds and new messages continue from there. The abandoned path is preserved in the tree. See [Sessions — Branching](sessions.md#branching).
-
-### /fork
-
-Forks the current session to a new file, copying all messages. The new session is independent but linked to its parent. See [Sessions — Forking](sessions.md#forking).
-
-### /tree
-
-Displays the tree structure of the current session in ASCII art, showing branch points, summaries, and the active path.
-
-### /bg
-
-Runs a prompt in a separate background agent while you continue working:
-
-```
-/bg analyze the test coverage and suggest improvements
-```
-
-The background agent has access to read-only tools (marked `BackgroundSafe`). Results appear when the background agent finishes. Cancel with `/bg-cancel`.
 
 ### /update
 
@@ -130,11 +62,20 @@ Extensions register additional commands. Here are the commands provided by the o
 | `/undo` | Undo the last file change |
 | `/extensions` | List loaded extensions and their registrations |
 | `/ext-init <name>` | Scaffold a new extension |
+| `/bg <prompt>` | Run a prompt in the background agent |
+| `/bg-cancel` | Cancel the running background agent |
 
-### pack-context
+### pack-context (sessioncmd)
 
 | Command | Description |
 |---------|-------------|
+| `/model` | Open the model selector (`Ctrl+P`) |
+| `/session` | Open the session picker (`Ctrl+S`); pass `new` to create a blank session |
+| `/search <query>` | Search across sessions by title or content |
+| `/title <text>` | Set the current session title |
+| `/branch` | Open the branch picker for in-place branching |
+| `/fork` | Fork the current session to a new file |
+| `/tree` | Display the session tree structure |
 | `/memory` | Manage memory entries |
 | `/skill` | Manage skill files |
 | `/inbox` | View and manage inbox items |
@@ -179,8 +120,6 @@ Extensions register additional commands. Here are the commands provided by the o
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+C` | Stop the running agent, or quit if idle |
-| `Ctrl+P` | Open model selector |
-| `Ctrl+S` | Open session picker |
 | `Ctrl+M` | Toggle mouse mode (scroll wheel support) |
 | `Ctrl+Z` | Suspend piglet (return to shell) |
 | `Page Up` | Scroll conversation up |
@@ -201,7 +140,14 @@ When step mode is active and a tool call is pending:
 
 ### Extension Shortcuts
 
-Extensions can register additional shortcuts. The pack-agent extension registers:
+Extensions can register additional shortcuts. The sessioncmd extension (pack-context) registers:
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+P` | Open model selector |
+| `Ctrl+S` | Open session picker |
+
+The pack-agent extension registers:
 
 | Shortcut | Action |
 |----------|--------|
