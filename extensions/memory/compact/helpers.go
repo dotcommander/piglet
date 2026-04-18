@@ -1,4 +1,4 @@
-package memory
+package compact
 
 import (
 	"encoding/json"
@@ -8,13 +8,13 @@ import (
 // truncateToolResults truncates large tool-result text content in messages
 // to maxChars. This prevents bash/read output from dominating the LLM
 // summarizer's token budget during compaction.
-func truncateToolResults(msgs []wireMsg, maxChars int) {
+func truncateToolResults(msgs []WireMsg, maxChars int) {
 	for i := range msgs {
 		if msgs[i].Type != "tool_result" {
 			continue
 		}
 
-		var tr wireToolResult
+		var tr WireToolResult
 		if json.Unmarshal(msgs[i].Data, &tr) != nil {
 			continue
 		}
@@ -44,7 +44,7 @@ func truncateToolResults(msgs []wireMsg, maxChars int) {
 // the accumulated file paths. This enables cumulative file tracking
 // across compaction boundaries — files from earlier compactions are
 // preserved when the next compaction runs.
-func extractPriorFileLists(msgs []wireMsg) (readFiles, modifiedFiles []string) {
+func extractPriorFileLists(msgs []WireMsg) (readFiles, modifiedFiles []string) {
 	readSet := make(map[string]struct{})
 	modSet := make(map[string]struct{})
 

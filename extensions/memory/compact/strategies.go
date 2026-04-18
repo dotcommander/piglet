@@ -1,4 +1,4 @@
-package memory
+package compact
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 // microcompactToolResults replaces tool results outside the keepRecent window
 // with a single-line summary. More aggressive than truncateToolResults — the
 // full content is discarded, keeping only the tool name and original size.
-func microcompactToolResults(msgs []wireMsg, keepRecent int) {
+func microcompactToolResults(msgs []WireMsg, keepRecent int) {
 	if len(msgs) <= keepRecent {
 		return
 	}
@@ -18,7 +18,7 @@ func microcompactToolResults(msgs []wireMsg, keepRecent int) {
 			continue
 		}
 
-		var tr wireToolResult
+		var tr WireToolResult
 		if json.Unmarshal(msgs[i].Data, &tr) != nil {
 			continue
 		}
@@ -48,7 +48,7 @@ func microcompactToolResults(msgs []wireMsg, keepRecent int) {
 
 // lightTrimMessages trims long text blocks in user and assistant messages
 // outside the keepRecent window, preserving head and tail for context.
-func lightTrimMessages(msgs []wireMsg, keepRecent, maxLen int) {
+func lightTrimMessages(msgs []WireMsg, keepRecent, maxLen int) {
 	if len(msgs) <= keepRecent || maxLen <= 0 {
 		return
 	}
@@ -64,7 +64,7 @@ func lightTrimMessages(msgs []wireMsg, keepRecent, maxLen int) {
 	}
 }
 
-func trimUserMessage(msg *wireMsg, halfLen, maxLen int) {
+func trimUserMessage(msg *WireMsg, halfLen, maxLen int) {
 	var m struct {
 		Content string `json:"content"`
 		Role    string `json:"role"`
@@ -79,7 +79,7 @@ func trimUserMessage(msg *wireMsg, halfLen, maxLen int) {
 	}
 }
 
-func trimAssistantMessage(msg *wireMsg, halfLen, maxLen int) {
+func trimAssistantMessage(msg *WireMsg, halfLen, maxLen int) {
 	// Assistant messages have content as an array of content blocks
 	var m struct {
 		Content []struct {
@@ -125,7 +125,7 @@ func trimAssistantMessage(msg *wireMsg, halfLen, maxLen int) {
 
 // estimateTokens provides a rough token count for wire messages.
 // Uses the 4-chars-per-token heuristic — accurate enough for threshold checks.
-func estimateTokens(msgs []wireMsg) int {
+func estimateTokens(msgs []WireMsg) int {
 	var total int
 	for _, m := range msgs {
 		total += len(m.Data)

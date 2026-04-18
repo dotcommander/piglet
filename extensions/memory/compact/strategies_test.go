@@ -1,4 +1,4 @@
-package memory
+package compact
 
 import (
 	"encoding/json"
@@ -14,7 +14,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 	t.Run("replaces tool results outside keepRecent", func(t *testing.T) {
 		t.Parallel()
 
-		tr := wireToolResult{
+		tr := WireToolResult{
 			ToolName: "bash",
 			Content: []struct {
 				Type string `json:"type"`
@@ -24,7 +24,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 		trData, err := json.Marshal(tr)
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "tool_result", Data: trData},
 			{Type: "assistant", Data: json.RawMessage(`{"content":"ok"}`)},
 			{Type: "user", Data: json.RawMessage(`{"content":"next"}`)},
@@ -32,7 +32,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 
 		microcompactToolResults(msgs, 2)
 
-		var got wireToolResult
+		var got WireToolResult
 		require.NoError(t, json.Unmarshal(msgs[0].Data, &got))
 		assert.Equal(t, "[bash: 37 chars]", got.Content[0].Text)
 		assert.Len(t, got.Content, 1)
@@ -41,7 +41,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 	t.Run("preserves tool results within keepRecent", func(t *testing.T) {
 		t.Parallel()
 
-		tr := wireToolResult{
+		tr := WireToolResult{
 			ToolName: "read",
 			Content: []struct {
 				Type string `json:"type"`
@@ -51,14 +51,14 @@ func TestMicrocompactToolResults(t *testing.T) {
 		trData, err := json.Marshal(tr)
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: json.RawMessage(`{"content":"hi"}`)},
 			{Type: "tool_result", Data: trData},
 		}
 
 		microcompactToolResults(msgs, 2)
 
-		var got wireToolResult
+		var got WireToolResult
 		require.NoError(t, json.Unmarshal(msgs[1].Data, &got))
 		assert.Equal(t, "file contents", got.Content[0].Text)
 	})
@@ -66,7 +66,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 	t.Run("marks error tool results", func(t *testing.T) {
 		t.Parallel()
 
-		tr := wireToolResult{
+		tr := WireToolResult{
 			ToolName: "bash",
 			IsError:  true,
 			Content: []struct {
@@ -77,7 +77,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 		trData, err := json.Marshal(tr)
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "tool_result", Data: trData},
 			{Type: "user", Data: json.RawMessage(`{"content":"next"}`)},
 			{Type: "assistant", Data: json.RawMessage(`{"content":"ok"}`)},
@@ -85,7 +85,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 
 		microcompactToolResults(msgs, 2)
 
-		var got wireToolResult
+		var got WireToolResult
 		require.NoError(t, json.Unmarshal(msgs[0].Data, &got))
 		assert.Equal(t, "[bash: error, 14 chars]", got.Content[0].Text)
 	})
@@ -93,7 +93,7 @@ func TestMicrocompactToolResults(t *testing.T) {
 	t.Run("noop when all within keepRecent", func(t *testing.T) {
 		t.Parallel()
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: json.RawMessage(`{"content":"hi"}`)},
 		}
 		orig := string(msgs[0].Data)
@@ -118,7 +118,7 @@ func TestLightTrimMessages(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: data},
 			{Type: "assistant", Data: json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)},
 			{Type: "user", Data: json.RawMessage(`{"content":"recent"}`)},
@@ -151,7 +151,7 @@ func TestLightTrimMessages(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "assistant", Data: data},
 			{Type: "user", Data: json.RawMessage(`{"content":"recent1"}`)},
 			{Type: "assistant", Data: json.RawMessage(`{"content":[{"type":"text","text":"recent2"}]}`)},
@@ -180,7 +180,7 @@ func TestLightTrimMessages(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: data},
 			{Type: "assistant", Data: json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)},
 			{Type: "user", Data: json.RawMessage(`{"content":"recent"}`)},
@@ -194,7 +194,7 @@ func TestLightTrimMessages(t *testing.T) {
 	t.Run("noop when all within keepRecent", func(t *testing.T) {
 		t.Parallel()
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: json.RawMessage(`{"content":"hi"}`)},
 		}
 		orig := string(msgs[0].Data)
@@ -205,7 +205,7 @@ func TestLightTrimMessages(t *testing.T) {
 	t.Run("noop with zero maxLen", func(t *testing.T) {
 		t.Parallel()
 
-		msgs := []wireMsg{
+		msgs := []WireMsg{
 			{Type: "user", Data: json.RawMessage(`{"content":"hi"}`)},
 			{Type: "user", Data: json.RawMessage(`{"content":"there"}`)},
 		}
@@ -218,7 +218,7 @@ func TestLightTrimMessages(t *testing.T) {
 func TestEstimateTokens(t *testing.T) {
 	t.Parallel()
 
-	msgs := []wireMsg{
+	msgs := []WireMsg{
 		{Type: "user", Data: json.RawMessage(`{"content":"hello world"}`)},                    // 26 bytes
 		{Type: "assistant", Data: json.RawMessage(`{"content":[{"type":"text","text":""}]}`)}, // 39 bytes
 	}

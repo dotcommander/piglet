@@ -13,17 +13,17 @@ const (
 	reinjectCharsPerTok = 4
 )
 
-// criticalContext holds a re-injectable context item after compaction.
-type criticalContext struct {
+// CriticalContext holds a re-injectable context item after compaction.
+type CriticalContext struct {
 	category string
 	content  string
 }
 
-// gatherCriticalContext reads the memory store for context that should survive compaction.
+// GatherCriticalContext reads the memory store for context that should survive compaction.
 // It collects plan content, recent edits, and other high-value facts.
-func gatherCriticalContext(s *Store) []criticalContext {
-	var items []criticalContext
-	facts := s.List(contextCategory)
+func GatherCriticalContext(s *Store) []CriticalContext {
+	var items []CriticalContext
+	facts := s.List(ContextCategory)
 
 	// Collect recent edits (last 3 by UpdatedAt)
 	editFacts := filterFacts(facts, "ctx:edit:")
@@ -56,7 +56,7 @@ func filterFacts(facts []Fact, prefix string) []Fact {
 }
 
 // appendItems adds up to max items from facts to items, with budget enforcement.
-func appendItems(items []criticalContext, facts []Fact, max int, category string) []criticalContext {
+func appendItems(items []CriticalContext, facts []Fact, max int, category string) []CriticalContext {
 	if len(items) >= reinjectMaxItems {
 		return items
 	}
@@ -80,7 +80,7 @@ func appendItems(items []criticalContext, facts []Fact, max int, category string
 			content = string(runes[:maxChars]) + "..."
 		}
 
-		items = append(items, criticalContext{
+		items = append(items, CriticalContext{
 			category: category,
 			content:  fmt.Sprintf("%s: %s", f.Key, content),
 		})
@@ -91,7 +91,7 @@ func appendItems(items []criticalContext, facts []Fact, max int, category string
 }
 
 // totalTokens estimates the total token count across all items.
-func totalTokens(items []criticalContext) int {
+func totalTokens(items []CriticalContext) int {
 	total := 0
 	for _, item := range items {
 		total += len(item.content) / reinjectCharsPerTok
@@ -99,9 +99,9 @@ func totalTokens(items []criticalContext) int {
 	return total
 }
 
-// buildReinjectMessage formats critical context items into a user message
+// BuildReinjectMessage formats critical context items into a user message
 // to be appended after the compaction summary.
-func buildReinjectMessage(items []criticalContext) string {
+func BuildReinjectMessage(items []CriticalContext) string {
 	if len(items) == 0 {
 		return ""
 	}

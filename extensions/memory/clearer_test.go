@@ -22,9 +22,9 @@ func TestClearOldToolResults_NotEnoughMessages(t *testing.T) {
 	// Build a messages slice shorter than threshold+1 and verify nothing is cleared.
 	threshold := defaultClearTurns
 
-	msgs := make([]wireMsg, threshold+1) // exactly at boundary
+	msgs := make([]WireMsg, threshold+1) // exactly at boundary
 	for i := range msgs {
-		tr := wireToolResult{
+		tr := WireToolResult{
 			ToolCallID: "id",
 			ToolName:   "Read",
 			Content: []struct {
@@ -34,7 +34,7 @@ func TestClearOldToolResults_NotEnoughMessages(t *testing.T) {
 		}
 		data, err := json.Marshal(tr)
 		require.NoError(t, err)
-		msgs[i] = wireMsg{Type: "tool_result", Data: data}
+		msgs[i] = WireMsg{Type: "tool_result", Data: data}
 	}
 	// With exactly threshold+1 messages the condition len(messages) <= threshold+1 is true
 	// so cutoff would be 0 and nothing is cleared.
@@ -45,7 +45,7 @@ func TestClearOldToolResults_NotEnoughMessages(t *testing.T) {
 func TestClearOldToolResults_BelowSizeThreshold(t *testing.T) {
 	t.Parallel()
 	// Build a tool result whose text is below clearSizeThreshold — should not be cleared.
-	tr := wireToolResult{
+	tr := WireToolResult{
 		ToolCallID: "tc1",
 		ToolName:   "Read",
 		Content: []struct {
@@ -69,7 +69,7 @@ func TestClearOldToolResults_BelowSizeThreshold(t *testing.T) {
 func TestClearOldToolResults_AboveSizeThreshold(t *testing.T) {
 	t.Parallel()
 	bigText := largeText(clearSizeThreshold + 100)
-	tr := wireToolResult{
+	tr := WireToolResult{
 		ToolCallID: "tc2",
 		ToolName:   "Bash",
 		Content: []struct {
@@ -92,7 +92,7 @@ func TestClearOldToolResults_AboveSizeThreshold(t *testing.T) {
 
 func TestWireToolResult_RoundTrip(t *testing.T) {
 	t.Parallel()
-	tr := wireToolResult{
+	tr := WireToolResult{
 		ToolCallID: "abc123",
 		ToolName:   "Read",
 		Content: []struct {
@@ -108,7 +108,7 @@ func TestWireToolResult_RoundTrip(t *testing.T) {
 	data, err := json.Marshal(tr)
 	require.NoError(t, err)
 
-	var got wireToolResult
+	var got WireToolResult
 	require.NoError(t, json.Unmarshal(data, &got))
 	assert.Equal(t, tr.ToolCallID, got.ToolCallID)
 	assert.Equal(t, tr.ToolName, got.ToolName)
@@ -119,7 +119,7 @@ func TestWireToolResult_RoundTrip(t *testing.T) {
 
 func TestWireMsg_RoundTrip(t *testing.T) {
 	t.Parallel()
-	tr := wireToolResult{
+	tr := WireToolResult{
 		ToolCallID: "id1",
 		ToolName:   "Bash",
 		Content: []struct {
@@ -130,15 +130,15 @@ func TestWireMsg_RoundTrip(t *testing.T) {
 	trData, err := json.Marshal(tr)
 	require.NoError(t, err)
 
-	msg := wireMsg{Type: "tool_result", Data: trData}
+	msg := WireMsg{Type: "tool_result", Data: trData}
 	msgData, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	var got wireMsg
+	var got WireMsg
 	require.NoError(t, json.Unmarshal(msgData, &got))
 	assert.Equal(t, "tool_result", got.Type)
 
-	var gotTR wireToolResult
+	var gotTR WireToolResult
 	require.NoError(t, json.Unmarshal(got.Data, &gotTR))
 	assert.Equal(t, "Bash", gotTR.ToolName)
 }

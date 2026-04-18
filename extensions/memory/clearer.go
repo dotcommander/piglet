@@ -6,29 +6,20 @@ import (
 	"fmt"
 
 	"github.com/dotcommander/piglet/extensions/internal/xdg"
+	"github.com/dotcommander/piglet/extensions/memory/compact"
 	sdk "github.com/dotcommander/piglet/sdk"
 )
 
 const defaultClearTurns = 3
 const clearSizeThreshold = 4096
 
-// wireMsg wraps a message with a type discriminator for JSON transport.
-// Matches the host's CompactMessage wire format used by ConversationMessages.
-type wireMsg struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
-}
+// WireMsg is an alias for compact.WireMsg — re-exported for backward compatibility
+// with any callers within the memory package that use the name directly.
+type WireMsg = compact.WireMsg
 
-// wireToolResult is the wire representation of a ToolResultMessage.
-type wireToolResult struct {
-	ToolCallID string `json:"toolCallId"`
-	ToolName   string `json:"toolName"`
-	Content    []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	IsError bool `json:"isError"`
-}
+// WireToolResult is an alias for compact.WireToolResult — re-exported for
+// backward compatibility with any callers within the memory package.
+type WireToolResult = compact.WireToolResult
 
 // clearerConfig holds the configurable turn threshold for the micro-compactor.
 type clearerConfig struct {
@@ -71,7 +62,7 @@ func clearOldToolResults(ctx context.Context, x *sdk.Extension, turnThreshold in
 		return 0
 	}
 
-	var messages []wireMsg
+	var messages []WireMsg
 	if err := json.Unmarshal(rawMsgs, &messages); err != nil {
 		return 0
 	}
@@ -89,7 +80,7 @@ func clearOldToolResults(ctx context.Context, x *sdk.Extension, turnThreshold in
 			continue
 		}
 
-		var tr wireToolResult
+		var tr WireToolResult
 		if json.Unmarshal(msg.Data, &tr) != nil {
 			continue
 		}

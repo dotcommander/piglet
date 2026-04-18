@@ -1,14 +1,55 @@
-package memory
+package compact
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
+// mapStorer is a minimal in-memory Storer for tests.
+// Avoids importing extensions/memory to prevent import cycles.
+type mapStorer struct {
+	data map[string]Fact
+}
+
+func newMapStorer() *mapStorer {
+	return &mapStorer{data: make(map[string]Fact)}
+}
+
+func (m *mapStorer) List(category string) []Fact {
+	var out []Fact
+	for _, f := range m.data {
+		if category == "" || f.Category == category {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (m *mapStorer) Set(key, value, category string) error {
+	m.data[key] = Fact{
+		Key:       key,
+		Value:     value,
+		Category:  category,
+		UpdatedAt: time.Now(),
+	}
+	return nil
+}
+
+func (m *mapStorer) Get(key string) (Fact, bool) {
+	f, ok := m.data[key]
+	return f, ok
+}
+
+func (m *mapStorer) Clear() error {
+	m.data = make(map[string]Fact)
+	return nil
+}
+
 func TestCompactNoFacts(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := newMapStorer()
 
 	result := Compact(store)
 	assert.Equal(t, "", result.Summary)
@@ -17,7 +58,7 @@ func TestCompactNoFacts(t *testing.T) {
 
 func TestCompactWithFacts(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := newMapStorer()
 
 	_ = store.Set("ctx:file:/src/main.go", "read, 50 lines", contextCategory)
 	_ = store.Set("ctx:edit:/src/main.go", "added handler", contextCategory)
@@ -32,7 +73,7 @@ func TestCompactWithFacts(t *testing.T) {
 
 func TestWriteSummary(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := newMapStorer()
 
 	WriteSummary(store, "session summary text")
 
@@ -43,7 +84,7 @@ func TestWriteSummary(t *testing.T) {
 
 func TestWriteSummaryEmpty(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := newMapStorer()
 
 	WriteSummary(store, "")
 

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	contextCategory = "_context"
+	ContextCategory = "_context"
 	maxContextFacts = 50
 	pruneCount      = 10
 )
@@ -82,27 +82,27 @@ func (e *Extractor) extractToolResult(tr toolResult) {
 	case "Read":
 		// Extract file path from the result text (first line often has the path)
 		if path := extractFilePath(text); path != "" {
-			_ = e.store.Set("ctx:file:"+path, truncRunes(text, 300), contextCategory)
+			_ = e.store.Set("ctx:file:"+path, truncRunes(text, 300), ContextCategory)
 		}
 	case "Grep", "Glob":
 		if path := extractFilePath(text); path != "" {
-			_ = e.store.Set("ctx:search:"+path, truncRunes(text, 300), contextCategory)
+			_ = e.store.Set("ctx:search:"+path, truncRunes(text, 300), ContextCategory)
 		}
 	case "Edit", "Write":
 		if path := extractFilePath(text); path != "" {
-			_ = e.store.Set("ctx:edit:"+path, truncRunes(text, 200), contextCategory)
+			_ = e.store.Set("ctx:edit:"+path, truncRunes(text, 200), ContextCategory)
 		}
 	case "Bash":
 		key := fmt.Sprintf("ctx:cmd:%d", e.turnNum)
 		if tr.IsError {
 			key = fmt.Sprintf("ctx:error:%d", e.turnNum)
 		}
-		_ = e.store.Set(key, truncRunes(text, 300), contextCategory)
+		_ = e.store.Set(key, truncRunes(text, 300), ContextCategory)
 	default:
 		// For other tools, store a brief record
 		if text != "" {
 			key := fmt.Sprintf("ctx:tool:%s:%d", tr.ToolName, e.turnNum)
-			_ = e.store.Set(key, truncRunes(text, 200), contextCategory)
+			_ = e.store.Set(key, truncRunes(text, 200), ContextCategory)
 		}
 	}
 }
@@ -117,7 +117,7 @@ func (e *Extractor) resultText(tr toolResult) string {
 }
 
 func (e *Extractor) pruneIfNeeded() {
-	facts := e.store.List(contextCategory)
+	facts := e.store.List(ContextCategory)
 	if len(facts) <= maxContextFacts {
 		return
 	}

@@ -31,7 +31,7 @@ func TestExtractorFileRead(t *testing.T) {
 	fact, ok := store.Get("ctx:file:/Users/test/main.go")
 	assert.True(t, ok)
 	assert.Contains(t, fact.Value, "package main")
-	assert.Equal(t, contextCategory, fact.Category)
+	assert.Equal(t, ContextCategory, fact.Category)
 }
 
 func TestExtractorBashError(t *testing.T) {
@@ -54,7 +54,7 @@ func TestExtractorBashError(t *testing.T) {
 
 	require.NoError(t, ext.Extract(data))
 
-	facts := store.List(contextCategory)
+	facts := store.List(ContextCategory)
 	require.Len(t, facts, 1)
 	assert.Contains(t, facts[0].Key, "ctx:error:")
 	assert.Contains(t, facts[0].Value, "undefined Foo")
@@ -81,7 +81,7 @@ func TestExtractorPrune(t *testing.T) {
 		_ = ext.Extract(data)
 	}
 
-	facts := store.List(contextCategory)
+	facts := store.List(ContextCategory)
 	assert.LessOrEqual(t, len(facts), maxContextFacts)
 }
 

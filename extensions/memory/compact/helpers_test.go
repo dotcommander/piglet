@@ -1,4 +1,4 @@
-package memory
+package compact
 
 import (
 	"encoding/json"
@@ -121,7 +121,7 @@ func TestExtractPriorFileLists_FindsTags(t *testing.T) {
 	data, err := json.Marshal(map[string]string{"content": content})
 	require.NoError(t, err)
 
-	msgs := []wireMsg{{Type: "user", Data: data}}
+	msgs := []WireMsg{{Type: "user", Data: data}}
 	read, mod := extractPriorFileLists(msgs)
 
 	assert.Contains(t, read, "foo.go")
@@ -130,12 +130,12 @@ func TestExtractPriorFileLists_FindsTags(t *testing.T) {
 
 func TestExtractPriorFileLists_DedupsAcrossMessages(t *testing.T) {
 	t.Parallel()
-	mk := func(content string) wireMsg {
+	mk := func(content string) WireMsg {
 		data, _ := json.Marshal(map[string]string{"content": content})
-		return wireMsg{Type: "user", Data: data}
+		return WireMsg{Type: "user", Data: data}
 	}
 
-	msgs := []wireMsg{
+	msgs := []WireMsg{
 		mk("<read-files>\na.go\nb.go\n</read-files>"),
 		mk("<read-files>\nb.go\nc.go\n</read-files>"),
 	}
@@ -145,8 +145,8 @@ func TestExtractPriorFileLists_DedupsAcrossMessages(t *testing.T) {
 	assert.Len(t, read, 3)
 }
 
-func makeToolResultMsg(toolName, text string) wireMsg {
-	tr := wireToolResult{
+func makeToolResultMsg(toolName, text string) WireMsg {
+	tr := WireToolResult{
 		ToolName: toolName,
 		Content: []struct {
 			Type string `json:"type"`
@@ -154,15 +154,15 @@ func makeToolResultMsg(toolName, text string) wireMsg {
 		}{{Type: "text", Text: text}},
 	}
 	data, _ := json.Marshal(tr)
-	return wireMsg{Type: "tool_result", Data: data}
+	return WireMsg{Type: "tool_result", Data: data}
 }
 
 func TestTruncateToolResults_NoOp(t *testing.T) {
 	t.Parallel()
-	msgs := []wireMsg{makeToolResultMsg("read", "short")}
+	msgs := []WireMsg{makeToolResultMsg("read", "short")}
 	truncateToolResults(msgs, 2000)
 
-	var tr wireToolResult
+	var tr WireToolResult
 	require.NoError(t, json.Unmarshal(msgs[0].Data, &tr))
 	assert.Equal(t, "short", tr.Content[0].Text)
 }
@@ -173,10 +173,10 @@ func TestTruncateToolResults_Truncates(t *testing.T) {
 	for i := range longText {
 		longText[i] = 'x'
 	}
-	msgs := []wireMsg{makeToolResultMsg("bash", string(longText))}
+	msgs := []WireMsg{makeToolResultMsg("bash", string(longText))}
 	truncateToolResults(msgs, 2000)
 
-	var tr wireToolResult
+	var tr WireToolResult
 	require.NoError(t, json.Unmarshal(msgs[0].Data, &tr))
 	// 2000 runes + truncation suffix
 	assert.Less(t, len([]rune(tr.Content[0].Text)), 2100)
@@ -186,7 +186,7 @@ func TestTruncateToolResults_Truncates(t *testing.T) {
 func TestTruncateToolResults_SkipsNonToolResult(t *testing.T) {
 	t.Parallel()
 	data, _ := json.Marshal(map[string]string{"content": "hello"})
-	msgs := []wireMsg{{Type: "user", Data: data}}
+	msgs := []WireMsg{{Type: "user", Data: data}}
 	// Should not panic or modify
 	truncateToolResults(msgs, 2000)
 	assert.Equal(t, "user", msgs[0].Type)

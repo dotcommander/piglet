@@ -80,12 +80,12 @@ func TestFilterFacts_MixedPrefixes(t *testing.T) {
 func TestTotalTokens_Empty(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, 0, totalTokens(nil))
-	assert.Equal(t, 0, totalTokens([]criticalContext{}))
+	assert.Equal(t, 0, totalTokens([]CriticalContext{}))
 }
 
 func TestTotalTokens_SingleItem(t *testing.T) {
 	t.Parallel()
-	items := []criticalContext{
+	items := []CriticalContext{
 		{category: "recent edits", content: strings.Repeat("x", 40)},
 	}
 	// 40 chars / 4 = 10 tokens
@@ -94,7 +94,7 @@ func TestTotalTokens_SingleItem(t *testing.T) {
 
 func TestTotalTokens_MultipleItems(t *testing.T) {
 	t.Parallel()
-	items := []criticalContext{
+	items := []CriticalContext{
 		{content: strings.Repeat("a", 40)},  // 10 tokens
 		{content: strings.Repeat("b", 80)},  // 20 tokens
 		{content: strings.Repeat("c", 120)}, // 30 tokens
@@ -104,16 +104,16 @@ func TestTotalTokens_MultipleItems(t *testing.T) {
 
 func TestBuildReinjectMessage_Empty(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", buildReinjectMessage(nil))
-	assert.Equal(t, "", buildReinjectMessage([]criticalContext{}))
+	assert.Equal(t, "", BuildReinjectMessage(nil))
+	assert.Equal(t, "", BuildReinjectMessage([]CriticalContext{}))
 }
 
 func TestBuildReinjectMessage_SingleItem(t *testing.T) {
 	t.Parallel()
-	items := []criticalContext{
+	items := []CriticalContext{
 		{category: "recent edits", content: "ctx:edit:main.go: updated handler"},
 	}
-	got := buildReinjectMessage(items)
+	got := BuildReinjectMessage(items)
 	assert.Contains(t, got, "[Post-compact context preservation]")
 	assert.Contains(t, got, "recent edits")
 	assert.Contains(t, got, "ctx:edit:main.go: updated handler")
@@ -121,11 +121,11 @@ func TestBuildReinjectMessage_SingleItem(t *testing.T) {
 
 func TestBuildReinjectMessage_MultipleItems(t *testing.T) {
 	t.Parallel()
-	items := []criticalContext{
+	items := []CriticalContext{
 		{category: "recent edits", content: "ctx:edit:a.go: added func"},
 		{category: "active plan", content: "ctx:plan:1: implement feature"},
 	}
-	got := buildReinjectMessage(items)
+	got := BuildReinjectMessage(items)
 	assert.Contains(t, got, "recent edits")
 	assert.Contains(t, got, "active plan")
 	assert.Contains(t, got, "ctx:edit:a.go")
@@ -135,7 +135,7 @@ func TestBuildReinjectMessage_MultipleItems(t *testing.T) {
 func TestGatherCriticalContext_EmptyStore(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	assert.Empty(t, items)
 }
 
@@ -145,11 +145,11 @@ func TestGatherCriticalContext_WithEditFacts(t *testing.T) {
 
 	base := time.Now().UTC()
 	// Insert directly to avoid file I/O issues in parallel tests
-	s.data["ctx:edit:a.go"] = Fact{Key: "ctx:edit:a.go", Value: "edited a", Category: contextCategory, UpdatedAt: base.Add(1 * time.Second)}
-	s.data["ctx:edit:b.go"] = Fact{Key: "ctx:edit:b.go", Value: "edited b", Category: contextCategory, UpdatedAt: base.Add(2 * time.Second)}
-	s.data["ctx:edit:c.go"] = Fact{Key: "ctx:edit:c.go", Value: "edited c", Category: contextCategory, UpdatedAt: base.Add(3 * time.Second)}
+	s.data["ctx:edit:a.go"] = Fact{Key: "ctx:edit:a.go", Value: "edited a", Category: ContextCategory, UpdatedAt: base.Add(1 * time.Second)}
+	s.data["ctx:edit:b.go"] = Fact{Key: "ctx:edit:b.go", Value: "edited b", Category: ContextCategory, UpdatedAt: base.Add(2 * time.Second)}
+	s.data["ctx:edit:c.go"] = Fact{Key: "ctx:edit:c.go", Value: "edited c", Category: ContextCategory, UpdatedAt: base.Add(3 * time.Second)}
 
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	// appendItems takes up to 3 recent edits
 	assert.LessOrEqual(t, len(items), 3)
 	assert.Greater(t, len(items), 0)
@@ -166,12 +166,12 @@ func TestGatherCriticalContext_RespectMaxItems(t *testing.T) {
 		s.data[key] = Fact{
 			Key:       key,
 			Value:     "edited",
-			Category:  contextCategory,
+			Category:  ContextCategory,
 			UpdatedAt: base.Add(time.Duration(i) * time.Second),
 		}
 	}
 
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	assert.LessOrEqual(t, len(items), reinjectMaxItems)
 }
 
@@ -184,11 +184,11 @@ func TestGatherCriticalContext_ContentTruncated(t *testing.T) {
 	s.data["ctx:edit:big.go"] = Fact{
 		Key:       "ctx:edit:big.go",
 		Value:     longValue,
-		Category:  contextCategory,
+		Category:  ContextCategory,
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	require.NotEmpty(t, items)
 	// Content should be truncated with "..."
 	assert.True(t, strings.HasSuffix(items[0].content, "..."))
@@ -200,11 +200,11 @@ func TestGatherCriticalContext_WithPlanFact(t *testing.T) {
 	s.data["ctx:plan:1"] = Fact{
 		Key:       "ctx:plan:1",
 		Value:     "implement the feature",
-		Category:  contextCategory,
+		Category:  ContextCategory,
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	require.NotEmpty(t, items)
 	found := false
 	for _, item := range items {
@@ -221,11 +221,11 @@ func TestGatherCriticalContext_WithErrorFact(t *testing.T) {
 	s.data["ctx:error:1"] = Fact{
 		Key:       "ctx:error:1",
 		Value:     "undefined: Foo",
-		Category:  contextCategory,
+		Category:  ContextCategory,
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	items := gatherCriticalContext(s)
+	items := GatherCriticalContext(s)
 	require.NotEmpty(t, items)
 	found := false
 	for _, item := range items {

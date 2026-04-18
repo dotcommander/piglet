@@ -1,4 +1,4 @@
-package memory
+package compact
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func defaultCompactConfig() compactConfig {
 // makeCompactHandler returns the SDK compact handler that works with raw JSON messages.
 // It reads facts from the store, optionally refines with an LLM call, and keeps
 // the last keepRecent messages prepended with a summary reference message.
-func makeCompactHandler(ext *sdk.Extension, s *Store) func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+func makeCompactHandler(ext *sdk.Extension, s Storer, reinject ReinjectFunc) func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	cfg := xdg.LoadYAMLExt("memory", "compact.yaml", defaultCompactConfig())
 
 	return func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -44,18 +44,18 @@ func makeCompactHandler(ext *sdk.Extension, s *Store) func(ctx context.Context, 
 
 		applyLightweightPasses(params.Messages, cfg)
 
-		summary := buildSummary(ctx, ext, params.Messages, s, cfg)
+		summary := buildSummary(ctx, ext, params.Messages, s, reinject, cfg)
 
-		return buildCompactWire(params.Messages, s, summary, cfg.KeepRecent)
+		return buildCompactWire(params.Messages, s, summary, reinject, cfg.KeepRecent)
 	}
 }
 
 // parseCompactMessages unmarshals the raw compact payload into its message slice.
 func parseCompactMessages(raw json.RawMessage) (struct {
-	Messages []wireMsg `json:"messages"`
+	Messages []WireMsg `json:"messages"`
 }, error) {
 	var params struct {
-		Messages []wireMsg `json:"messages"`
+		Messages []WireMsg `json:"messages"`
 	}
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return params, fmt.Errorf("unmarshal compact params: %w", err)
@@ -66,7 +66,7 @@ func parseCompactMessages(raw json.RawMessage) (struct {
 // applyLightweightPasses runs the three pre-summarization compaction stages:
 // microcompact old tool results, light-trim long text blocks, and truncate
 // remaining tool results for the summarizer's token budget.
-func applyLightweightPasses(msgs []wireMsg, cfg compactConfig) {
+func applyLightweightPasses(msgs []WireMsg, cfg compactConfig) {
 	microcompactToolResults(msgs, cfg.KeepRecent)
 	lightTrimMessages(msgs, cfg.KeepRecent, cfg.LightTrimMaxLen)
 	truncateToolResults(msgs[:len(msgs)-cfg.KeepRecent], cfg.TruncateToolResult)
@@ -74,7 +74,7 @@ func applyLightweightPasses(msgs []wireMsg, cfg compactConfig) {
 
 // buildSummary gathers facts, merges prior file lists, optionally refines
 // with an LLM call, and persists the result to the store.
-func buildSummary(ctx context.Context, ext *sdk.Extension, msgs []wireMsg, s *Store, cfg compactConfig) string {
+func buildSummary(ctx context.Context, ext *sdk.Extension, msgs []WireMsg, s Storer, reinject ReinjectFunc, cfg compactConfig) string {
 	priorRead, priorModified := extractPriorFileLists(msgs)
 
 	result := Compact(s)
@@ -106,7 +106,7 @@ func refineWithLLM(ctx context.Context, ext *sdk.Extension, summary string) stri
 
 // buildCompactWire assembles the final wire payload: summary reference message,
 // optional post-compact context re-injection, and the kept recent messages.
-func buildCompactWire(msgs []wireMsg, s *Store, summary string, keepRecent int) (json.RawMessage, error) {
+func buildCompactWire(msgs []WireMsg, s Storer, summary string, reinject ReinjectFunc, keepRecent int) (json.RawMessage, error) {
 	ref := buildSummaryReference(summary)
 	summaryData, err := json.Marshal(map[string]any{
 		"role": "user", "content": ref,
@@ -116,16 +116,18 @@ func buildCompactWire(msgs []wireMsg, s *Store, summary string, keepRecent int) 
 	}
 
 	kept := msgs[len(msgs)-keepRecent:]
-	wire := make([]wireMsg, 0, len(kept)+2)
-	wire = append(wire, wireMsg{Type: "user", Data: summaryData})
+	wire := make([]WireMsg, 0, len(kept)+2)
+	wire = append(wire, WireMsg{Type: "user", Data: summaryData})
 
-	reinjectMsg := buildReinjectMessage(gatherCriticalContext(s))
-	if reinjectMsg != "" {
-		reinjectData, err := json.Marshal(map[string]any{
-			"role": "user", "content": reinjectMsg,
-		})
-		if err == nil {
-			wire = append(wire, wireMsg{Type: "user", Data: reinjectData})
+	if reinject != nil {
+		reinjectMsg := reinject(s)
+		if reinjectMsg != "" {
+			reinjectData, err := json.Marshal(map[string]any{
+				"role": "user", "content": reinjectMsg,
+			})
+			if err == nil {
+				wire = append(wire, WireMsg{Type: "user", Data: reinjectData})
+			}
 		}
 	}
 

@@ -2,17 +2,14 @@ package memory
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/dotcommander/piglet/extensions/memory/compact"
 	sdk "github.com/dotcommander/piglet/sdk"
 )
-
-//go:embed defaults/compact-system.md
-var defaultCompactSystem string
 
 // memoryState holds mutable state shared across tool and command handlers.
 type memoryState struct {
@@ -43,11 +40,7 @@ func Register(e *sdk.Extension) {
 			Order:   50,
 		})
 
-		x.RegisterCompactor(sdk.CompactorDef{
-			Name:      "rolling-memory",
-			Threshold: 50000,
-			Compact:   makeCompactHandler(x, s.store),
-		})
+		compact.Register(x, newCompactAdapter(s.store), makeReinjectFn(s.store))
 
 		x.Log("debug", fmt.Sprintf("[memory] OnInit complete (%s)", time.Since(start)))
 	})
@@ -256,4 +249,61 @@ func Register(e *sdk.Extension) {
 			return handleMemoryCommand(e, s, ctx, args)
 		},
 	})
+}
+
+// compactAdapter wraps *Store to satisfy compact.Storer.
+// It converts memory.Fact to compact.Fact at the boundary.
+type compactAdapter struct {
+	store *Store
+}
+
+func newCompactAdapter(s *Store) *compactAdapter {
+	return &compactAdapter{store: s}
+}
+
+func (a *compactAdapter) List(category string) []compact.Fact {
+	facts := a.store.List(category)
+	out := make([]compact.Fact, len(facts))
+	for i, f := range facts {
+		out[i] = compact.Fact{
+			Key:       f.Key,
+			Value:     f.Value,
+			Category:  f.Category,
+			Relations: f.Relations,
+			CreatedAt: f.CreatedAt,
+			UpdatedAt: f.UpdatedAt,
+		}
+	}
+	return out
+}
+
+func (a *compactAdapter) Set(key, value, category string) error {
+	return a.store.Set(key, value, category)
+}
+
+func (a *compactAdapter) Get(key string) (compact.Fact, bool) {
+	f, ok := a.store.Get(key)
+	if !ok {
+		return compact.Fact{}, false
+	}
+	return compact.Fact{
+		Key:       f.Key,
+		Value:     f.Value,
+		Category:  f.Category,
+		Relations: f.Relations,
+		CreatedAt: f.CreatedAt,
+		UpdatedAt: f.UpdatedAt,
+	}, true
+}
+
+func (a *compactAdapter) Clear() error {
+	return a.store.Clear()
+}
+
+// makeReinjectFn returns a ReinjectFunc that uses the memory store's
+// GatherCriticalContext / BuildReinjectMessage logic.
+func makeReinjectFn(s *Store) compact.ReinjectFunc {
+	return func(_ compact.Storer) string {
+		return BuildReinjectMessage(GatherCriticalContext(s))
+	}
 }
