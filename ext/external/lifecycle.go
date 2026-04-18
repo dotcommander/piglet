@@ -22,42 +22,15 @@ func (h *Host) Start(ctx context.Context) error {
 	h.cmd = exec.CommandContext(ctx, bin, args...)
 	h.cmd.Dir = h.manifest.Dir
 
-	// Create anonymous pipe pairs for JSON-RPC (FD 3/4 in child)
-	// Pair 1: host→ext (host writes, child reads on FD 3)
-	extRead, hostWrite, err := os.Pipe()
-	if err != nil {
-		return fmt.Errorf("create host→ext pipe: %w", err)
+	if err := h.connectPipes(); err != nil {
+		return err
 	}
-	// Pair 2: ext→host (child writes on FD 4, host reads)
-	hostRead, extWrite, err := os.Pipe()
-	if err != nil {
-		extRead.Close()
-		hostWrite.Close()
-		return fmt.Errorf("create ext→host pipe: %w", err)
-	}
-
-	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
-	h.cmd.Env = append(os.Environ(), "PIGLET_FD=1")
-	h.cmd.Stdin = nil                                            // extensions don't read stdin
-	h.cmd.Stdout = &logWriter{name: h.manifest.Name + "/stdout"} // capture stray prints
-	h.cmd.Stderr = &logWriter{name: h.manifest.Name}
-
-	h.stdin = hostWrite
-	h.rpcRead = hostRead
-	h.stdout = bufio.NewScanner(hostRead)
-	h.stdout.Buffer(make([]byte, 0, 256*1024), 4*1024*1024)
 
 	if err := h.cmd.Start(); err != nil {
-		hostWrite.Close()
-		hostRead.Close()
-		extRead.Close()
-		extWrite.Close()
+		h.stdin.Close()
+		h.rpcRead.Close()
 		return fmt.Errorf("start %s: %w", h.manifest.Name, err)
 	}
-
-	// Close child-side pipe ends after fork
-	extRead.Close()
-	extWrite.Close()
 
 	// Start reading messages in background
 	go h.readLoop()
@@ -87,6 +60,41 @@ func (h *Host) Start(ctx context.Context) error {
 	}
 
 	slog.Debug("extension initialized", "name", h.manifest.Name, "ext_version", initResult.Version, "elapsed", time.Since(t0).Round(time.Millisecond))
+	return nil
+}
+
+// connectPipes creates two anonymous pipe pairs for JSON-RPC communication
+// (FD 3/4 in the child process), wires them into h.cmd.ExtraFiles, and
+// assigns h.stdin, h.rpcRead, and h.stdout on the host side.
+// The child-side ends are closed after cmd.Start() returns.
+func (h *Host) connectPipes() error {
+	// Pair 1: host→ext (host writes, child reads on FD 3)
+	extRead, hostWrite, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("create host→ext pipe: %w", err)
+	}
+	// Pair 2: ext→host (child writes on FD 4, host reads)
+	hostRead, extWrite, err := os.Pipe()
+	if err != nil {
+		extRead.Close()
+		hostWrite.Close()
+		return fmt.Errorf("create ext→host pipe: %w", err)
+	}
+
+	h.cmd.ExtraFiles = []*os.File{extRead, extWrite} // become FD 3, FD 4
+	h.cmd.Env = append(os.Environ(), "PIGLET_FD=1")
+	h.cmd.Stdin = nil                                            // extensions don't read stdin
+	h.cmd.Stdout = &logWriter{name: h.manifest.Name + "/stdout"} // capture stray prints
+	h.cmd.Stderr = &logWriter{name: h.manifest.Name}
+
+	h.stdin = hostWrite
+	h.rpcRead = hostRead
+	h.stdout = bufio.NewScanner(hostRead)
+	h.stdout.Buffer(make([]byte, 0, 256*1024), 4*1024*1024)
+
+	// Close child-side pipe ends after fork (cmd.Start duplicates them into child)
+	extRead.Close()
+	extWrite.Close()
 	return nil
 }
 
