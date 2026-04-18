@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dotcommander/piglet/extensions/internal/xdg"
@@ -19,21 +20,17 @@ var defaultPrompt string
 
 const pipelinesDir = "pipelines"
 
-// configDir is set during OnInit and used by tool/command handlers.
-var configDir string
+// configDir returns the piglet config directory, resolved once on first call.
+var configDir = sync.OnceValue(func() string {
+	home, _ := xdg.ConfigDir()
+	return home
+})
 
 // Register registers the pipeline extension's tools and commands.
 func Register(e *sdk.Extension) {
 	e.OnInit(func(ext *sdk.Extension) {
 		start := time.Now()
 		ext.Log("debug", "[pipeline] OnInit start")
-
-		home, err := xdg.ConfigDir()
-		if err != nil {
-			ext.Log("debug", fmt.Sprintf("[pipeline] OnInit complete — config dir error (%s)", time.Since(start)))
-			return
-		}
-		configDir = home
 
 		content := xdg.LoadOrCreateExt("pipeline", "prompt.md", strings.TrimSpace(defaultPrompt))
 		if content != "" {
@@ -84,7 +81,7 @@ func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "pipeline_list",
 		Description: "List all saved pipelines in ~/.config/piglet/pipelines/.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -123,7 +120,7 @@ func executePipeline(ctx context.Context, args map[string]any) (*sdk.ToolResult,
 	var p *Pipeline
 
 	if name, ok := args["name"].(string); ok && name != "" {
-		dir := filepath.Join(configDir, pipelinesDir)
+		dir := filepath.Join(configDir(), pipelinesDir)
 		path := filepath.Join(dir, name+".yaml")
 		if _, err := os.Stat(path); err != nil {
 			path = filepath.Join(dir, name+".yml")
@@ -166,7 +163,7 @@ func executePipeline(ctx context.Context, args map[string]any) (*sdk.ToolResult,
 }
 
 func listPipelines() (*sdk.ToolResult, error) {
-	dir := filepath.Join(configDir, pipelinesDir)
+	dir := filepath.Join(configDir(), pipelinesDir)
 	pipes, err := LoadDir(dir)
 	if err != nil {
 		return sdk.ErrorResult(fmt.Sprintf("list pipelines: %s", err)), nil
@@ -224,7 +221,7 @@ func handlePipeCommand(ctx context.Context, e *sdk.Extension, args string) error
 		}
 	}
 
-	dir := filepath.Join(configDir, pipelinesDir)
+	dir := filepath.Join(configDir(), pipelinesDir)
 	path := filepath.Join(dir, name+".yaml")
 	if _, err := os.Stat(path); err != nil {
 		path = filepath.Join(dir, name+".yml")
@@ -279,7 +276,7 @@ func handlePipeNewCommand(e *sdk.Extension, args string) error {
 		return nil
 	}
 
-	dir := filepath.Join(configDir, pipelinesDir)
+	dir := filepath.Join(configDir(), pipelinesDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		e.ShowMessage(fmt.Sprintf("Error creating pipelines dir: %s", err))
 		return nil
