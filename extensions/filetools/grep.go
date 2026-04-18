@@ -1,4 +1,4 @@
-package tool
+package filetools
 
 import (
 	"bufio"
@@ -9,38 +9,39 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
+	sdk "github.com/dotcommander/piglet/sdk"
 )
 
-func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
-	return &ext.ToolDef{
-		ToolSchema: core.ToolSchema{
-			Name:        "grep",
-			Description: "Search file contents using regex. Returns matching lines with file paths and line numbers.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pattern":     map[string]any{"type": "string", "description": "Regex pattern to search for"},
-					"path":        map[string]any{"type": "string", "description": "Directory or file to search (default: cwd)"},
-					"glob":        map[string]any{"type": "string", "description": "File glob filter (e.g. \"*.go\")"},
-					"ignore_case": map[string]any{"type": "boolean", "description": "Case-insensitive search"},
-					"limit":       map[string]any{"type": "integer", "description": "Max matches (default 100)"},
-				},
-				"required": []string{"pattern"},
+const defaultGrepLimit = 100
+
+func registerGrep(e *sdk.Extension) {
+	e.RegisterTool(sdk.ToolDef{
+		Name:        "grep",
+		Description: "Search file contents using regex. Returns matching lines with file paths and line numbers.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern":     map[string]any{"type": "string", "description": "Regex pattern to search for"},
+				"path":        map[string]any{"type": "string", "description": "Directory or file to search (default: cwd)"},
+				"glob":        map[string]any{"type": "string", "description": "File glob filter (e.g. \"*.go\")"},
+				"ignore_case": map[string]any{"type": "boolean", "description": "Case-insensitive search"},
+				"limit":       map[string]any{"type": "integer", "description": "Max matches (default 100)"},
 			},
+			"required": []string{"pattern"},
 		},
-		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
+		PromptHint: "Search file contents with regex",
+		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
 			pattern, _ := args["pattern"].(string)
 			if pattern == "" {
 				return textResult("error: pattern is required"), nil
 			}
 
-			searchPath := stringArg(args, "path", app.CWD())
-			searchPath = resolvePath(app.CWD(), searchPath)
+			cwd := e.CWD()
+			searchPath := stringArg(args, "path", cwd)
+			searchPath = resolvePath(cwd, searchPath)
 			globPattern := stringArg(args, "glob", "")
 			ignoreCase := boolArg(args, "ignore_case", false)
-			limit := intArg(args, "limit", cfg.grepLimit())
+			limit := intArg(args, "limit", defaultGrepLimit)
 
 			if ignoreCase {
 				pattern = "(?i)" + pattern
@@ -105,10 +106,7 @@ func grepTool(app *ext.App, cfg ToolConfig) *ext.ToolDef {
 			}
 			return textResult(b.String()), nil
 		},
-		PromptHint:     "Search file contents with regex",
-		PromptGuides:   []string{"Use glob to filter file types", "Default limit is 100 matches"},
-		BackgroundSafe: true,
-	}
+	})
 }
 
 func grepFile(re *regexp.Regexp, path, displayPath string, limit int, count *int) []string {

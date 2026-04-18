@@ -1,4 +1,4 @@
-package tool
+package filetools
 
 import (
 	"context"
@@ -8,33 +8,32 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
+	sdk "github.com/dotcommander/piglet/sdk"
 )
 
-func findTool(app *ext.App) *ext.ToolDef {
-	return &ext.ToolDef{
-		ToolSchema: core.ToolSchema{
-			Name:        "find",
-			Description: "Find files matching a glob pattern. Returns relative file paths.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pattern": map[string]any{"type": "string", "description": "Glob pattern (e.g. \"**/*.go\", \"*.txt\")"},
-					"path":    map[string]any{"type": "string", "description": "Directory to search (default: cwd)"},
-					"limit":   map[string]any{"type": "integer", "description": "Max results (default 1000)"},
-				},
-				"required": []string{"pattern"},
+func registerFind(e *sdk.Extension) {
+	e.RegisterTool(sdk.ToolDef{
+		Name:        "find",
+		Description: "Find files matching a glob pattern. Returns relative file paths.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern": map[string]any{"type": "string", "description": "Glob pattern (e.g. \"**/*.go\", \"*.txt\")"},
+				"path":    map[string]any{"type": "string", "description": "Directory to search (default: cwd)"},
+				"limit":   map[string]any{"type": "integer", "description": "Max results (default 1000)"},
 			},
+			"required": []string{"pattern"},
 		},
-		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
+		PromptHint: "Find files by glob pattern",
+		Execute: func(ctx context.Context, args map[string]any) (*sdk.ToolResult, error) {
 			pattern, _ := args["pattern"].(string)
 			if pattern == "" {
 				return textResult("error: pattern is required"), nil
 			}
 
-			searchPath := stringArg(args, "path", app.CWD())
-			searchPath = resolvePath(app.CWD(), searchPath)
+			cwd := e.CWD()
+			searchPath := stringArg(args, "path", cwd)
+			searchPath = resolvePath(cwd, searchPath)
 			limit := intArg(args, "limit", 1000)
 
 			info, err := os.Stat(searchPath)
@@ -88,7 +87,5 @@ func findTool(app *ext.App) *ext.ToolDef {
 			}
 			return textResult(b.String()), nil
 		},
-		PromptHint:     "Find files by glob pattern",
-		BackgroundSafe: true,
-	}
+	})
 }

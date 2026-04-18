@@ -43,14 +43,11 @@ func TestRegisterBuiltins(t *testing.T) {
 	app, _ := setupApp(t)
 
 	tools := app.Tools()
-	assert.Len(t, tools, 7)
+	assert.Len(t, tools, 4)
 	assert.Contains(t, tools, "read")
 	assert.Contains(t, tools, "write")
 	assert.Contains(t, tools, "edit")
 	assert.Contains(t, tools, "bash")
-	assert.Contains(t, tools, "grep")
-	assert.Contains(t, tools, "find")
-	assert.Contains(t, tools, "ls")
 }
 
 func TestRead_BasicFile(t *testing.T) {
@@ -189,130 +186,4 @@ func TestBash_Stderr(t *testing.T) {
 	out := execTool(t, app, "bash", map[string]any{"command": "echo err >&2"})
 	assert.Contains(t, out, "STDERR")
 	assert.Contains(t, out, "err")
-}
-
-func TestGrep_FindPattern(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("func main() {\n\tfmt.Println(\"hello\")\n}"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("nothing here"), 0644))
-
-	out := execTool(t, app, "grep", map[string]any{"pattern": "Println"})
-	assert.Contains(t, out, "a.go:2:")
-	assert.Contains(t, out, "Println")
-}
-
-func TestGrep_WithGlob(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("hello world"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("hello world"), 0644))
-
-	out := execTool(t, app, "grep", map[string]any{"pattern": "hello", "glob": "*.go"})
-	assert.Contains(t, out, "a.go")
-	assert.NotContains(t, out, "b.txt")
-}
-
-func TestGrep_NoMatches(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("nothing"), 0644))
-
-	out := execTool(t, app, "grep", map[string]any{"pattern": "xyz123"})
-	assert.Contains(t, out, "no matches")
-}
-
-func TestFind_GlobPattern(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte(""), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte(""), 0644))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "c.go"), []byte(""), 0644))
-
-	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.go"})
-	assert.Contains(t, out, "a.go")
-	assert.Contains(t, out, "c.go")
-	assert.NotContains(t, out, "b.txt")
-}
-
-func TestFind_DoubleStarWithPrefix(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src", "pkg"), 0755))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte(""), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "pkg", "util.go"), []byte(""), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "docs", "readme.go"), []byte(""), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "root.go"), []byte(""), 0644))
-
-	out := execTool(t, app, "find", map[string]any{"pattern": "src/**/*.go"})
-	assert.Contains(t, out, "main.go")
-	assert.Contains(t, out, "util.go")
-	assert.NotContains(t, out, "readme.go", "should not match files outside src/")
-	assert.NotContains(t, out, "root.go", "should not match files outside src/")
-}
-
-func TestFind_SkipsHiddenDirs(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "objects", "abc.go"), []byte(""), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "real.go"), []byte(""), 0644))
-
-	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.go"})
-	assert.Contains(t, out, "real.go")
-	assert.NotContains(t, out, "abc.go", "should skip .git directory")
-}
-
-func TestFind_NoResults(t *testing.T) {
-	t.Parallel()
-	app, _ := setupApp(t)
-
-	out := execTool(t, app, "find", map[string]any{"pattern": "**/*.xyz"})
-	assert.Contains(t, out, "no files found")
-}
-
-func TestLs_Directory(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("content"), 0644))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
-
-	out := execTool(t, app, "ls", map[string]any{})
-	assert.Contains(t, out, "file.txt")
-	assert.Contains(t, out, "subdir/")
-}
-
-func TestLs_EmptyDir(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	empty := filepath.Join(dir, "empty")
-	require.NoError(t, os.MkdirAll(empty, 0755))
-
-	out := execTool(t, app, "ls", map[string]any{"path": empty})
-	assert.Contains(t, out, "empty directory")
-}
-
-func TestGrep_UTF8Truncation(t *testing.T) {
-	t.Parallel()
-	app, dir := setupApp(t)
-
-	// 201 Japanese Hiragana characters (3 bytes each in UTF-8 = 603 bytes).
-	// Grep truncates at 200 runes — output should not corrupt characters.
-	longLine := strings.Repeat("あ", 201)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "utf8.txt"), []byte(longLine), 0644))
-
-	out := execTool(t, app, "grep", map[string]any{"pattern": "あ"})
-	assert.Contains(t, out, "utf8.txt:1:")
-	// Verify no partial byte sequences in output — each あ should be intact.
-	assert.NotContains(t, out, "\ufffd", "output should not contain replacement characters")
 }

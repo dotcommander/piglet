@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dotcommander/piglet/extensions/filetools"
 	"github.com/dotcommander/piglet/extensions/fossil"
 	"github.com/dotcommander/piglet/extensions/lsp"
 	"github.com/dotcommander/piglet/extensions/packs/internal/safety"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	e := sdk.New("pack-code", "0.1.0")
+	safety.Register(e, "filetools", filetools.Register)
 	safety.Register(e, "lsp", lsp.Register)
 	safety.Register(e, "repomap", repomap.Register)
 	safety.Register(e, "sift", sift.Register)

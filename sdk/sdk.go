@@ -63,6 +63,14 @@ func New(name, version string) *Extension {
 // CWD returns the working directory provided by the host during initialization.
 func (e *Extension) CWD() string { return e.cwd }
 
+// SetCWD sets the working directory. Intended for tests and standalone use;
+// in normal operation the host sets this via the initialize handshake.
+func (e *Extension) SetCWD(dir string) { e.cwd = dir }
+
+// Tool returns the ToolDef registered under name, or nil if not found.
+// Primarily useful for tests that want to invoke a tool's Execute function directly.
+func (e *Extension) Tool(name string) *ToolDef { return e.tools[name] }
+
 // ConfigDir returns the extension's namespaced config directory path,
 // as provided by the host during initialization.
 // Returns empty string if the host did not provide it.

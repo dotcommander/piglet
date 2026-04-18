@@ -25,7 +25,6 @@ func registerBuiltins(app *ext.App, rt *runtime) {
 		MaxStderr:      rt.settings.Bash.MaxStderr,
 	}, tool.ToolConfig{
 		ReadLimit: rt.settings.Tools.ReadLimit,
-		GrepLimit: rt.settings.Tools.GrepLimit,
 	})
 	command.RegisterBuiltins(app, rt.settings.Shortcuts, resolveVersion())
 
