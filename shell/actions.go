@@ -18,8 +18,10 @@ func (s *Shell) drainActions() {
 	}
 
 	for _, action := range s.app.PendingActions() {
+		if s.drainUIActions(action) {
+			continue
+		}
 		switch act := action.(type) {
-		// --- Shell handles internally ---
 		case ext.ActionSetSessionTitle:
 			s.mu.Lock()
 			sess := s.session
@@ -69,44 +71,62 @@ func (s *Shell) drainActions() {
 			s.quitting = true
 			s.mu.Unlock()
 			s.notify(Notification{Kind: NotifyQuit})
-
-		// --- Surfaced to frontend ---
-		case ext.ActionShowMessage:
-			s.notify(Notification{Kind: NotifyMessage, Text: act.Text, Action: act})
-
-		case ext.ActionNotify:
-			kind := NotifyMessage
-			switch act.Level {
-			case "warn":
-				kind = NotifyWarn
-			case "error":
-				kind = NotifyError
-			}
-			s.notify(Notification{Kind: kind, Text: act.Message, Action: act})
-
-		case ext.ActionSetStatus:
-			s.notify(Notification{Kind: NotifyStatus, Key: act.Key, Text: act.Text, Action: act})
-
-		case ext.ActionShowPicker:
-			s.notify(Notification{Kind: NotifyPicker, Action: act})
-
-		case ext.ActionAttachImage:
-			s.notify(Notification{Kind: NotifyImage, Action: act})
-
-		case ext.ActionDetachImage:
-			s.notify(Notification{Kind: NotifyImage, Action: act})
-
-		case ext.ActionSetWidget:
-			s.notify(Notification{Kind: NotifyWidget, Key: act.Key, Action: act})
-
-		case ext.ActionShowOverlay:
-			s.notify(Notification{Kind: NotifyOverlay, Key: act.Key, Action: act})
-
-		case ext.ActionCloseOverlay:
-			s.notify(Notification{Kind: NotifyOverlay, Key: act.Key, Action: act})
-
-		case ext.ActionExec:
-			s.notify(Notification{Kind: NotifyExec, Action: act})
 		}
+	}
+}
+
+// drainUIActions handles the 10 frontend-visible action cases. It returns true
+// if the action was handled, false if it should fall through to drainActions.
+func (s *Shell) drainUIActions(action ext.Action) bool {
+	switch act := action.(type) {
+	case ext.ActionShowMessage:
+		s.notify(Notification{Kind: NotifyMessage, Text: act.Text, Action: act})
+		return true
+
+	case ext.ActionNotify:
+		kind := NotifyMessage
+		switch act.Level {
+		case "warn":
+			kind = NotifyWarn
+		case "error":
+			kind = NotifyError
+		}
+		s.notify(Notification{Kind: kind, Text: act.Message, Action: act})
+		return true
+
+	case ext.ActionSetStatus:
+		s.notify(Notification{Kind: NotifyStatus, Key: act.Key, Text: act.Text, Action: act})
+		return true
+
+	case ext.ActionShowPicker:
+		s.notify(Notification{Kind: NotifyPicker, Action: act})
+		return true
+
+	case ext.ActionAttachImage:
+		s.notify(Notification{Kind: NotifyImage, Action: act})
+		return true
+
+	case ext.ActionDetachImage:
+		s.notify(Notification{Kind: NotifyImage, Action: act})
+		return true
+
+	case ext.ActionSetWidget:
+		s.notify(Notification{Kind: NotifyWidget, Key: act.Key, Action: act})
+		return true
+
+	case ext.ActionShowOverlay:
+		s.notify(Notification{Kind: NotifyOverlay, Key: act.Key, Action: act})
+		return true
+
+	case ext.ActionCloseOverlay:
+		s.notify(Notification{Kind: NotifyOverlay, Key: act.Key, Action: act})
+		return true
+
+	case ext.ActionExec:
+		s.notify(Notification{Kind: NotifyExec, Action: act})
+		return true
+
+	default:
+		return false
 	}
 }
