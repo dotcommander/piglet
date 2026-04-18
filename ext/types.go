@@ -4,6 +4,7 @@ package ext
 
 import (
 	"context"
+
 	"github.com/dotcommander/piglet/core"
 )
 
@@ -117,39 +118,6 @@ type Compactor struct {
 	Threshold int // token threshold for auto-compact; 0 = use config default
 	Compact   func(ctx context.Context, messages []core.Message) ([]core.Message, error)
 }
-
-// ---------------------------------------------------------------------------
-// Status sections
-// ---------------------------------------------------------------------------
-
-// StatusSide determines which side of the status bar a section appears on.
-type StatusSide int
-
-const (
-	StatusLeft StatusSide = iota
-	StatusRight
-)
-
-// StatusSection defines an extensible status bar segment.
-// Register via App.RegisterStatusSection. The TUI renders all registered
-// sections sorted by Order within each side (left/right).
-type StatusSection struct {
-	Key   string     // unique key (e.g. "model", "tokens", "cost")
-	Side  StatusSide // left or right side of status bar
-	Order int        // lower = rendered first within the side
-}
-
-// Built-in status section keys.
-const (
-	StatusKeyApp          = "app"
-	StatusKeyModel        = "model"
-	StatusKeyMouse        = "mouse"
-	StatusKeyBg           = "bg"
-	StatusKeyTokens       = "tokens"
-	StatusKeyCost         = "cost"
-	StatusKeyQueue        = "queue"
-	StatusKeyPromptBudget = "prompt-budget"
-)
 
 // ---------------------------------------------------------------------------
 // Steer disposition
