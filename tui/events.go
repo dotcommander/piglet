@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -8,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/shell"
 )
@@ -73,7 +75,8 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, systemNote(fmt.Sprintf("Stopped: max turns reached (%d)", e.Max)))
 
 	case core.EventRetry:
-		m.messages = append(m.messages, systemNote(fmt.Sprintf("Retrying (%d/%d): %s", e.Attempt, e.Max, e.Error)))
+		// e.Error is a string — wrap for classification so errfmt can augment retry errors with hints.
+		m.messages = append(m.messages, systemNote(fmt.Sprintf("Retrying (%d/%d): %s", e.Attempt, e.Max, errfmt.FormatForDisplay(errors.New(e.Error)))))
 
 	case core.EventCompact:
 		m.messages = append(m.messages, systemNote(fmt.Sprintf("Context compacted: %d → %d messages", e.Before, e.After)))

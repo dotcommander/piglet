@@ -98,7 +98,7 @@ func (b *BaseProvider) DoHTTPRequest(ctx context.Context, url string, body []byt
 			if IsLoopbackURL(b.Model.BaseURL) {
 				return nil, fmt.Errorf("%s: local server requires authentication. Check your server config.", resp.Status)
 			}
-			return nil, fmt.Errorf("%w\n\nSet your API key: export %s=<key>\nOr add to ~/.config/piglet/auth.json", err, envKeyForProvider(b.Model.Provider))
+			return nil, fmt.Errorf("%w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			if d := parseRetryAfter(resp.Header.Get("Retry-After")); d > 0 {

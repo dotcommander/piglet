@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -144,7 +145,7 @@ func (s *Shell) runCommand(name, args string) Response {
 	}
 
 	if err := cmd.Handler(args, s.app); err != nil {
-		s.notify(Notification{Kind: NotifyError, Text: "Command error: " + err.Error()})
+		s.notify(Notification{Kind: NotifyError, Text: "Command error: " + errfmt.FormatForDisplay(err)})
 		return Response{Kind: ResponseCommand}
 	}
 

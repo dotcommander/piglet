@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/shell"
@@ -68,7 +69,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.notifyAndTick("Extensions loading, try again in a moment"), notifyCmd)
 
 	case shell.ResponseError:
-		return m, tea.Batch(m.notifyAndTick(resp.Error.Error()), notifyCmd)
+		return m, tea.Batch(m.notifyAndTick(errfmt.FormatForDisplay(resp.Error)), notifyCmd)
 	}
 
 	return m, notifyCmd
