@@ -15,8 +15,10 @@ type ToolExecuteParams struct {
 
 // ToolExecuteResult is the extension's response.
 type ToolExecuteResult struct {
-	Content []ContentBlock `json:"content"`
-	IsError bool           `json:"isError,omitempty"`
+	Content   []ContentBlock `json:"content"`
+	IsError   bool           `json:"isError,omitempty"`
+	ErrorCode string         `json:"errorCode,omitempty"` // machine-readable code; empty on success
+	ErrorHint string         `json:"errorHint,omitempty"` // actionable hint; empty if not applicable
 }
 
 // ContentBlock is a simplified content block for the wire protocol.

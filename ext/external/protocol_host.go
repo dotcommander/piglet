@@ -37,8 +37,10 @@ type HostExecuteToolParams struct {
 
 // HostExecuteToolResult is the host's response.
 type HostExecuteToolResult struct {
-	Content []ContentBlock `json:"content"`
-	IsError bool           `json:"isError,omitempty"`
+	Content   []ContentBlock `json:"content"`
+	IsError   bool           `json:"isError,omitempty"`
+	ErrorCode string         `json:"errorCode,omitempty"` // machine-readable code (e.g. "FILE_STALE"); empty on success
+	ErrorHint string         `json:"errorHint,omitempty"` // actionable hint; empty if not applicable
 }
 
 // ---------------------------------------------------------------------------

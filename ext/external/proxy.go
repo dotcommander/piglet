@@ -20,7 +20,9 @@ func proxyToolExecute(h *Host, toolName string) core.ToolExecuteFn {
 			return nil, fmt.Errorf("ext %s tool %s: %w", h.Name(), toolName, err)
 		}
 
-		return &core.ToolResult{Content: wireToCore(result.Content)}, nil
+		content := wireToCore(result.Content)
+		content = ensureCodedErrorPrefix(content, result.ErrorCode, result.ErrorHint)
+		return &core.ToolResult{Content: content}, nil
 	}
 }
 
