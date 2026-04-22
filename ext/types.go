@@ -241,6 +241,18 @@ type LLMSnapshot struct {
 	Tools    []core.ToolSchema // available tool schemas
 }
 
+// SessionStats aggregates usage metrics across the current conversation.
+// Computed on-demand by iterating AssistantMessage.Usage fields.
+type SessionStats struct {
+	TurnCount             int     `json:"turnCount"`
+	TotalInputTokens      int     `json:"totalInputTokens"`
+	TotalOutputTokens     int     `json:"totalOutputTokens"`
+	TotalCacheReadTokens  int     `json:"totalCacheReadTokens"`
+	TotalCacheWriteTokens int     `json:"totalCacheWriteTokens"`
+	TotalCost             float64 `json:"totalCost"`
+	Model                 string  `json:"model"`
+}
+
 // ExtInfo describes a loaded extension for /extensions listing.
 type ExtInfo struct {
 	Name              string   // human-readable name

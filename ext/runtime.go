@@ -213,6 +213,25 @@ func (a *App) IsBackgroundRunning() bool {
 	return false
 }
 
+// SessionStats aggregates usage across assistant messages in the current
+// conversation. Model is the currently-active model ID.
+func (a *App) SessionStats() SessionStats {
+	msgs := a.ConversationMessages()
+	var s SessionStats
+	for _, m := range msgs {
+		if am, ok := m.(*core.AssistantMessage); ok {
+			s.TurnCount++
+			s.TotalInputTokens += am.Usage.InputTokens
+			s.TotalOutputTokens += am.Usage.OutputTokens
+			s.TotalCacheReadTokens += am.Usage.CacheReadTokens
+			s.TotalCacheWriteTokens += am.Usage.CacheWriteTokens
+			s.TotalCost += am.Usage.Cost
+		}
+	}
+	s.Model = a.CurrentModelID()
+	return s
+}
+
 // ConversationMessages returns a snapshot of the conversation history.
 func (a *App) ConversationMessages() []core.Message {
 	a.mu.RLock()

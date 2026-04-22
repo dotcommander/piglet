@@ -150,6 +150,24 @@ func (e *Extension) SessionFullTree(ctx context.Context) ([]TreeNode, error) {
 	return r.Nodes, nil
 }
 
+// SessionStats aggregates usage metrics across the current conversation:
+// turn count, token totals (input/output/cache), cost, and the currently-active
+// model ID. Computed on-demand from AssistantMessage.Usage fields.
+type SessionStats struct {
+	TurnCount             int     `json:"turnCount"`
+	TotalInputTokens      int     `json:"totalInputTokens"`
+	TotalOutputTokens     int     `json:"totalOutputTokens"`
+	TotalCacheReadTokens  int     `json:"totalCacheReadTokens"`
+	TotalCacheWriteTokens int     `json:"totalCacheWriteTokens"`
+	TotalCost             float64 `json:"totalCost"`
+	Model                 string  `json:"model"`
+}
+
+// SessionStats returns aggregated usage metrics for the current session.
+func (e *Extension) SessionStats(ctx context.Context) (SessionStats, error) {
+	return hostCall[SessionStats](e, ctx, "host/sessionStats", struct{}{})
+}
+
 // SessionTitle returns the current session's title (empty if unset).
 func (e *Extension) SessionTitle(ctx context.Context) (string, error) {
 	type resp struct {

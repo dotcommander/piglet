@@ -57,6 +57,7 @@ const (
 	MethodHostSessionEntryInfos       = "host/sessionEntryInfos"
 	MethodHostSessionFullTree         = "host/sessionFullTree"
 	MethodHostSessionTitle            = "host/sessionTitle"
+	MethodHostSessionStats            = "host/sessionStats"
 	MethodHostShowPicker              = "host/showPicker"
 	MethodHostAvailableModels         = "host/availableModels"
 	MethodHostSwitchModel             = "host/switchModel"

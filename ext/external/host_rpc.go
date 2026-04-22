@@ -325,6 +325,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostSessionFullTree(msg)
 	case MethodHostSessionTitle:
 		h.handleHostSessionTitle(msg)
+	case MethodHostSessionStats:
+		h.handleHostSessionStats(msg)
 	case MethodHostShowPicker:
 		h.handleHostShowPicker(msg)
 	case MethodHostAvailableModels:

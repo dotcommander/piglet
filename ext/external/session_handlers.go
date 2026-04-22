@@ -189,6 +189,13 @@ func (h *Host) handleHostSessionTitle(msg *Message) {
 	h.respond(*msg.ID, HostSessionTitleResult{Title: h.app.SessionTitle()})
 }
 
+func (h *Host) handleHostSessionStats(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	h.respond(*msg.ID, h.app.SessionStats())
+}
+
 func (h *Host) handleHostToggleStepMode(msg *Message) {
 	if !h.requireApp(msg) {
 		return
