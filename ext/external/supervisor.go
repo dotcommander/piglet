@@ -152,14 +152,14 @@ func (s *Supervisor) watch(ctx context.Context) {
 					slog.Error("extension restart limit reached",
 						"name", s.manifest.Name,
 						"attempts", failures)
-					s.app.Notify(s.manifest.Name + " crashed and could not be restarted")
+					s.app.NotifyError(s.manifest.Name + " crashed and could not be restarted")
 					return
 				}
 				slog.Warn("extension crashed, restarting",
 					"name", s.manifest.Name,
 					"attempt", failures,
 					"backoff", backoff)
-				s.app.Notify(s.manifest.Name + " crashed, restarting...")
+				s.app.NotifyWarn(s.manifest.Name + " crashed, restarting...")
 			} else {
 				slog.Info("extension reloading", "name", s.manifest.Name)
 				s.app.Notify("Reloading " + s.manifest.Name + "...")
@@ -186,7 +186,7 @@ func (s *Supervisor) watch(ctx context.Context) {
 
 		if err := s.restart(ctx, crash); err != nil {
 			if !crash {
-				s.app.Notify(s.manifest.Name + " reload failed: " + err.Error())
+				s.app.NotifyError(s.manifest.Name + " reload failed: " + err.Error())
 			}
 			s.mu.Lock()
 			s.host = nil
