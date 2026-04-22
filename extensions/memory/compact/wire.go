@@ -1,6 +1,8 @@
 package compact
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // WireMsg wraps a message with a type discriminator for JSON transport.
 // Matches the host's CompactMessage wire format used by ConversationMessages.
@@ -20,4 +22,12 @@ type WireToolResult struct {
 		Text string `json:"text"`
 	} `json:"content"`
 	IsError bool `json:"isError"`
+}
+
+// encodeAllMessages marshals messages as the compact-wire shape with no summary,
+// preserving the full message list post-trim.
+func encodeAllMessages(msgs []WireMsg) (json.RawMessage, error) {
+	return json.Marshal(struct {
+		Messages []WireMsg `json:"messages"`
+	}{Messages: msgs})
 }

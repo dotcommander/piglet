@@ -12,10 +12,11 @@ import (
 
 // compactConfig holds configurable parameters for the compaction handler.
 type compactConfig struct {
-	KeepRecent         int `yaml:"keep_recent"`
-	TruncateToolResult int `yaml:"truncate_tool_result"`
-	LightTrimMaxLen    int `yaml:"light_trim_max_len"`
-	SkipLLMThreshold   int `yaml:"skip_llm_threshold"`
+	KeepRecent          int `yaml:"keep_recent"`
+	TruncateToolResult  int `yaml:"truncate_tool_result"`
+	LightTrimMaxLen     int `yaml:"light_trim_max_len"`
+	SkipLLMThreshold    int `yaml:"skip_llm_threshold"`
+	SufficientAfterTrim int `yaml:"sufficient_after_trim"`
 }
 
 func defaultCompactConfig() compactConfig {
@@ -43,6 +44,12 @@ func makeCompactHandler(ext *sdk.Extension, s Storer, reinject ReinjectFunc) fun
 		}
 
 		applyLightweightPasses(params.Messages, cfg)
+
+		if cfg.SufficientAfterTrim > 0 && estimateTokens(params.Messages) <= cfg.SufficientAfterTrim {
+			// Lightweight trim brought tokens below the configured threshold —
+			// skip LLM summary and return all messages (post-trim) unchanged.
+			return encodeAllMessages(params.Messages)
+		}
 
 		summary := buildSummary(ctx, ext, params.Messages, s, reinject, cfg)
 
