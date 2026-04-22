@@ -53,8 +53,8 @@ func printHelp() {
 	p("  /help       All commands            Ctrl+C  Stop / quit\n")
 	p("  /model      Switch model            Ctrl+P  Model selector\n")
 	p("  /session    Switch session          Ctrl+S  Session picker\n")
-	p("  /compact    Compress history        Ctrl+M  Toggle mouse\n")
-	p("  /clear      Reset conversation      Ctrl+Z  Suspend\n\n")
+	p("  /update     Self-update             Ctrl+M  Toggle mouse\n")
+	p("  /mouse      Toggle mouse capture    Ctrl+Z  Suspend\n\n")
 
 	p("%s  ~/.config/piglet/\n", heading.Render("CONFIG"))
 	p("  config.yaml    Settings             auth.json      API keys\n")
