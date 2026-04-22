@@ -24,12 +24,13 @@ import (
 // Entries form a tree via ID/ParentID linking. A leaf pointer tracks the current
 // position; Messages() walks from leaf to root to build the active branch.
 type Session struct {
-	mu   sync.RWMutex
-	dir  string
-	id   string
-	path string
-	file *os.File
-	meta Meta
+	mu       sync.RWMutex
+	dir      string
+	id       string
+	path     string
+	lockPath string // <path>.lock — sidecar for inter-process flock
+	file     *os.File
+	meta     Meta
 
 	nodes  map[string]*node  // id -> node
 	labels map[string]string // targetID -> label (last-write-wins)
@@ -59,13 +60,14 @@ func New(dir, cwd string) (*Session, error) {
 	}
 
 	s := &Session{
-		dir:    dir,
-		id:     id,
-		path:   path,
-		file:   f,
-		meta:   meta,
-		nodes:  make(map[string]*node),
-		labels: make(map[string]string),
+		dir:      dir,
+		id:       id,
+		path:     path,
+		lockPath: path + ".lock",
+		file:     f,
+		meta:     meta,
+		nodes:    make(map[string]*node),
+		labels:   make(map[string]string),
 	}
 
 	data, err := marshalJSON(meta)
@@ -95,10 +97,11 @@ func Open(path string) (*Session, error) {
 	defer f.Close()
 
 	s := &Session{
-		dir:    filepath.Dir(path),
-		path:   path,
-		nodes:  make(map[string]*node),
-		labels: make(map[string]string),
+		dir:      filepath.Dir(path),
+		path:     path,
+		lockPath: path + ".lock",
+		nodes:    make(map[string]*node),
+		labels:   make(map[string]string),
 	}
 
 	scanner := bufio.NewScanner(f)

@@ -141,7 +141,7 @@ func (s *Session) commitNode(typ string, data json.RawMessage, n *node) (string,
 		Timestamp: time.Now(),
 		Data:      data,
 	}
-	if err := s.appendEntry(entry); err != nil {
+	if err := s.withFileLock(func() error { return s.appendEntry(entry) }); err != nil {
 		return "", err
 	}
 	n.parentID = s.leafID
@@ -161,10 +161,12 @@ func (s *Session) SetTitle(title string) error {
 	if err != nil {
 		return err
 	}
-	return s.appendEntry(Entry{
-		Type:      entryTypeMeta,
-		Timestamp: time.Now(),
-		Data:      data,
+	return s.withFileLock(func() error {
+		return s.appendEntry(Entry{
+			Type:      entryTypeMeta,
+			Timestamp: time.Now(),
+			Data:      data,
+		})
 	})
 }
 
@@ -178,10 +180,12 @@ func (s *Session) SetModel(model string) error {
 	if err != nil {
 		return err
 	}
-	return s.appendEntry(Entry{
-		Type:      entryTypeMeta,
-		Timestamp: time.Now(),
-		Data:      data,
+	return s.withFileLock(func() error {
+		return s.appendEntry(Entry{
+			Type:      entryTypeMeta,
+			Timestamp: time.Now(),
+			Data:      data,
+		})
 	})
 }
 
@@ -229,4 +233,16 @@ func (s *Session) Fork(keepMessages int) (*Session, error) {
 	}
 
 	return newSess, nil
+}
+
+// withFileLock acquires the inter-process write lock and calls fn.
+// s.mu must be held by the caller before invoking withFileLock.
+// Lock ordering: in-process mutex → file lock (coarse to fine).
+func (s *Session) withFileLock(fn func() error) error {
+	lk, err := acquireLock(s.lockPath)
+	if err != nil {
+		return fmt.Errorf("session lock: %w", err)
+	}
+	defer lk.release()
+	return fn()
 }

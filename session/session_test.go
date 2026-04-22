@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -970,4 +971,47 @@ func TestCompactMultiple(t *testing.T) {
 	require.Len(t, msgs, 2)
 	assert.Equal(t, "compact2", msgs[0].(*core.UserMessage).Content)
 	assert.Equal(t, "final", msgs[1].(*core.UserMessage).Content)
+}
+
+// TestConcurrentWriteLock verifies that 20 concurrent goroutines each appending
+// 10 messages produce exactly 200 messages with no lost writes or corruption.
+// The -race flag catches any in-process data races; the file lock ensures the
+// JSONL file is not interleaved on disk.
+func TestConcurrentWriteLock(t *testing.T) {
+	t.Parallel()
+
+	const goroutines = 20
+	const appendsPerGoroutine = 10
+	const total = goroutines * appendsPerGoroutine
+
+	dir := t.TempDir()
+	s, err := session.New(dir, "/tmp")
+	require.NoError(t, err)
+	path := s.Path()
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			for j := range appendsPerGoroutine {
+				msg := &core.UserMessage{
+					Content:   fmt.Sprintf("g%d-m%d", i, j),
+					Timestamp: time.Now(),
+				}
+				require.NoError(t, s.Append(msg))
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	require.NoError(t, s.Close())
+
+	// Reload from disk and assert zero corruption.
+	s2, err := session.Open(path)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	msgs := s2.Messages()
+	assert.Len(t, msgs, total, "expected %d messages, got %d — lost writes or corruption", total, len(msgs))
 }
