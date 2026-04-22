@@ -15,14 +15,6 @@ func (s *Shell) Commands() map[string]*ext.Command {
 	return s.app.Commands()
 }
 
-// CommandNames returns sorted slash command names.
-func (s *Shell) CommandNames() []string {
-	if s.app == nil {
-		return nil
-	}
-	return slices.Sorted(maps.Keys(s.app.Commands()))
-}
-
 // CommandDesc holds a command name and its one-line description for autocomplete.
 type CommandDesc struct {
 	Name        string
