@@ -175,6 +175,12 @@ func (e *Extension) AppendCustomMessage(ctx context.Context, role, content strin
 	})
 }
 
+// WaitForIdle blocks until the agent has finished its current turn and is idle,
+// or until ctx is cancelled. Returns ctx.Err() on cancellation.
+func (e *Extension) WaitForIdle(ctx context.Context) error {
+	return hostCallVoid(e, ctx, "host/waitForIdle", nil)
+}
+
 // SetLabel sets or clears a bookmark label on a session entry.
 // An empty label clears the bookmark.
 func (e *Extension) SetLabel(ctx context.Context, targetID, label string) error {

@@ -50,6 +50,7 @@ const (
 	MethodHostLastAssistantText       = "host/lastAssistantText"
 	MethodHostAppendSessionEntry      = "host/appendSessionEntry"
 	MethodHostAppendCustomMessage     = "host/appendCustomMessage"
+	MethodHostWaitForIdle             = "host/waitForIdle"
 	MethodHostSetLabel                = "host/setLabel"
 	MethodHostBranchSession           = "host/branchSession"
 	MethodHostBranchSessionSummary    = "host/branchSessionWithSummary"

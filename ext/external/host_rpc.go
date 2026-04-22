@@ -307,6 +307,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostAppendSessionEntry(msg)
 	case MethodHostAppendCustomMessage:
 		h.handleHostAppendCustomMessage(msg)
+	case MethodHostWaitForIdle:
+		go h.handleHostWaitForIdle(msg) // may block until agent is idle
 	case MethodHostSetLabel:
 		h.handleHostSetLabel(msg)
 	case MethodHostBranchSession:

@@ -240,6 +240,21 @@ func (h *Host) handleHostTriggerCompact(msg *Message) {
 	h.respond(*msg.ID, HostTriggerCompactResult{Before: before, After: len(compacted)})
 }
 
+// handleHostWaitForIdle blocks until the agent is idle or the host context is
+// cancelled. No host-side timeout — the extension's request ctx governs; if the
+// extension wants a deadline, it passes one on its side. Wrapping with
+// hostRequestTimeout (5m) would cap legitimate long turns at 5 minutes.
+func (h *Host) handleHostWaitForIdle(msg *Message) {
+	if !h.requireApp(msg) {
+		return
+	}
+	if err := h.app.WaitForIdle(h.ctx); err != nil {
+		h.respondError(*msg.ID, -32603, "wait for idle: "+err.Error())
+		return
+	}
+	h.respond(*msg.ID, struct{}{})
+}
+
 func (h *Host) handleHostShowPicker(msg *Message) {
 	var params HostShowPickerParams
 	if !h.decodeParams(msg, &params) {
