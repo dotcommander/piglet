@@ -112,16 +112,10 @@ func (e *Extension) SendProviderDelta(requestID int, deltaType string, index int
 // Initialization hooks
 // ---------------------------------------------------------------------------
 
-// OnInit sets a callback that runs after the host sends initialize (CWD is available)
-// but before registrations are sent. Use this for lazy initialization that needs CWD.
+// OnInit registers an initialization callback that runs after the host sends initialize
+// (CWD is available) but before registrations are sent. Multiple calls chain — later
+// callbacks run after earlier ones. Equivalent to OnInitAppend.
 func (e *Extension) OnInit(fn func(e *Extension)) {
-	e.onInit = fn
-}
-
-// OnInitAppend chains an additional initialization function. Unlike OnInit which
-// replaces the callback, OnInitAppend appends to the existing chain. Used by
-// extension packs that compose multiple logical extensions into one binary.
-func (e *Extension) OnInitAppend(fn func(e *Extension)) {
 	prev := e.onInit
 	if prev == nil {
 		e.onInit = fn
@@ -131,4 +125,11 @@ func (e *Extension) OnInitAppend(fn func(e *Extension)) {
 		prev(e)
 		fn(e)
 	}
+}
+
+// OnInitAppend chains an additional initialization callback. Equivalent to OnInit —
+// both chain rather than replace. Kept for compatibility and readability in packs that
+// compose multiple extensions onto a single sdk.Extension.
+func (e *Extension) OnInitAppend(fn func(e *Extension)) {
+	e.OnInit(fn)
 }
