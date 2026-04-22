@@ -13,6 +13,7 @@ import (
 	"github.com/dotcommander/piglet/extensions/route"
 	sessiontools "github.com/dotcommander/piglet/extensions/session-tools"
 	"github.com/dotcommander/piglet/extensions/skill"
+	"github.com/dotcommander/piglet/extensions/sop"
 	"github.com/dotcommander/piglet/sdk"
 )
 
@@ -29,5 +30,6 @@ func main() {
 	safety.Register(e, "distill", distill.Register)
 	safety.Register(e, "recall", recall.Register)
 	safety.Register(e, "route", route.Register)
+	safety.Register(e, "sop", sop.Register)
 	e.Run()
 }
