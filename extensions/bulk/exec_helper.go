@@ -1,12 +1,11 @@
 package bulk
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dotcommander/piglet/extensions/internal/safeexec"
 )
 
 // expandTemplate replaces {path}, {name}, {dir}, {basename} in the template.
@@ -27,24 +26,10 @@ func expandTemplate(tmpl string, item Item) string {
 
 // shellExec runs a shell command in the given directory and returns stdout.
 // On error, returns stderr content as the error message.
+// The subprocess environment is filtered via safeexec.FilterEnv.
 func shellExec(ctx context.Context, dir, shell, command string) (string, error) {
 	if shell == "" {
 		shell = "sh"
 	}
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
-	cmd.Dir = dir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg == "" {
-			errMsg = err.Error()
-		}
-		return "", fmt.Errorf("%s", errMsg)
-	}
-
-	return stdout.String(), nil
+	return safeexec.Run(ctx, dir, 0, shell, "-c", command)
 }
