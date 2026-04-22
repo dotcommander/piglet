@@ -43,6 +43,6 @@ func Register(x *sdk.Extension, s Storer, reinject ReinjectFunc) {
 	x.RegisterCompactor(sdk.CompactorDef{
 		Name:      "rolling-memory",
 		Threshold: 50000,
-		Compact:   makeCompactHandler(x, s, reinject),
+		Compact:   newHandler(x, s, reinject).Handle,
 	})
 }
