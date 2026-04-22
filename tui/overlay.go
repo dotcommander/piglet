@@ -163,18 +163,31 @@ func (o OverlayModel) View() string {
 		Padding(1, 2).
 		Width(w)
 
-	rendered := box.Render(b.String())
+	// Return just the bordered box — compositeOverlay handles placement.
+	return box.Render(b.String())
+}
 
-	// Position based on anchor
-	hPos := lipgloss.Center
-	switch ov.Anchor {
-	case "left":
-		hPos = lipgloss.Left
-	case "right":
-		hPos = lipgloss.Right
+// HPos returns the horizontal anchor of the topmost overlay as a lipgloss
+// Position (Left=0, Center=0.5, Right=1). Used by compositeOverlay to
+// position the box without clobbering the base viewport.
+func (o OverlayModel) HPos() lipgloss.Position {
+	if len(o.stack) == 0 {
+		return lipgloss.Center
 	}
+	switch o.stack[len(o.stack)-1].Anchor {
+	case "left":
+		return lipgloss.Left
+	case "right":
+		return lipgloss.Right
+	default:
+		return lipgloss.Center
+	}
+}
 
-	return lipgloss.Place(o.width, o.height, hPos, lipgloss.Center, rendered)
+// VPos returns the vertical anchor of the topmost overlay. Always Center —
+// exposed as a method so callers use the same compositeOverlay API as modals.
+func (o OverlayModel) VPos() lipgloss.Position {
+	return lipgloss.Center
 }
 
 // resolveWidth parses the width spec. "50%" = percentage, "80" = chars, "" = 60% default.

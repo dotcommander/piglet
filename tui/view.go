@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/dotcommander/piglet/shell"
 )
 
@@ -46,7 +47,7 @@ func (m Model) View() tea.View {
 
 	// Modal overlay — composited over base so base is still rendered underneath
 	if m.modal.Visible() {
-		v := tea.NewView(compositeOverlay(base, m.modal.View(), m.width, m.height))
+		v := tea.NewView(compositeOverlay(base, m.modal.View(), m.width, m.height, lipgloss.Center, lipgloss.Center))
 		v.AltScreen = true
 		if m.mouseEnabled {
 			v.MouseMode = tea.MouseModeCellMotion
@@ -57,7 +58,7 @@ func (m Model) View() tea.View {
 
 	// Extension overlays (stacked, topmost wins) — composited over base
 	if m.overlays.Visible() {
-		v := tea.NewView(compositeOverlay(base, m.overlays.View(), m.width, m.height))
+		v := tea.NewView(compositeOverlay(base, m.overlays.View(), m.width, m.height, m.overlays.HPos(), m.overlays.VPos()))
 		v.AltScreen = true
 		if m.mouseEnabled {
 			v.MouseMode = tea.MouseModeCellMotion

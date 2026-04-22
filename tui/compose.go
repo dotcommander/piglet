@@ -1,29 +1,61 @@
 package tui
 
-import "strings"
+import (
+	"math"
+	"strings"
 
-// compositeOverlay places `over` onto `base`, centered vertically within the (w,h) box.
-// Both strings are assumed pre-rendered with ANSI. Lines of `over` replace
-// lines of `base` at the computed position; base characters underneath are
-// dropped at those rows. w is unused for now but kept for future
-// column-aware splicing.
-func compositeOverlay(base, over string, w, h int) string {
-	_ = w
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// compositeOverlay splices `over` (just the bordered box, no surrounding
+// padding) onto `base` at the position determined by hPos/vPos anchors.
+// Base characters outside the box bounds remain visible — this is the
+// "composited over base" invariant: the overlay floats over the viewport,
+// not replaces it.
+//
+// ANSI-aware: each base line is split at the box x-offset using ansi.Truncate
+// (left fragment) and ansi.TruncateLeft (right fragment) so ANSI SGR codes
+// are never sliced mid-sequence.
+func compositeOverlay(base, over string, w, h int, hPos, vPos lipgloss.Position) string {
+	if over == "" {
+		return base
+	}
+
 	baseLines := strings.Split(base, "\n")
-	overLines := strings.Split(over, "\n")
+	// Ensure base has at least h lines so the overlay has rows to splice into.
 	for len(baseLines) < h {
 		baseLines = append(baseLines, "")
 	}
-	startY := (h - len(overLines)) / 2
-	if startY < 0 {
-		startY = 0
+
+	overLines := strings.Split(over, "\n")
+	boxW := lipgloss.Width(over)
+	boxH := len(overLines)
+
+	// Compute top-left corner of the box in terminal cells.
+	x := int(math.Round(float64(w-boxW) * float64(hPos)))
+	y := int(math.Round(float64(h-boxH) * float64(vPos)))
+	if x < 0 {
+		x = 0
 	}
+	if y < 0 {
+		y = 0
+	}
+
 	for i, ol := range overLines {
-		y := startY + i
-		if y >= len(baseLines) {
+		row := y + i
+		if row >= len(baseLines) {
 			break
 		}
-		baseLines[y] = ol
+		baseLine := baseLines[row]
+
+		// Left fragment: columns [0, x).
+		left := ansi.Truncate(baseLine, x, "")
+		// Right fragment: columns [x+boxW, ...).
+		right := ansi.TruncateLeft(baseLine, x+boxW, "")
+
+		baseLines[row] = left + ol + right
 	}
+
 	return strings.Join(baseLines, "\n")
 }

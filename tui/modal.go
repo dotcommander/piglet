@@ -170,7 +170,8 @@ func (m ModalModel) View() string {
 		Padding(1, 2).
 		Width(w)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box.Render(b.String()))
+	// Return just the bordered box — compositeOverlay handles placement.
+	return box.Render(b.String())
 }
 
 func (m *ModalModel) applyFilter() {
@@ -254,4 +255,3 @@ func scrollStart(cursor, items, height int) int {
 	}
 	return start
 }
-
