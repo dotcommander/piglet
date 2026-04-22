@@ -30,19 +30,25 @@ func (m *Model) layout() {
 	}
 
 	wasAtBottom := m.followOutput
+
+	// Resize viewport geometry
 	m.viewport.SetWidth(m.width - 2)
 	m.viewport.SetHeight(vpH)
-	m.refreshViewport()
-	if wasAtBottom {
-		m.viewport.GotoBottom()
-	}
 
+	// Update renderers and invalidate cache BEFORE refresh so the first
+	// post-resize frame renders at the new width, not the stale cached width.
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width - 2) // subtract App padding
 	m.msgView.SetWidth(m.width - 2)
 	m.msgCache = nil
 	m.modal.SetSize(m.width, m.height)
 	m.overlays.SetSize(m.width, m.height)
+
+	// Now render at the new width
+	m.refreshViewport()
+	if wasAtBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m *Model) showNotification(text string) {
