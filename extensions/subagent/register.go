@@ -49,6 +49,9 @@ func collectTmuxExtra() []string {
 
 // Register adds the dispatch tool to the extension.
 func Register(e *sdk.Extension) {
+	// cache is captured by the Execute closure so repeated identical tasks
+	// return the last result instead of re-spawning a tmux agent.
+	cache := &dedupCache{}
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "dispatch",
 		Description: "Spawn a piglet agent in a tmux pane to handle a task independently. The agent runs as a full piglet instance with complete tool access and streaming visibility. The user can observe and intervene via the tmux pane. Results are returned when the agent completes.",
@@ -75,6 +78,14 @@ func Register(e *sdk.Extension) {
 			task, _ := args["task"].(string)
 			if task == "" {
 				return sdk.ErrorResult("task is required"), nil
+			}
+
+			// Dedup recent-task: return cached result if the same normalized prompt
+			// completed within recentTaskTTL. Exact/near-exact repeats only — prompts
+			// that differ materially will re-run as normal.
+			dedupKey := normalizePrompt(task)
+			if cached, ok := cache.lookup(dedupKey); ok {
+				return sdk.TextResult(cached), nil
 			}
 
 			// Verify tmux is available and we're inside a session
@@ -164,14 +175,18 @@ func Register(e *sdk.Extension) {
 				case <-timer.C:
 				}
 
-				// Result ready? Normal completion path — unchanged.
+				// Result ready? Normal completion path — store for dedup then return.
 				if data, err := os.ReadFile(resultPath); err == nil {
 					_ = os.RemoveAll(tmpDir)
 					result := strings.TrimSpace(string(data))
+					var output string
 					if result == "" {
-						return sdk.TextResult(fmt.Sprintf("[agent %s completed with no output]", agentID)), nil
+						output = fmt.Sprintf("[agent %s completed with no output]", agentID)
+					} else {
+						output = fmt.Sprintf("[agent %s]\n\n%s", agentID, result)
 					}
-					return sdk.TextResult(fmt.Sprintf("[agent %s]\n\n%s", agentID, result)), nil
+					cache.store(dedupKey, output)
+					return sdk.TextResult(output), nil
 				}
 
 				// Absolute deadline.

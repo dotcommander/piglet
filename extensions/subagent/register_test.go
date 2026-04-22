@@ -50,6 +50,62 @@ func TestPaneStalled(t *testing.T) {
 	}
 }
 
+func TestNormalizePrompt(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"Hello World", "hello world"},
+		{"  multi   space\ttab ", "multi space tab"},
+		{"EXACT match", "exact match"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := normalizePrompt(c.in); got != c.want {
+			t.Errorf("normalizePrompt(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDedupCacheHitMiss(t *testing.T) {
+	t.Parallel()
+	c := &dedupCache{}
+	if _, ok := c.lookup("k"); ok {
+		t.Fatal("empty cache should miss")
+	}
+	c.store("k", "result-v1")
+	// Stop the ticker started by store to avoid goroutine leak
+	t.Cleanup(func() {
+		c.mu.Lock()
+		if c.ticker != nil {
+			c.ticker.Stop()
+			close(c.stop)
+		}
+		c.mu.Unlock()
+	})
+	got, ok := c.lookup("k")
+	if !ok || got != "result-v1" {
+		t.Errorf("lookup after store: got (%q, %v), want (result-v1, true)", got, ok)
+	}
+}
+
+func TestDedupCacheExpiry(t *testing.T) {
+	t.Parallel()
+	c := &dedupCache{entries: map[string]recentTask{
+		"old": {result: "r", completedAt: time.Now().Add(-2 * recentTaskTTL)},
+	}}
+	if _, ok := c.lookup("old"); ok {
+		t.Error("expired entry should not hit")
+	}
+	// lookup should have pruned the expired entry
+	c.mu.Lock()
+	_, present := c.entries["old"]
+	c.mu.Unlock()
+	if present {
+		t.Error("expired entry should be removed by lookup")
+	}
+}
+
 func TestDurationFromMs(t *testing.T) {
 	t.Parallel()
 
