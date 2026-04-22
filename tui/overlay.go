@@ -12,7 +12,7 @@ type overlay struct {
 	Key     string
 	Title   string
 	Content string
-	Anchor  string // "center" (default), "right", "left"
+	Anchor  string // position string — see parseAnchor for accepted values
 	Width   string // "50%", "80" (chars), "" (auto)
 }
 
@@ -167,27 +167,64 @@ func (o OverlayModel) View() string {
 	return box.Render(b.String())
 }
 
+// parseAnchor parses a position string into horizontal and vertical lipgloss
+// positions. Accepted tokens (case-insensitive, separated by "-" or "_"):
+//
+//	horizontal: "left", "right" (default: Center)
+//	vertical:   "top", "bottom" (default: Center)
+//
+// Compound examples: "top-left", "bottom-right", "right-top", "top_right".
+// Single-axis: "left" → Left/Center, "top" → Center/Top.
+// Unknown strings fall back to Center/Center.
+func parseAnchor(s string) (hpos, vpos lipgloss.Position) {
+	hpos = lipgloss.Center
+	vpos = lipgloss.Center
+
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" || s == "center" || s == "middle" {
+		return
+	}
+
+	// Replace underscore separator with dash for uniform splitting.
+	s = strings.ReplaceAll(s, "_", "-")
+	tokens := strings.Split(s, "-")
+
+	for _, tok := range tokens {
+		switch tok {
+		case "left":
+			hpos = lipgloss.Left
+		case "right":
+			hpos = lipgloss.Right
+		case "top":
+			vpos = lipgloss.Top
+		case "bottom":
+			vpos = lipgloss.Bottom
+			// "center" token on either axis is already the default — no-op.
+		}
+	}
+	return
+}
+
 // HPos returns the horizontal anchor of the topmost overlay as a lipgloss
-// Position (Left=0, Center=0.5, Right=1). Used by compositeOverlay to
-// position the box without clobbering the base viewport.
+// Position (Left=0, Center=0.5, Right=1). Accepted anchor strings are the
+// same as parseAnchor: "left", "right", "top-left", "bottom-right", etc.
 func (o OverlayModel) HPos() lipgloss.Position {
 	if len(o.stack) == 0 {
 		return lipgloss.Center
 	}
-	switch o.stack[len(o.stack)-1].Anchor {
-	case "left":
-		return lipgloss.Left
-	case "right":
-		return lipgloss.Right
-	default:
-		return lipgloss.Center
-	}
+	h, _ := parseAnchor(o.stack[len(o.stack)-1].Anchor)
+	return h
 }
 
-// VPos returns the vertical anchor of the topmost overlay. Always Center —
-// exposed as a method so callers use the same compositeOverlay API as modals.
+// VPos returns the vertical anchor of the topmost overlay as a lipgloss
+// Position (Top=0, Center=0.5, Bottom=1). Accepted anchor strings are the
+// same as parseAnchor: "top", "bottom", "top-left", "bottom-right", etc.
 func (o OverlayModel) VPos() lipgloss.Position {
-	return lipgloss.Center
+	if len(o.stack) == 0 {
+		return lipgloss.Center
+	}
+	_, v := parseAnchor(o.stack[len(o.stack)-1].Anchor)
+	return v
 }
 
 // resolveWidth parses the width spec. "50%" = percentage, "80" = chars, "" = 60% default.

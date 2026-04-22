@@ -10,7 +10,8 @@ func (e *Extension) Notify(msg string) {
 }
 
 // ShowOverlay creates or replaces a named overlay in the TUI.
-// Anchor: "center" (default), "right", "left". Width: "50%", "80" (chars), "" (auto).
+// Anchor: "center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"
+// (case-insensitive, "-"/"_" separator; default: center). Width: "50%", "80" (chars), "" (auto).
 func (e *Extension) ShowOverlay(key, title, content, anchor, width string) {
 	e.sendNotification("showOverlay", map[string]string{
 		"key":     key,

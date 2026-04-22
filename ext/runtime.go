@@ -122,7 +122,8 @@ func (a *App) LLMSnapshot() LLMSnapshot {
 }
 
 // ShowOverlay creates or replaces a named overlay in the TUI.
-// Anchor: "center" (default), "right", "left". Width: "50%", "80" (chars), "" (auto).
+// Anchor: "center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"
+// (case-insensitive, "-"/"_" separator; default: center). Width: "50%", "80" (chars), "" (auto).
 func (a *App) ShowOverlay(key, title, content, anchor, width string) {
 	a.enqueue(ActionShowOverlay{Key: key, Title: title, Content: content, Anchor: anchor, Width: width})
 }

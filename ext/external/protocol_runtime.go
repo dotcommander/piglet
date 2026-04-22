@@ -198,7 +198,7 @@ type ShowOverlayParams struct {
 	Key     string `json:"key"`
 	Title   string `json:"title,omitempty"`
 	Content string `json:"content"`
-	Anchor  string `json:"anchor,omitempty"` // "center" (default), "right", "left"
+	Anchor  string `json:"anchor,omitempty"` // "center","left","right","top","bottom","top-left","top-right","bottom-left","bottom-right" (default: center)
 	Width   string `json:"width,omitempty"`  // "50%", "80" (chars), "" (auto)
 }
 

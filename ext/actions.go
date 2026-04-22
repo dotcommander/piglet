@@ -65,7 +65,8 @@ type ActionSetWidget struct {
 }
 
 // ActionShowOverlay creates or replaces a named overlay.
-// Anchor: "center" (default), "right", "left".
+// Anchor: "center", "left", "right", "top", "bottom", "top-left", "top-right",
+// "bottom-left", "bottom-right" (case-insensitive, "-"/"_" separator; default: center).
 // Width: "50%", "80" (chars), "" (auto ~60%).
 type ActionShowOverlay struct {
 	Key     string
