@@ -14,15 +14,36 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dotcommander/piglet/extensions/internal/safeexec"
 	sdk "github.com/dotcommander/piglet/sdk"
 )
+
+// tmuxExtraEnv lists env vars beyond safeexec.DefaultEnvAllowlist that the
+// tmux client process needs to locate its running server session.
+// TMUX holds the socket path + session ID set by tmux itself; without it the
+// split-window command cannot find the current session.
+// TMUX_TMPDIR overrides the socket directory on some systems.
+// *_API_KEY vars are forwarded so auth.GetAPIKey env-fallback works in the
+// child piglet when the user has not stored keys in auth.json.
+var tmuxExtraEnv = collectTmuxExtra()
+
+func collectTmuxExtra() []string {
+	var extra []string
+	for _, kv := range os.Environ() {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == "TMUX" || key == "TMUX_TMPDIR" || strings.HasSuffix(key, "_API_KEY") {
+			extra = append(extra, kv)
+		}
+	}
+	return extra
+}
 
 // Register adds the dispatch tool to the extension.
 func Register(e *sdk.Extension) {
 	e.RegisterTool(sdk.ToolDef{
 		Name:        "dispatch",
 		Description: "Spawn a piglet agent in a tmux pane to handle a task independently. The agent runs as a full piglet instance with complete tool access and streaming visibility. The user can observe and intervene via the tmux pane. Results are returned when the agent completes.",
-Deferred:    true,
+		Deferred:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -84,8 +105,13 @@ Deferred:    true,
 				tmuxArgs = []string{"split-window", "-h", shellCmd}
 			}
 
-			// Spawn the tmux pane
+			// Spawn the tmux pane with a filtered environment. safeexec.FilterEnv
+			// strips secrets (DB passwords, bearer tokens, etc.) not in its
+			// allowlist. We append TMUX/TMUX_TMPDIR so the client can locate its
+			// server session, and *_API_KEY vars so auth.GetAPIKey env-fallback
+			// works in the child piglet process.
 			cmd := exec.CommandContext(ctx, "tmux", tmuxArgs...)
+			cmd.Env = append(safeexec.FilterEnv(nil), tmuxExtraEnv...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				_ = os.RemoveAll(tmpDir)
 				return sdk.ErrorResult(fmt.Sprintf("tmux spawn failed: %v: %s", err, string(out))), nil
