@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -108,8 +109,21 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 						outputBody), nil
 				case isExitError(err):
 					exitErr := err.(*exec.ExitError)
+					code := exitErr.ExitCode()
+					// Some commands use non-zero exit to signal a non-error condition
+					// (grep: no matches, diff: files differ, test: false). Classify so
+					// the LLM doesn't misread these as failures and retry pointlessly.
+					if label, isErr := classifyExitCode(command, code); !isErr {
+						var sb strings.Builder
+						sb.WriteString(outputBody)
+						if sb.Len() > 0 {
+							sb.WriteString("\n")
+						}
+						fmt.Fprintf(&sb, "(exit %d: %s)", code, label)
+						return textResult(sb.String()), nil
+					}
 					return toolBashErr(errfmt.ToolErrExitNonzero,
-						fmt.Sprintf("exit code %d", exitErr.ExitCode()),
+						fmt.Sprintf("exit code %d", code),
 						"inspect stderr — non-zero exit may be expected (e.g., grep with no matches)",
 						outputBody), nil
 				default:
@@ -129,4 +143,40 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 		PromptHint:   "Execute shell commands",
 		PromptGuides: []string{"Always specify a reasonable timeout", "Avoid long-running commands"},
 	}
+}
+
+// classifyExitCode returns a human-readable label and error flag for a command's
+// exit code. Some Unix commands use non-zero exits to signal non-error conditions
+// (grep: no matches, diff: files differ, test: false). Classifying these lets the
+// LLM interpret the result correctly instead of assuming failure.
+//
+// Returns (label, isError) where isError=false means treat as success with the
+// label as an informational annotation. Returns ("", true) for any unclassified
+// non-zero exit — caller should surface as an error (existing behavior).
+func classifyExitCode(command string, code int) (string, bool) {
+	if code != 1 {
+		return "", true
+	}
+	for _, tok := range strings.Fields(command) {
+		// Skip common prefix words that don't change the command identity.
+		if tok == "sudo" || tok == "time" || tok == "env" {
+			continue
+		}
+		// Skip VAR=value env assignments (but not paths containing '=').
+		if strings.Contains(tok, "=") && !strings.ContainsAny(tok, "/\\") {
+			continue
+		}
+		name := strings.ToLower(filepath.Base(tok))
+		switch name {
+		case "grep", "egrep", "fgrep", "rg":
+			return "no matches", false
+		case "diff", "cmp":
+			return "files differ", false
+		case "test", "[":
+			return "condition false", false
+		}
+		// First recognizable token wasn't in the table — don't scan args.
+		return "", true
+	}
+	return "", true
 }
