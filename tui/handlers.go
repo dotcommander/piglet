@@ -46,9 +46,31 @@ func (m Model) handleEventsBatch(msg eventsBatchMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleModalSelect fires the picker callback and drains shell actions.
+// handleModalAskCancel fires the askUser callback with Cancelled=true and drains actions.
+func (m Model) handleModalAskCancel() (tea.Model, tea.Cmd) {
+	if m.askUserCallback != nil {
+		cb := m.askUserCallback
+		m.askUserCallback = nil
+		cb(ext.AskUserResult{Cancelled: true})
+		if m.shell != nil {
+			m.shell.DrainActions()
+		}
+		if bgCmd := m.applyShellNotifications(); bgCmd != nil {
+			return m, bgCmd
+		}
+	}
+	return m, nil
+}
+
+// handleModalSelect fires the appropriate callback (askUser or picker) and drains
+// shell actions. Exactly one of askUserCallback or pickerCallback is set when the
+// modal is visible — modal is single-use per mount.
 func (m Model) handleModalSelect(msg ModalSelectMsg) (tea.Model, tea.Cmd) {
-	if m.pickerCallback != nil {
+	if m.askUserCallback != nil {
+		cb := m.askUserCallback
+		m.askUserCallback = nil
+		cb(ext.AskUserResult{Selected: msg.Item.ID})
+	} else if m.pickerCallback != nil {
 		cb := m.pickerCallback
 		m.pickerCallback = nil
 		cb(ext.PickerItem{
@@ -56,12 +78,14 @@ func (m Model) handleModalSelect(msg ModalSelectMsg) (tea.Model, tea.Cmd) {
 			Label: msg.Item.Label,
 			Desc:  msg.Item.Desc,
 		})
-		if m.shell != nil {
-			m.shell.DrainActions()
-		}
-		if bgCmd := m.applyShellNotifications(); bgCmd != nil {
-			return m, bgCmd
-		}
+	} else {
+		return m, nil
+	}
+	if m.shell != nil {
+		m.shell.DrainActions()
+	}
+	if bgCmd := m.applyShellNotifications(); bgCmd != nil {
+		return m, bgCmd
 	}
 	return m, nil
 }

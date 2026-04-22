@@ -102,6 +102,10 @@ func (s *Shell) drainUIActions(action ext.Action) bool {
 		s.notify(Notification{Kind: NotifyPicker, Action: act})
 		return true
 
+	case ext.ActionAskUser:
+		s.notify(Notification{Kind: NotifyAskUser, Action: act})
+		return true
+
 	case ext.ActionAttachImage:
 		s.notify(Notification{Kind: NotifyImage, Action: act})
 		return true

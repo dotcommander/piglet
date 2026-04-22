@@ -93,6 +93,7 @@ type Model struct {
 	totalCacheWrite int
 	quitting        bool
 	pickerCallback  func(ext.PickerItem)
+	askUserCallback func(ext.AskUserResult)
 
 	// Event channel (mirrors shell.EventChannel for polling)
 	eventCh <-chan core.Event
@@ -256,6 +257,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ModalCloseMsg:
 		m.pickerCallback = nil
 		return m, nil
+
+	case ModalAskCancelMsg:
+		return m.handleModalAskCancel()
 
 	case bgEventMsg:
 		return m.handleBgEvent(msg.event)

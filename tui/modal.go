@@ -17,15 +17,16 @@ type ModalItem struct {
 
 // ModalModel is a generic list selector modal.
 type ModalModel struct {
-	title    string
-	items    []ModalItem
-	filtered []ModalItem
-	filter   string
-	cursor   int
-	width    int
-	height   int
-	styles   Styles
-	visible  bool
+	title      string
+	items      []ModalItem
+	filtered   []ModalItem
+	filter     string
+	cursor     int
+	width      int
+	height     int
+	styles     Styles
+	visible    bool
+	cancelable bool // if true, Esc emits ModalAskCancelMsg instead of ModalCloseMsg
 }
 
 // NewModalModel creates a modal.
@@ -46,6 +47,9 @@ type ModalSelectMsg struct {
 // ModalCloseMsg is sent when the modal is dismissed.
 type ModalCloseMsg struct{}
 
+// ModalAskCancelMsg is sent when a cancelable modal is dismissed with Esc.
+type ModalAskCancelMsg struct{}
+
 // Show makes the modal visible.
 func (m *ModalModel) Show() { m.visible = true; m.cursor = 0; m.filter = ""; m.filtered = m.items }
 
@@ -64,6 +68,9 @@ func (m *ModalModel) SetItems(items []ModalItem) {
 // SetSize updates the modal dimensions.
 func (m *ModalModel) SetSize(w, h int) { m.width = w; m.height = h }
 
+// SetCancelable marks the modal as cancelable — Esc emits ModalAskCancelMsg.
+func (m *ModalModel) SetCancelable(on bool) { m.cancelable = on }
+
 // Update handles modal events.
 func (m ModalModel) Update(msg tea.Msg) (ModalModel, tea.Cmd) {
 	if !m.visible {
@@ -75,6 +82,9 @@ func (m ModalModel) Update(msg tea.Msg) (ModalModel, tea.Cmd) {
 		switch {
 		case msg.Code == tea.KeyEscape:
 			m.visible = false
+			if m.cancelable {
+				return m, func() tea.Msg { return ModalAskCancelMsg{} }
+			}
 			return m, func() tea.Msg { return ModalCloseMsg{} }
 		case msg.Code == tea.KeyEnter:
 			if len(m.filtered) > 0 && m.cursor < len(m.filtered) {

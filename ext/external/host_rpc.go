@@ -210,6 +210,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostSessionStats(msg)
 	case MethodHostShowPicker:
 		h.handleHostShowPicker(msg)
+	case MethodHostAskUser:
+		h.handleHostAskUser(msg)
 	case MethodHostAvailableModels:
 		h.handleHostAvailableModels(msg)
 	case MethodHostSwitchModel:

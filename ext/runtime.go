@@ -164,6 +164,13 @@ func (a *App) ShowPicker(title string, items []PickerItem, onSelect func(PickerI
 	a.enqueue(ActionShowPicker{Title: title, Items: items, OnSelect: onSelect})
 }
 
+// AskUser shows a modal asking the user to pick from choices. Blocks the
+// extension via onResolve callback (invoked once on selection or cancellation).
+// choices must be non-empty; empty strings within choices are rejected caller-side.
+func (a *App) AskUser(prompt string, choices []string, onResolve func(AskUserResult)) {
+	a.enqueue(ActionAskUser{Prompt: prompt, Choices: choices, OnResolve: onResolve})
+}
+
 // Provider returns the current agent's streaming provider.
 func (a *App) Provider() core.StreamProvider {
 	a.mu.RLock()

@@ -158,6 +158,19 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 			m.pickerCallback = act.OnSelect
 		}
 
+	case shell.NotifyAskUser:
+		if act, ok := n.Action.(ext.ActionAskUser); ok {
+			items := make([]ModalItem, len(act.Choices))
+			for i, c := range act.Choices {
+				items[i] = ModalItem{ID: c, Label: c}
+			}
+			m.modal = NewModalModel(act.Prompt, items, m.styles)
+			m.modal.SetSize(m.width, m.height)
+			m.modal.SetCancelable(true)
+			m.modal.Show()
+			m.askUserCallback = act.OnResolve
+		}
+
 	case shell.NotifyImage:
 		switch act := n.Action.(type) {
 		case ext.ActionAttachImage:

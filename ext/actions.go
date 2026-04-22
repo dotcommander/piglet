@@ -90,6 +90,25 @@ type ActionSetMouseCapture struct{ Enabled bool }
 // Used by commands that want to populate the composer without submitting.
 type ActionSetInputText struct{ Text string }
 
+// AskUserResult is the answer to an AskUser dialog.
+// Cancelled=true means the user dismissed without selecting (Esc).
+type AskUserResult struct {
+	Selected  string
+	Cancelled bool
+}
+
+// ActionAskUser opens a blocking modal asking the user to pick from Choices.
+// OnResolve MUST be called exactly once — either with a selected string, or
+// with Cancelled=true on dismissal.
+//
+// TODO(headless): if piglet ever adds a headless frontend, it must handle
+// NotifyAskUser (either by auto-cancelling or respecting a stdin prompt).
+type ActionAskUser struct {
+	Prompt    string
+	Choices   []string
+	OnResolve func(AskUserResult)
+}
+
 func (ActionShowMessage) isAction()     {}
 func (ActionNotify) isAction()          {}
 func (ActionQuit) isAction()            {}
@@ -107,3 +126,4 @@ func (ActionShowOverlay) isAction()     {}
 func (ActionCloseOverlay) isAction()    {}
 func (ActionSetMouseCapture) isAction() {}
 func (ActionSetInputText) isAction()    {}
+func (ActionAskUser) isAction()         {}

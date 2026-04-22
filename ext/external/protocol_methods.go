@@ -60,6 +60,7 @@ const (
 	MethodHostSessionTitle            = "host/sessionTitle"
 	MethodHostSessionStats            = "host/sessionStats"
 	MethodHostShowPicker              = "host/showPicker"
+	MethodHostAskUser                 = "host/askUser"
 	MethodHostAvailableModels         = "host/availableModels"
 	MethodHostSwitchModel             = "host/switchModel"
 	MethodHostPublish                 = "host/publish"

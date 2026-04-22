@@ -23,6 +23,7 @@ const (
 	NotifyQueuedSubmit                         // queued user message was submitted to agent
 	NotifyMouseMode                            // TUI mouse capture toggled
 	NotifySetInputText                         // prefill editor text
+	NotifyAskUser                              // blocking ask-user dialog
 )
 
 // Notification is a frontend-relevant side-effect from Shell processing.
