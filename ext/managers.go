@@ -65,6 +65,10 @@ type SessionManager interface {
 	// BranchWithSummary moves the leaf and writes a branch_summary entry.
 	BranchWithSummary(entryID, summary string) (session any, err error)
 
+	// ResetLeaf sets the current session to an empty trunk (no messages).
+	// The next Append starts a new branch as a sibling of the existing root.
+	ResetLeaf() (session any, err error)
+
 	// EntryInfos returns info about entries on the current branch for display.
 	EntryInfos() []EntryInfo
 

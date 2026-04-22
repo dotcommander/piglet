@@ -130,6 +130,10 @@ func (s *Shell) drainUIActions(action ext.Action) bool {
 		s.notify(Notification{Kind: NotifyMouseMode, Action: act})
 		return true
 
+	case ext.ActionSetInputText:
+		s.notify(Notification{Kind: NotifySetInputText, Text: act.Text, Action: act})
+		return true
+
 	default:
 		return false
 	}

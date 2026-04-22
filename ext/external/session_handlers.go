@@ -142,6 +142,15 @@ func (h *Host) handleHostBranchSessionSummary(msg *Message) {
 	})
 }
 
+func (h *Host) handleHostResetSessionLeaf(msg *Message) {
+	handleAppCall(h, msg, func(app *ext.App, _ HostResetSessionLeafParams) (struct{}, error) {
+		if err := app.ResetSessionLeaf(); err != nil {
+			return struct{}{}, fmt.Errorf("reset session leaf: %w", err)
+		}
+		return struct{}{}, nil
+	})
+}
+
 func (h *Host) handleHostSessionEntryInfos(msg *Message) {
 	if !h.requireApp(msg) {
 		return

@@ -55,6 +55,11 @@ type SendMessageParams struct {
 	Content string `json:"content"`
 }
 
+// SetInputTextParams is the payload for a setInputText notification.
+type SetInputTextParams struct {
+	Text string `json:"text"`
+}
+
 // SteerParams is the payload for a steer notification.
 // Interrupts the current turn and injects a message.
 type SteerParams struct {

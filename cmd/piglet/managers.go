@@ -90,6 +90,17 @@ func (m *sessionMgr) BranchWithSummary(entryID, summary string) (any, error) {
 	return sess, nil
 }
 
+func (m *sessionMgr) ResetLeaf() (any, error) {
+	sess, err := m.active()
+	if err != nil {
+		return nil, err
+	}
+	if err := sess.ResetLeaf(); err != nil {
+		return nil, err
+	}
+	return sess, nil
+}
+
 func (m *sessionMgr) EntryInfos() []ext.EntryInfo {
 	sess, err := m.active()
 	if err != nil {

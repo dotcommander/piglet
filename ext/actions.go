@@ -86,6 +86,10 @@ type ActionCloseOverlay struct {
 // the viewport. When false, terminal-native text selection works.
 type ActionSetMouseCapture struct{ Enabled bool }
 
+// ActionSetInputText prefills the TUI editor with text.
+// Used by commands that want to populate the composer without submitting.
+type ActionSetInputText struct{ Text string }
+
 func (ActionShowMessage) isAction()     {}
 func (ActionNotify) isAction()          {}
 func (ActionQuit) isAction()            {}
@@ -102,3 +106,4 @@ func (ActionSetWidget) isAction()       {}
 func (ActionShowOverlay) isAction()     {}
 func (ActionCloseOverlay) isAction()    {}
 func (ActionSetMouseCapture) isAction() {}
+func (ActionSetInputText) isAction()    {}

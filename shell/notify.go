@@ -22,6 +22,7 @@ const (
 	NotifyClearDisplay                         // frontend should clear conversation display
 	NotifyQueuedSubmit                         // queued user message was submitted to agent
 	NotifyMouseMode                            // TUI mouse capture toggled
+	NotifySetInputText                         // prefill editor text
 )
 
 // Notification is a frontend-relevant side-effect from Shell processing.

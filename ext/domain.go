@@ -2,6 +2,7 @@ package ext
 
 import (
 	"fmt"
+
 	"github.com/dotcommander/piglet/core"
 )
 
@@ -73,6 +74,21 @@ func (a *App) BranchSessionWithSummary(entryID, summary string) error {
 		return fmt.Errorf("no active session")
 	}
 	sess, err := sm.BranchWithSummary(entryID, summary)
+	if err != nil {
+		return err
+	}
+	a.enqueue(ActionSwapSession{Session: sess})
+	return nil
+}
+
+// ResetSessionLeaf restarts the session from an empty trunk (in-place).
+// The agent's message history is refreshed via ActionSwapSession.
+func (a *App) ResetSessionLeaf() error {
+	sm := a.sessionMgr()
+	if sm == nil {
+		return fmt.Errorf("no active session")
+	}
+	sess, err := sm.ResetLeaf()
 	if err != nil {
 		return err
 	}

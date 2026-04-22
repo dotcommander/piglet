@@ -57,6 +57,15 @@ func (s *Session) writeBranchEntry(parentID, summary string) error {
 	return err
 }
 
+// ResetLeaf writes a branch_summary entry with no parent and moves the leaf to it.
+// After reset, Messages() returns an empty slice — the next Append starts a new
+// trunk as a sibling of the existing root.
+func (s *Session) ResetLeaf() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writeBranchEntry("", "")
+}
+
 // EntryInfos returns info about all entries on the current branch (root to leaf).
 func (s *Session) EntryInfos() []EntryInfo {
 	s.mu.RLock()

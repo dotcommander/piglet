@@ -149,6 +149,11 @@ func (a *App) ShowMessage(text string) {
 	a.enqueue(ActionShowMessage{Text: text})
 }
 
+// SetInputText prefills the TUI editor with text (no auto-submit).
+func (a *App) SetInputText(text string) {
+	a.enqueue(ActionSetInputText{Text: text})
+}
+
 // RequestQuit signals the TUI to quit.
 func (a *App) RequestQuit() {
 	a.enqueue(ActionQuit{})

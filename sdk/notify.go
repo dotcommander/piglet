@@ -58,6 +58,12 @@ func (e *Extension) SendMessage(content string) {
 	e.sendNotification("sendMessage", map[string]string{"content": content})
 }
 
+// SetInputText prefills the TUI editor without submitting.
+// The user sees the text in the composer and can edit or submit.
+func (e *Extension) SetInputText(text string) {
+	e.sendNotification("setInputText", map[string]string{"text": text})
+}
+
 // Steer interrupts the current turn and injects a message.
 // Remaining tool calls are cancelled and this message is processed next.
 func (e *Extension) Steer(content string) {

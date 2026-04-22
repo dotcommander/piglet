@@ -2,9 +2,10 @@ package ext_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,10 @@ func (m *mockSessionMgr) AppendLabel(targetID, label string) error {
 
 func (m *mockSessionMgr) FullTree() []ext.TreeNode {
 	return nil
+}
+
+func (m *mockSessionMgr) ResetLeaf() (any, error) {
+	return nil, nil
 }
 
 // mockModelMgr implements ext.ModelManager for testing.

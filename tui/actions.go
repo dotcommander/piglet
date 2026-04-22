@@ -241,6 +241,10 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 
 	case shell.NotifySessionTitle:
 		// No TUI-specific action needed; shell already persisted it
+
+	case shell.NotifySetInputText:
+		m.input.SetValue(n.Text)
+		m.input.Focus()
 	}
 
 	return nil
@@ -253,57 +257,4 @@ func (m *Model) startStreaming(resp shell.Response) tea.Cmd {
 	m.streaming = true
 	m.spinnerVerb = "thinking..."
 	return tea.Batch(pollEvents(resp.Events), tickCmd(), m.spinner.Tick)
-}
-
-// runShortcut checks if the key matches a registered shortcut and runs it.
-func (m *Model) runShortcut(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
-	if m.cfg.App == nil {
-		return m, nil, false
-	}
-
-	key := keyString(msg)
-	if key == "" {
-		return m, nil, false
-	}
-
-	shortcuts := m.cfg.App.Shortcuts()
-	sc, ok := shortcuts[key]
-	if !ok {
-		return m, nil, false
-	}
-
-	action, _ := sc.Handler(m.cfg.App)
-	if action != nil {
-		m.cfg.App.EnqueueAction(action)
-	}
-	// Drain actions through shell
-	if m.shell != nil {
-		m.shell.DrainActions()
-	}
-	cmd := m.applyShellNotifications()
-
-	return m, cmd, true
-}
-
-// keyString converts a KeyPressMsg to the shortcut key format (e.g. "ctrl+p").
-func keyString(msg tea.KeyPressMsg) string {
-	if !msg.Mod.Contains(tea.ModCtrl) && !msg.Mod.Contains(tea.ModAlt) {
-		return ""
-	}
-	var parts []string
-	if msg.Mod.Contains(tea.ModCtrl) {
-		parts = append(parts, "ctrl")
-	}
-	if msg.Mod.Contains(tea.ModAlt) {
-		parts = append(parts, "alt")
-	}
-	if msg.Mod.Contains(tea.ModShift) {
-		parts = append(parts, "shift")
-	}
-	if msg.Code >= 'a' && msg.Code <= 'z' {
-		parts = append(parts, string(msg.Code))
-	} else {
-		return ""
-	}
-	return strings.Join(parts, "+")
 }

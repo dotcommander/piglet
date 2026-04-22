@@ -112,6 +112,9 @@ type HostBranchSessionSummaryParams struct {
 	Summary string `json:"summary"`
 }
 
+// HostResetSessionLeafParams is empty; the method takes no arguments.
+type HostResetSessionLeafParams struct{}
+
 // ---------------------------------------------------------------------------
 // Host event bus service: extension → host (request/response)
 // ---------------------------------------------------------------------------
