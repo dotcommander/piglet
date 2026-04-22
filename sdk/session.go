@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 // ConversationMessages returns the current conversation history as raw JSON.
@@ -60,6 +61,36 @@ func (e *Extension) ForkSession(ctx context.Context) (parentID string, count int
 		return "", 0, err
 	}
 	return r.ParentID, r.MessageCount, nil
+}
+
+// MessagesFromFork returns the conversation messages added after the given
+// offset. Typical flow: call ForkSession to record the message count, do work
+// that adds messages, then call MessagesFromFork(count) to retrieve only what
+// has been appended since.
+//
+// The offset is clamped to [0, len(messages)] — out-of-range values return an
+// empty array rather than an error.
+func (e *Extension) MessagesFromFork(ctx context.Context, afterCount int) (json.RawMessage, error) {
+	raw, err := e.ConversationMessages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var all []json.RawMessage
+	if err := json.Unmarshal(raw, &all); err != nil {
+		return nil, fmt.Errorf("parse messages: %w", err)
+	}
+	if afterCount < 0 {
+		afterCount = 0
+	}
+	if afterCount > len(all) {
+		afterCount = len(all)
+	}
+	tail := all[afterCount:]
+	out, err := json.Marshal(tail)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tail: %w", err)
+	}
+	return out, nil
 }
 
 // SetSessionTitle sets the current session's title.
