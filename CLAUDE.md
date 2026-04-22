@@ -156,6 +156,10 @@ tui/           Bubble Tea v2 UI (consumes shell/)
 | `EventHandler` | ext | Agent lifecycle event observer (Observe primitive) |
 | `Shell` | shell | Agent lifecycle manager — submit, events, notifications |
 
+## Tool Error Format
+
+Tools returning errors use `errfmt.ToolErr(code, summary, hint)` (compiled-in) or `sdk.ToolErr(code, summary, hint)` (external extensions). The produced text starts with `[error:CODE]` — a prefix the LLM pattern-matches to decide recovery. Standard codes live in `errfmt/toolcode.go`; extensions may define custom uppercase snake_case codes. The RPC wire also carries optional `ErrorCode` / `ErrorHint` fields; the host's `ensureCodedErrorPrefix` shim guarantees the prefix is present in the final tool-result text even if an extension sets the structured fields without formatting.
+
 ## Build & Test
 
 ```bash
