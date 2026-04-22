@@ -7,7 +7,7 @@ import (
 )
 
 // Register wires /session, /search, /fork, /branch, /tree, /title, /model,
-// ctrl+s and ctrl+p shortcuts. All commands use only the SDK; no ext.App access.
+// /label, ctrl+s and ctrl+p shortcuts. All commands use only the SDK; no ext.App access.
 func Register(e *sdk.Extension) {
 	registerSession(e)
 	registerSearch(e)
@@ -16,6 +16,7 @@ func Register(e *sdk.Extension) {
 	registerTree(e)
 	registerTitle(e)
 	registerModel(e)
+	registerLabel(e)
 	registerSessionShortcut(e)
 	registerModelShortcut(e)
 }
