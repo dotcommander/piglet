@@ -89,10 +89,17 @@ func (e *Extension) handleToolExecute(msg *rpcMessage) {
 		return
 	}
 
-	e.sendResponse(*msg.ID, map[string]any{
+	resp := map[string]any{
 		"content": result.Content,
 		"isError": result.IsError,
-	})
+	}
+	if result.ErrorCode != "" {
+		resp["errorCode"] = result.ErrorCode
+	}
+	if result.ErrorHint != "" {
+		resp["errorHint"] = result.ErrorHint
+	}
+	e.sendResponse(*msg.ID, resp)
 }
 
 func (e *Extension) handleCommandExecute(msg *rpcMessage) {

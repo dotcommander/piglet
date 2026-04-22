@@ -22,8 +22,10 @@ type ToolDef struct {
 
 // ToolResult is the return value from a tool execution.
 type ToolResult struct {
-	Content []ContentBlock
-	IsError bool
+	Content   []ContentBlock
+	IsError   bool
+	ErrorCode string // optional machine-readable code; matches errfmt.ToolErrorCode values
+	ErrorHint string // optional actionable hint
 }
 
 // ContentBlock is a single content element in a tool result.
