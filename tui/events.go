@@ -205,12 +205,18 @@ func pollBgEvents(ch <-chan core.Event) tea.Cmd {
 	}
 }
 
-// commandNames returns sorted slash command names from the ext.App.
-func commandNames(app *ext.App) []string {
+// commandSuggestions returns sorted command suggestions (name + description) from the ext.App.
+func commandSuggestions(app *ext.App) []CommandSuggestion {
 	if app == nil {
 		return nil
 	}
-	return slices.Sorted(maps.Keys(app.Commands()))
+	cmds := app.Commands()
+	names := slices.Sorted(maps.Keys(cmds))
+	out := make([]CommandSuggestion, 0, len(names))
+	for _, name := range names {
+		out = append(out, CommandSuggestion{Name: name, Description: cmds[name].Description})
+	}
+	return out
 }
 
 // findModel looks up a model by "provider/name" or plain name.

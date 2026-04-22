@@ -1,15 +1,12 @@
 package tui
 
 import (
-	"context"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
@@ -129,27 +126,23 @@ type Model struct {
 	mouseEnabled bool
 
 	// Rendered message cache — parallel to m.messages, invalidated on width change
-	msgCache []string
+	msgCache []cachedMsg
 
 	// Extension widgets — keyed, last-write-wins per key, max 5 lines each
 	widgets map[string]widgetState
-}
-
-// widgetState holds the content and placement of a single extension widget.
-type widgetState struct {
-	Placement string // "above-input" or "below-status"
-	Content   string
 }
 
 // New creates a TUI model.
 func New(cfg Config) Model {
 	styles := NewStyles(cfg.Theme)
 
-	var commands []string
+	var commands []CommandSuggestion
 	if cfg.Shell != nil {
-		commands = cfg.Shell.CommandNames()
+		for _, d := range cfg.Shell.CommandInfos() {
+			commands = append(commands, CommandSuggestion{Name: d.Name, Description: d.Description})
+		}
 	} else {
-		commands = commandNames(cfg.App)
+		commands = commandSuggestions(cfg.App)
 	}
 
 	status := NewStatusBar(styles)
@@ -167,7 +160,7 @@ func New(cfg Config) Model {
 	sp.Style = styles.Spinner
 
 	vp := viewport.New()
-	vp.MouseWheelDelta = 1
+	vp.MouseWheelDelta = 3
 	vp.Style = lipgloss.NewStyle()
 
 	mouseOn := true
@@ -181,7 +174,7 @@ func New(cfg Config) Model {
 		input:        NewInputModel(styles, commands),
 		viewport:     vp,
 		status:       status,
-		msgView:      NewMessageView(styles, 80),
+		msgView:      NewMessageView(styles, 80, cfg.Theme.GlamourStyle),
 		overlays:     NewOverlayModel(styles),
 		spinner:      sp,
 		streamText:   &strings.Builder{},
@@ -291,37 +284,4 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
-}
-
-// Run starts the TUI.
-func Run(ctx context.Context, cfg Config) error {
-	m := New(cfg)
-	p := tea.NewProgram(m,
-		tea.WithColorProfile(colorprofile.TrueColor),
-		tea.WithFilter(messageFilter),
-	)
-	_, err := p.Run()
-	return err
-}
-
-// messageFilter drops unwanted messages before they reach Update.
-// It blocks unknown terminal response sequences and prevents quit during streaming.
-func messageFilter(m tea.Model, msg tea.Msg) tea.Msg {
-	if _, ok := msg.(tea.QuitMsg); ok {
-		if mdl, ok := m.(Model); ok && mdl.streaming {
-			return nil
-		}
-	}
-	switch msg.(type) {
-	case uv.UnknownEvent,
-		uv.UnknownCsiEvent,
-		uv.UnknownOscEvent,
-		uv.UnknownSs3Event,
-		uv.UnknownDcsEvent,
-		uv.UnknownSosEvent,
-		uv.UnknownPmEvent,
-		uv.UnknownApcEvent:
-		return nil
-	}
-	return msg
 }

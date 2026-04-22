@@ -3,8 +3,6 @@ package shell
 import (
 	"context"
 	"log/slog"
-	"maps"
-	"slices"
 	"sync"
 	"time"
 
@@ -155,22 +153,6 @@ func (s *Shell) Steer(content string) ext.SteerDisposition {
 	// Agent exists but not running — queue for next run.
 	s.enqueue(content, false)
 	return ext.SteerQueued
-}
-
-// Commands returns all registered slash commands.
-func (s *Shell) Commands() map[string]*ext.Command {
-	if s.app == nil {
-		return nil
-	}
-	return s.app.Commands()
-}
-
-// CommandNames returns sorted slash command names.
-func (s *Shell) CommandNames() []string {
-	if s.app == nil {
-		return nil
-	}
-	return slices.Sorted(maps.Keys(s.app.Commands()))
 }
 
 // Messages returns the conversation history snapshot.

@@ -9,29 +9,31 @@ import (
 
 // Theme holds all colors used by the TUI.
 type Theme struct {
-	Primary    color.Color
-	Secondary  color.Color
-	Muted      color.Color
-	Error      color.Color
-	Success    color.Color
-	Warning    color.Color
-	Background color.Color
-	Foreground color.Color
-	Border     color.Color
+	Primary      color.Color
+	Secondary    color.Color
+	Muted        color.Color
+	Error        color.Color
+	Success      color.Color
+	Warning      color.Color
+	Background   color.Color
+	Foreground   color.Color
+	Border       color.Color
+	GlamourStyle string // glamour markdown style name (e.g. "dark", "light", "notty")
 }
 
 // DefaultTheme returns the built-in color theme.
 func DefaultTheme() Theme {
 	return Theme{
-		Primary:    lipgloss.Color("#7C3AED"),
-		Secondary:  lipgloss.Color("#06B6D4"),
-		Muted:      lipgloss.Color("#6B7280"),
-		Error:      lipgloss.Color("#EF4444"),
-		Success:    lipgloss.Color("#10B981"),
-		Warning:    lipgloss.Color("#F59E0B"),
-		Background: lipgloss.Color("#1E1E2E"),
-		Foreground: lipgloss.Color("#CDD6F4"),
-		Border:     lipgloss.Color("#45475A"),
+		Primary:      lipgloss.Color("#7C3AED"),
+		Secondary:    lipgloss.Color("#06B6D4"),
+		Muted:        lipgloss.Color("#6B7280"),
+		Error:        lipgloss.Color("#EF4444"),
+		Success:      lipgloss.Color("#10B981"),
+		Warning:      lipgloss.Color("#F59E0B"),
+		Background:   lipgloss.Color("#1E1E2E"),
+		Foreground:   lipgloss.Color("#CDD6F4"),
+		Border:       lipgloss.Color("#45475A"),
+		GlamourStyle: "dark",
 	}
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -13,6 +14,12 @@ import (
 
 const maxHistory = 500
 
+// CommandSuggestion holds a slash command name and description for autocomplete display.
+type CommandSuggestion struct {
+	Name        string
+	Description string
+}
+
 // InputModel manages the composer textarea with slash command autocomplete.
 type InputModel struct {
 	textarea textarea.Model
@@ -20,10 +27,10 @@ type InputModel struct {
 	width    int
 
 	// Slash autocomplete
-	suggestions []string
+	suggestions []CommandSuggestion
 	selected    int
 	showing     bool
-	commands    []string // all registered command names
+	commands    []CommandSuggestion // all registered commands
 
 	attachment string // shown above the input border when non-empty
 
@@ -35,7 +42,7 @@ type InputModel struct {
 }
 
 // NewInputModel creates a new composer input.
-func NewInputModel(styles Styles, commands []string) InputModel {
+func NewInputModel(styles Styles, commands []CommandSuggestion) InputModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (/ for commands)"
 	ta.SetHeight(3)
@@ -148,8 +155,8 @@ func (m *InputModel) saveHistory() {
 // SetAttachment sets the attachment indicator shown above the input.
 func (m *InputModel) SetAttachment(s string) { m.attachment = s }
 
-// SetCommands updates the registered command names for autocomplete.
-func (m *InputModel) SetCommands(cmds []string) { m.commands = cmds }
+// SetCommands updates the registered commands for autocomplete.
+func (m *InputModel) SetCommands(cmds []CommandSuggestion) { m.commands = cmds }
 
 // Update handles input events.
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
@@ -158,7 +165,7 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 		switch {
 		case msg.Code == tea.KeyTab:
 			if m.showing && len(m.suggestions) > 0 {
-				m.textarea.SetValue("/" + m.suggestions[m.selected] + " ")
+				m.textarea.SetValue("/" + m.suggestions[m.selected].Name + " ")
 				m.showing = false
 				return m, nil
 			}
@@ -227,12 +234,25 @@ func (m InputModel) View() string {
 	}
 
 	if m.showing && len(m.suggestions) > 0 {
-		for i, s := range m.suggestions {
+		const maxVisible = 8
+		visible := m.suggestions
+		if len(visible) > maxVisible {
+			visible = visible[:maxVisible]
+		}
+		for i, s := range visible {
 			prefix := "  "
 			if i == m.selected {
 				prefix = "> "
 			}
-			b.WriteString(m.styles.Muted.Render(prefix+"/"+s) + "\n")
+			line := prefix + "/" + s.Name
+			if s.Description != "" {
+				line += "  " + s.Description
+			}
+			b.WriteString(m.styles.Muted.Render(line) + "\n")
+		}
+		if len(m.suggestions) > maxVisible {
+			more := len(m.suggestions) - maxVisible
+			b.WriteString(m.styles.Muted.Render(fmt.Sprintf("  … (%d more)", more)) + "\n")
 		}
 	}
 
@@ -240,13 +260,13 @@ func (m InputModel) View() string {
 	return b.String()
 }
 
-func (m InputModel) matchCommands(prefix string) []string {
+func (m InputModel) matchCommands(prefix string) []CommandSuggestion {
 	if prefix == "" {
 		return m.commands
 	}
-	var matches []string
+	var matches []CommandSuggestion
 	for _, cmd := range m.commands {
-		if strings.HasPrefix(cmd, prefix) {
+		if strings.HasPrefix(cmd.Name, prefix) {
 			matches = append(matches, cmd)
 		}
 	}

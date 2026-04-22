@@ -101,7 +101,11 @@ func (m Model) handleAgentReady(msg AgentReadyMsg) (tea.Model, tea.Cmd) {
 	m.status.Set(ext.StatusKeyApp, m.styles.Muted.Render("piglet"))
 	if m.cfg.App != nil {
 		m.status.SetRegistry(m.cfg.App.StatusSections())
-		m.input.SetCommands(m.shell.CommandNames())
+		var sugs []CommandSuggestion
+		for _, d := range m.shell.CommandInfos() {
+			sugs = append(sugs, CommandSuggestion{Name: d.Name, Description: d.Description})
+		}
+		m.input.SetCommands(sugs)
 	}
 	return m, m.notifyAndTick("Extensions loaded")
 }

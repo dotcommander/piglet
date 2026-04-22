@@ -7,29 +7,35 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/shell"
 )
 
 // MessageView renders conversation messages.
 type MessageView struct {
-	styles    Styles
-	renderer  *glamour.TermRenderer
-	width     int
-	cachedSep string // cached separator line, invalidated on width change
+	styles       Styles
+	renderer     *glamour.TermRenderer
+	width        int
+	glamourStyle string // glamour standard style name (e.g. "dark", "light")
+	cachedSep    string // cached separator line, invalidated on width change
 }
 
-// NewMessageView creates a message renderer.
-func NewMessageView(styles Styles, width int) MessageView {
+// NewMessageView creates a message renderer. glamourStyle selects the glamour
+// markdown theme (e.g. "dark", "light", "notty"); empty string defaults to "dark".
+func NewMessageView(styles Styles, width int, glamourStyle string) MessageView {
+	if glamourStyle == "" {
+		glamourStyle = "dark"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(glamourStyle),
 		glamour.WithWordWrap(width-4),
 	)
 	if err != nil {
 		slog.Warn("glamour init failed, using plain text", "error", err)
 	}
-	return MessageView{styles: styles, renderer: r, width: width}
+	return MessageView{styles: styles, renderer: r, width: width, glamourStyle: glamourStyle}
 }
 
-// SetWidth updates the rendering width.
+// SetWidth updates the rendering width, re-creating the glamour renderer.
 func (v *MessageView) SetWidth(w int) {
 	if w == v.width {
 		return
@@ -37,7 +43,7 @@ func (v *MessageView) SetWidth(w int) {
 	v.width = w
 	v.cachedSep = "" // invalidate separator cache
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(v.glamourStyle),
 		glamour.WithWordWrap(w-4),
 	)
 	if err != nil {
@@ -75,11 +81,22 @@ func (v *MessageView) renderUser(m *core.UserMessage) string {
 	label := v.styles.UserMsg.Render("you")
 	content := m.Content
 	if content == "" && len(m.Blocks) > 0 {
+		var parts []string
 		for _, b := range m.Blocks {
-			if tc, ok := b.(core.TextContent); ok {
-				content = tc.Text
-				break
+			switch bl := b.(type) {
+			case core.TextContent:
+				if bl.Text != "" {
+					parts = append(parts, bl.Text)
+				}
+			case *core.ImageContent:
+				parts = append(parts, v.styles.Muted.Render("[image attached]"))
 			}
+		}
+		content = strings.Join(parts, "\n")
+	}
+	if content != "" {
+		if rendered, err := v.renderer.Render(content); err == nil {
+			content = rendered
 		}
 	}
 	return label + "\n" + v.separator() + "\n" + content + "\n"
@@ -129,7 +146,7 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 			preview := truncateRunes(block.Thinking, 80)
 			b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
 		case core.ToolCall:
-			b.WriteString(v.styles.Muted.Render("▸ "+block.Name) + "\n")
+			b.WriteString(v.styles.Muted.Render("▸ "+shell.ToolSummary(block.Name, block.Arguments)) + "\n")
 		}
 	}
 
@@ -180,6 +197,7 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 type streamCache struct {
 	render   string
 	newlines int // newline count at last render
+	textLen  int // byte length at last render — detects text reset (compaction/abort)
 }
 
 // RenderStreaming renders a partial assistant response being streamed.
@@ -203,12 +221,13 @@ func (v *MessageView) RenderStreaming(text string, thinking string, cache *strea
 
 	if text != "" {
 		nl := strings.Count(text, "\n")
-		needsRender := nl != cache.newlines
+		needsRender := nl != cache.newlines || len(text) < cache.textLen
 
 		if v.renderer != nil && needsRender {
 			if rendered, err := v.renderer.Render(text); err == nil {
 				cache.render = rendered
 				cache.newlines = nl
+				cache.textLen = len(text)
 			}
 		}
 

@@ -42,17 +42,31 @@ func (m Model) View() tea.View {
 		sections = append(sections, w)
 	}
 
-	// Modal overlay
+	base := m.styles.App.Render(strings.Join(sections, "\n"))
+
+	// Modal overlay — composited over base so base is still rendered underneath
 	if m.modal.Visible() {
-		return tea.NewView(m.modal.View())
+		v := tea.NewView(compositeOverlay(base, m.modal.View(), m.width, m.height))
+		v.AltScreen = true
+		if m.mouseEnabled {
+			v.MouseMode = tea.MouseModeCellMotion
+		}
+		v.WindowTitle = m.windowTitle()
+		return v
 	}
 
-	// Extension overlays (stacked, topmost wins)
+	// Extension overlays (stacked, topmost wins) — composited over base
 	if m.overlays.Visible() {
-		return tea.NewView(m.overlays.View())
+		v := tea.NewView(compositeOverlay(base, m.overlays.View(), m.width, m.height))
+		v.AltScreen = true
+		if m.mouseEnabled {
+			v.MouseMode = tea.MouseModeCellMotion
+		}
+		v.WindowTitle = m.windowTitle()
+		return v
 	}
 
-	v := tea.NewView(m.styles.App.Render(strings.Join(sections, "\n")))
+	v := tea.NewView(base)
 	v.AltScreen = true
 	if m.mouseEnabled {
 		v.MouseMode = tea.MouseModeCellMotion
@@ -90,7 +104,7 @@ func (m Model) renderWidgets(placement string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return m.styles.Muted.Render(strings.Join(lines, "\n"))
+	return strings.Join(lines, "\n")
 }
 
 // windowTitle returns the terminal window title.
@@ -106,7 +120,7 @@ func (m Model) windowTitle() string {
 
 // refreshViewport updates the viewport content from messages without changing scroll position.
 func (m *Model) refreshViewport() {
-	content := "\n" + m.renderMessages()
+	content := m.renderMessages()
 	contentLines := strings.Count(content, "\n")
 	vpHeight := m.viewport.Height()
 	if contentLines < vpHeight {
@@ -132,20 +146,18 @@ func (m *Model) renderMessages() string {
 	var b strings.Builder
 
 	for i, msg := range m.messages {
-		if i < len(m.msgCache) && m.msgCache[i] != "" {
-			if m.msgCache[i] != "\x00" { // sentinel: cached empty render
-				b.WriteString(m.msgCache[i])
-			}
+		if i < len(m.msgCache) && m.msgCache[i].set {
+			b.WriteString(m.msgCache[i].rendered)
 		} else {
 			rendered := m.msgView.RenderMessage(msg)
 			if len(m.msgCache) <= i {
-				m.msgCache = append(m.msgCache, make([]string, i+1-len(m.msgCache))...)
+				m.msgCache = append(m.msgCache, make([]cachedMsg, i+1-len(m.msgCache))...)
 			}
 			if rendered == "" {
-				m.msgCache[i] = "\x00" // cache the empty result to avoid re-rendering
+				m.msgCache[i] = cachedMsg{set: true} // cache empty result to avoid re-rendering
 			} else {
 				rendered += "\n\n"
-				m.msgCache[i] = rendered
+				m.msgCache[i] = cachedMsg{rendered: rendered, set: true}
 				b.WriteString(rendered)
 			}
 		}
