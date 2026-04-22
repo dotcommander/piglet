@@ -8,16 +8,18 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dotcommander/piglet/extensions/internal/unicodeaudit"
 	"gopkg.in/yaml.v3"
 )
 
 // Skill describes a loaded skill file.
 type Skill struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Triggers    []string `yaml:"triggers"`
-	Path        string   `yaml:"-"`
-	body        string   // cached body (after frontmatter), populated at scan time
+	Name        string                 `yaml:"name"`
+	Description string                 `yaml:"description"`
+	Triggers    []string               `yaml:"triggers"`
+	Path        string                 `yaml:"-"`
+	body        string                 // cached body (after frontmatter), populated at scan time
+	Findings    []unicodeaudit.Finding // suspicious Unicode in the skill body; nil if clean
 }
 
 // Store manages skill files in a directory.
@@ -93,6 +95,7 @@ func (s *Store) scan() {
 		}
 		body, _ := readBody(path)
 		sk.body = body
+		sk.Findings = unicodeaudit.Audit(body)
 		s.skills = append(s.skills, sk)
 	}
 }

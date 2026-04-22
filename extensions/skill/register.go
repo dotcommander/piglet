@@ -33,6 +33,14 @@ func Register(e *sdk.Extension) {
 		}
 		store.Store(s)
 
+		// Warn about suspicious Unicode in skill bodies (homoglyphs, bidi controls, etc.)
+		for _, sk := range s.List() {
+			if len(sk.Findings) > 0 {
+				x.Log("warn", fmt.Sprintf("[skill] %s: %d suspicious Unicode finding(s) — first: %s",
+					sk.Name, len(sk.Findings), sk.Findings[0].String()))
+			}
+		}
+
 		// Prompt section listing available skills
 		var b strings.Builder
 		b.WriteString("Available skills (call skill_load to use):\n")
