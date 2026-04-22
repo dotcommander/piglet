@@ -28,4 +28,5 @@ const (
 	StatusKeyCost         = "cost"
 	StatusKeyQueue        = "queue"
 	StatusKeyPromptBudget = "prompt-budget"
+	StatusKeyGuardrail    = "guardrail"
 )

@@ -45,6 +45,7 @@ func registerStatusSections(app *ext.App) {
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyTokens, Side: ext.StatusRight, Order: 0})
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyCost, Side: ext.StatusRight, Order: 10})
 	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyPromptBudget, Side: ext.StatusRight, Order: 20})
+	app.RegisterStatusSection(ext.StatusSection{Key: ext.StatusKeyGuardrail, Side: ext.StatusRight, Order: 25})
 }
 
 func registerPromptBudgetHandler(app *ext.App) {
