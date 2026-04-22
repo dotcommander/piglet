@@ -61,11 +61,14 @@ func actionResultToAction(ar *ActionResult) ext.Action {
 	}
 	switch ar.Type {
 	case "notify":
-		var p struct{ Message string }
+		var p struct {
+			Message string
+			Level   string
+		}
 		if !unmarshal(&p) {
 			return nil
 		}
-		return ext.ActionNotify{Message: p.Message}
+		return ext.ActionNotify{Message: p.Message, Level: p.Level}
 	case "showMessage":
 		var p struct{ Text string }
 		if !unmarshal(&p) {

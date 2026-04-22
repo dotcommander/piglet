@@ -30,6 +30,24 @@ func TestActionResultToActionNotify(t *testing.T) {
 	assert.Equal(t, "hello from ext", got.Message)
 }
 
+func TestActionResultToActionNotify_Level(t *testing.T) {
+	t.Parallel()
+
+	payload, _ := json.Marshal(struct {
+		Message string
+		Level   string
+	}{"bad thing happened", "error"})
+	ar := &ActionResult{Type: "notify", Payload: payload}
+
+	action := actionResultToAction(ar)
+	require.NotNil(t, action)
+
+	got, ok := action.(ext.ActionNotify)
+	require.True(t, ok)
+	assert.Equal(t, "bad thing happened", got.Message)
+	assert.Equal(t, "error", got.Level)
+}
+
 func TestActionResultToActionShowMessage(t *testing.T) {
 	t.Parallel()
 

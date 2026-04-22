@@ -118,6 +118,22 @@ func ActionNotify(msg string) *Action {
 	return &Action{Type: "notify", Payload: map[string]string{"message": msg}}
 }
 
+// ActionNotifyWithLevel returns a notification action with severity.
+// Level: "" or "info" = muted, "warn" = warning, "error" = error.
+func ActionNotifyWithLevel(msg, level string) *Action {
+	return &Action{Type: "notify", Payload: map[string]string{"message": msg, "level": level}}
+}
+
+// ActionNotifyWarn returns a warning-level notification.
+func ActionNotifyWarn(msg string) *Action {
+	return ActionNotifyWithLevel(msg, "warn")
+}
+
+// ActionNotifyError returns an error-level notification.
+func ActionNotifyError(msg string) *Action {
+	return ActionNotifyWithLevel(msg, "error")
+}
+
 func ActionShowMessage(text string) *Action {
 	return &Action{Type: "showMessage", Payload: map[string]string{"text": text}}
 }
