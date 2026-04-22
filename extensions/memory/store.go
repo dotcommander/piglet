@@ -18,12 +18,13 @@ import (
 
 // Fact is a single key/value memory entry with optional category and relations.
 type Fact struct {
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	Category  string    `json:"category,omitzero"`
-	Relations []string  `json:"relations,omitzero"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Key        string    `json:"key"`
+	Value      string    `json:"value"`
+	Category   string    `json:"category,omitzero"`
+	Relations  []string  `json:"relations,omitzero"`
+	Importance int       `json:"importance,omitzero"` // 0 = default; higher = more important
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // Store holds facts in memory backed by a JSONL file.
@@ -74,6 +75,23 @@ func (s *Store) Set(key, value, category string) error {
 	f.UpdatedAt = now
 	s.data[key] = f
 
+	return s.flush()
+}
+
+// SetImportance updates the Importance field of an existing fact.
+// No-op if the key does not exist. Use importance values > 0 to signal
+// higher priority; 0 is the default (unset).
+func (s *Store) SetImportance(key string, importance int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, ok := s.data[key]
+	if !ok {
+		return nil
+	}
+	f.Importance = importance
+	f.UpdatedAt = time.Now().UTC()
+	s.data[key] = f
 	return s.flush()
 }
 

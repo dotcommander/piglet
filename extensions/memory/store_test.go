@@ -310,4 +310,5 @@ func TestStoreRelations(t *testing.T) {
 		require.True(t, ok)
 		assert.Contains(t, fx.Relations, "y")
 	})
+
 }
