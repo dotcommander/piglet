@@ -70,3 +70,43 @@ func TestFileTracker_DeletedFileNotStale(t *testing.T) {
 	require.NoError(t, os.Remove(tmp))
 	assert.Empty(t, ft.CheckStale(tmp)) // gone — let caller handle
 }
+
+// TestFileTracker_SymlinkBypass verifies that a read recorded via a symlink
+// is detected as stale when CheckStale is called with the canonical path,
+// and vice versa — closing the symlink canonicalization bypass.
+func TestFileTracker_SymlinkBypass(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	canonical := filepath.Join(dir, "real.txt")
+	symlink := filepath.Join(dir, "link.txt")
+
+	require.NoError(t, os.WriteFile(canonical, []byte("original"), 0644))
+	require.NoError(t, os.Symlink(canonical, symlink))
+
+	ft := &fileTracker{reads: make(map[string]time.Time)}
+
+	// Read is recorded via symlink path.
+	info, err := os.Stat(symlink)
+	require.NoError(t, err)
+	ft.RecordRead(symlink, info.ModTime())
+
+	// Advance mtime by rewriting via canonical path.
+	require.NoError(t, os.WriteFile(canonical, []byte("modified"), 0644))
+
+	// CheckStale via canonical path must detect the stale read.
+	msg := ft.CheckStale(canonical)
+	assert.Contains(t, msg, "modified since last read",
+		"read via symlink should be detected as stale when checked via canonical path")
+
+	// Inverse: read recorded via canonical, checked via symlink — also stale.
+	ft2 := &fileTracker{reads: make(map[string]time.Time)}
+	info2, err := os.Stat(canonical)
+	require.NoError(t, err)
+	// Record with the pre-modify mtime to simulate a prior read.
+	ft2.RecordRead(canonical, info2.ModTime().Add(-time.Second))
+
+	msg2 := ft2.CheckStale(symlink)
+	assert.Contains(t, msg2, "modified since last read",
+		"read via canonical should be detected as stale when checked via symlink")
+}
