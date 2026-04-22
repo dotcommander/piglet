@@ -228,6 +228,17 @@ func (m *Model) applyNotification(n shell.Notification) tea.Cmd {
 		m.messages = nil
 		m.msgCache = nil
 
+	case shell.NotifyMouseMode:
+		if act, ok := n.Action.(ext.ActionSetMouseCapture); ok {
+			m.mouseEnabled = act.Enabled
+			if act.Enabled {
+				m.status.Set(ext.StatusKeyMouse, m.styles.Muted.Render("mouse"))
+				return m.notifyAndTick("Mouse capture: ON (hold Shift for native selection)")
+			}
+			m.status.Set(ext.StatusKeyMouse, "")
+			return m.notifyAndTick("Mouse capture: OFF (terminal handles scroll)")
+		}
+
 	case shell.NotifySessionTitle:
 		// No TUI-specific action needed; shell already persisted it
 	}

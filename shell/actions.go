@@ -126,6 +126,10 @@ func (s *Shell) drainUIActions(action ext.Action) bool {
 		s.notify(Notification{Kind: NotifyExec, Action: act})
 		return true
 
+	case ext.ActionSetMouseCapture:
+		s.notify(Notification{Kind: NotifyMouseMode, Action: act})
+		return true
+
 	default:
 		return false
 	}

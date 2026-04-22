@@ -160,16 +160,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return result, cmd, true
 
 	case msg.Code == 'm' && msg.Mod.Contains(tea.ModCtrl):
-		m.mouseEnabled = !m.mouseEnabled
-		var cmd tea.Cmd
-		if m.mouseEnabled {
-			m.status.Set(ext.StatusKeyMouse, m.styles.Muted.Render("mouse"))
-			cmd = m.notifyAndTick("mouse mode ON — scroll with wheel, Ctrl+M to toggle off")
-		} else {
-			m.status.Set(ext.StatusKeyMouse, "")
-			cmd = m.notifyAndTick("mouse mode OFF — native text selection restored")
+		// Delegate to /mouse so the toggle persists to config — single source of truth.
+		if m.shell != nil {
+			m.shell.Submit("/mouse")
 		}
-		return m, cmd, true
+		return m, m.applyShellNotifications(), true
 
 	case msg.Code == 'z' && msg.Mod.Contains(tea.ModCtrl):
 		return m, tea.Suspend, true

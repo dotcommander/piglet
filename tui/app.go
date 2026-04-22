@@ -121,8 +121,11 @@ type Model struct {
 	// Auto-scroll: follow new output unless user scrolled up
 	followOutput bool
 
-	// Mouse mode: when true, bubbletea captures mouse (scroll via wheel);
-	// when false (default), native terminal text selection works.
+	// Mouse mode: default ON — bubbletea captures mouse so wheel/trackpad
+	// scrolls the viewport. Hold Shift (or Option on macOS terminals) to
+	// bypass capture and use native text selection — this is standard
+	// across iTerm2, Terminal.app, kitty, wezterm, Alacritty, ghostty.
+	// Toggle at runtime via /mouse; persisted in config.MouseCapture.
 	mouseEnabled bool
 
 	// Rendered message cache — parallel to m.messages, invalidated on width change
@@ -167,6 +170,10 @@ func New(cfg Config) Model {
 	vp.MouseWheelDelta = 1
 	vp.Style = lipgloss.NewStyle()
 
+	mouseOn := true
+	if cfg.Settings != nil {
+		mouseOn = cfg.Settings.MouseCaptureEnabled()
+	}
 	m := Model{
 		cfg:          cfg,
 		shell:        cfg.Shell,
@@ -181,7 +188,12 @@ func New(cfg Config) Model {
 		streamThink:  &strings.Builder{},
 		focused:      true,
 		followOutput: true,
+		mouseEnabled: mouseOn,
 		widgets:      make(map[string]widgetState),
+	}
+	// Seed the status section. Empty text clears; non-empty renders.
+	if mouseOn {
+		status.Set(ext.StatusKeyMouse, styles.Muted.Render("mouse"))
 	}
 	if hp, err := config.HistoryPath(); err == nil {
 		m.input.LoadHistory(hp)

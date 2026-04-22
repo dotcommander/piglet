@@ -27,6 +27,7 @@ func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string)
 	registerClear(app)
 	registerStep(app)
 	registerCompact(app)
+	registerMouse(app)
 	registerUpdate(app, version)
 	app.RegisterCommand(&ext.Command{
 		Name:        "upgrade",

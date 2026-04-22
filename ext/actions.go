@@ -80,6 +80,11 @@ type ActionCloseOverlay struct {
 	Key string
 }
 
+// ActionSetMouseCapture toggles TUI mouse capture. When Enabled is true,
+// the TUI renders with MouseModeCellMotion so wheel/trackpad events scroll
+// the viewport. When false, terminal-native text selection works.
+type ActionSetMouseCapture struct{ Enabled bool }
+
 func (ActionShowMessage) isAction()     {}
 func (ActionNotify) isAction()          {}
 func (ActionQuit) isAction()            {}
@@ -95,3 +100,4 @@ func (ActionExec) isAction()            {}
 func (ActionSetWidget) isAction()       {}
 func (ActionShowOverlay) isAction()     {}
 func (ActionCloseOverlay) isAction()    {}
+func (ActionSetMouseCapture) isAction() {}

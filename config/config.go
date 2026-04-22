@@ -27,6 +27,7 @@ type Settings struct {
 	RTK                    *bool             `yaml:"rtk,omitempty"`                    // nil = auto-detect; true/false = explicit
 	Debug                  bool              `yaml:"debug,omitempty"`                  // log all request/response payloads
 	Safeguard              *bool             `yaml:"safeguard,omitempty"`              // nil/true = enabled; false = disabled
+	MouseCapture           *bool             `yaml:"mouseCapture,omitempty"`           // nil/true = TUI captures mouse for scrolling; false = terminal handles (native text selection)
 	DisabledExtensions     []string          `yaml:"disabled_extensions,omitempty"`    // extensions to skip during loading
 	AllowProjectExtensions *bool             `yaml:"allowProjectExtensions,omitempty"` // default false; must opt-in for security
 	SubAgent               SubAgentSettings  `yaml:"subagent,omitempty"`
@@ -289,4 +290,13 @@ func (s Settings) ResolveDefaultModel() string {
 // IsExtensionDisabled reports whether the named extension is in the disabled list.
 func (s Settings) IsExtensionDisabled(name string) bool {
 	return slices.Contains(s.DisabledExtensions, name)
+}
+
+// MouseCaptureEnabled reports whether TUI mouse capture is on.
+// Default (nil) is true.
+func (s Settings) MouseCaptureEnabled() bool {
+	if s.MouseCapture == nil {
+		return true
+	}
+	return *s.MouseCapture
 }
