@@ -50,6 +50,19 @@ func (a *App) AbortWithMarker(reason string) {
 	}
 }
 
+// Abort cancels the agent's current run without inserting any marker into the
+// conversation. Use this for programmatic cancellation (plan-mode switch,
+// safeguard intervention, extension-driven flow control) where the LLM should
+// not see a [Request interrupted] message on resume.
+//
+// For user-initiated interruptions where the marker is meaningful, use
+// AbortWithMarker instead.
+func (a *App) Abort() {
+	if a.abortSilent != nil {
+		a.abortSilent()
+	}
+}
+
 // SetModel updates the agent's model.
 func (a *App) SetModel(m core.Model) {
 	a.mu.RLock()

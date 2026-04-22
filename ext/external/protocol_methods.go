@@ -84,4 +84,5 @@ const (
 	MethodSendMessage                 = "sendMessage"
 	MethodSteer                       = "steer"
 	MethodAbortWithMarker             = "abortWithMarker"
+	MethodAbort                       = "abort"
 )

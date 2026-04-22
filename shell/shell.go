@@ -75,6 +75,7 @@ func (s *Shell) bgBindOpts() []ext.BindOption {
 		ext.WithCancelBackground(s.StopBackground),
 		ext.WithIsBackgroundRunning(s.isBackgroundRunning),
 		ext.WithAbortWithMarker(s.AbortWithMarker),
+		ext.WithAbortSilent(s.Abort),
 		ext.WithSteer(s.Steer),
 	}
 }

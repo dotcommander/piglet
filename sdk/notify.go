@@ -69,6 +69,13 @@ func (e *Extension) AbortWithMarker(reason string) {
 	e.sendNotification("abortWithMarker", map[string]string{"reason": reason})
 }
 
+// Abort cancels the agent's current run silently — no [Request interrupted]
+// marker is inserted into the conversation. Use for programmatic cancellation
+// where the LLM should not see a user-interruption artifact on resume.
+func (e *Extension) Abort() {
+	e.sendNotification("abort", nil)
+}
+
 // Log sends a log message to the host.
 func (e *Extension) Log(level, msg string) {
 	e.sendNotification("log", map[string]string{"level": level, "message": msg})

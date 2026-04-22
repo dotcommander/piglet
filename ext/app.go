@@ -71,6 +71,9 @@ type App struct {
 	// Abort with marker callback (set via Bind)
 	abortWithMarker func(reason string)
 
+	// Silent abort callback (set via Bind)
+	abortSilent func()
+
 	// Steer with disposition callback (set via Bind)
 	steerFn func(content string) SteerDisposition
 
@@ -170,6 +173,11 @@ func WithIsBackgroundRunning(fn func() bool) BindOption {
 // WithAbortWithMarker sets the callback for aborting with a session marker.
 func WithAbortWithMarker(fn func(reason string)) BindOption {
 	return func(a *App) { a.abortWithMarker = fn }
+}
+
+// WithAbortSilent sets the callback for aborting silently (no session marker).
+func WithAbortSilent(fn func()) BindOption {
+	return func(a *App) { a.abortSilent = fn }
 }
 
 // WithSteer sets the callback for steering with disposition reporting.

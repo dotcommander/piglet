@@ -228,6 +228,10 @@ func (h *Host) handleNotification(msg *Message) {
 		if json.Unmarshal(msg.Params, &p) == nil && h.app != nil {
 			h.app.AbortWithMarker(p.Reason)
 		}
+	case MethodAbort:
+		if h.app != nil {
+			h.app.Abort()
+		}
 	case MethodLog:
 		var p LogParams
 		if json.Unmarshal(msg.Params, &p) == nil {
