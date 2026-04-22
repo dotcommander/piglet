@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -33,19 +34,23 @@ func readTool(app *ext.App, cfg ToolConfig, ft *fileTracker) *ext.ToolDef {
 
 			info, err := os.Stat(path)
 			if err != nil {
-				return textResult(fmt.Sprintf("error: %v", err)), nil
+				return toolStatErr(path, err), nil
 			}
 			const maxReadSize = 50 << 20 // 50 MB
 			if !info.Mode().IsRegular() {
-				return textResult("error: not a regular file"), nil
+				return errfmt.ToolErr(errfmt.ToolErrNotRegularFile,
+					fmt.Sprintf("not a regular file: %s", path),
+					"target a regular file, not a directory or device"), nil
 			}
 			if info.Size() > maxReadSize {
-				return textResult(fmt.Sprintf("error: file too large (%s, max 50MB)", FormatSize(info.Size()))), nil
+				return errfmt.ToolErr(errfmt.ToolErrFileTooLarge,
+					fmt.Sprintf("file too large (%s, max 50MB): %s", FormatSize(info.Size()), path),
+					"use offset/limit to read in chunks, or use grep to locate content"), nil
 			}
 
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return textResult(fmt.Sprintf("error: %v", err)), nil
+				return toolReadErr(path, err), nil
 			}
 
 			// Track mtime for TOCTOU staleness detection in edit/write tools.

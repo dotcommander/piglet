@@ -2,13 +2,14 @@ package tool_test
 
 import (
 	"context"
-	"github.com/dotcommander/piglet/core"
-	"github.com/dotcommander/piglet/ext"
-	"github.com/dotcommander/piglet/tool"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/ext"
+	"github.com/dotcommander/piglet/tool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,7 +161,7 @@ func TestEdit_MultipleOccurrences(t *testing.T) {
 		"old_text": "foo",
 		"new_text": "bar",
 	})
-	assert.Contains(t, out, "3 times")
+	assert.Contains(t, out, "matched 3 locations")
 }
 
 func TestBash_SimpleCommand(t *testing.T) {
@@ -176,7 +177,7 @@ func TestBash_ExitCode(t *testing.T) {
 	app, _ := setupApp(t)
 
 	out := execTool(t, app, "bash", map[string]any{"command": "exit 42"})
-	assert.Contains(t, out, "exit code: 42")
+	assert.Contains(t, out, "exit code 42")
 }
 
 func TestBash_Stderr(t *testing.T) {

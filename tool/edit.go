@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -33,17 +34,20 @@ func editTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 			oldText, _ := args["old_text"].(string)
 			newText, _ := args["new_text"].(string)
 			if oldText == "" {
-				return textResult("error: old_text is required and cannot be empty"), nil
+				return errfmt.ToolErr(errfmt.ToolErrInvalidArgs,
+					"old_text is required",
+					"provide the exact text to find"), nil
 			}
 
 			// TOCTOU staleness check — catch concurrent modifications.
 			if msg := ft.CheckStale(path); msg != "" {
-				return textResult("error: " + msg), nil
+				return errfmt.ToolErr(errfmt.ToolErrFileStale, msg,
+					"re-read the file before editing to confirm the current state"), nil
 			}
 
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return textResult(fmt.Sprintf("error reading file: %v", err)), nil
+				return toolReadErr(path, err), nil
 			}
 
 			content := string(data)
@@ -51,10 +55,14 @@ func editTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 			// Find with quote normalization fallback.
 			actual, count := findWithQuoteNormalization(content, oldText)
 			if count == 0 {
-				return textResult("error: old_text not found in file"), nil
+				return errfmt.ToolErr(errfmt.ToolErrNotUnique,
+					"old_text not found in file",
+					"check whitespace, invisible chars, and re-read the file"), nil
 			}
 			if count > 1 {
-				return textResult(fmt.Sprintf("error: old_text found %d times, must be unique. Add more context to make it unique.", count)), nil
+				return errfmt.ToolErr(errfmt.ToolErrNotUnique,
+					fmt.Sprintf("old_text matched %d locations, must be unique", count),
+					"add surrounding context to make the match unique"), nil
 			}
 
 			// If we matched via normalization, apply curly quotes to the replacement.
@@ -69,7 +77,7 @@ func editTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 			snapshotFile(path)
 
 			if err := atomicWrite(path, []byte(updated)); err != nil {
-				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
+				return toolWriteErr(path, err, "write file"), nil
 			}
 
 			// Re-record mtime so subsequent edits don't trigger false staleness.

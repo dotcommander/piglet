@@ -7,6 +7,7 @@ import (
 
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 )
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ func boolArg(args map[string]any, key string, fallback bool) bool {
 func requirePath(args map[string]any, cwd string) (string, *core.ToolResult) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return "", textResult("error: path is required")
+		return "", errfmt.ToolErr(errfmt.ToolErrInvalidArgs, "path is required", "provide an absolute file path")
 	}
 	return resolvePath(cwd, path), nil
 }

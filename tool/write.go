@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -33,19 +34,20 @@ func writeTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 
 			// TOCTOU staleness check — catch concurrent modifications.
 			if msg := ft.CheckStale(path); msg != "" {
-				return textResult("error: " + msg), nil
+				return errfmt.ToolErr(errfmt.ToolErrFileStale, msg,
+					"re-read the file before writing to confirm the current state"), nil
 			}
 
 			dir := filepath.Dir(path)
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return textResult(fmt.Sprintf("error creating directory: %v", err)), nil
+				return toolWriteErr(path, err, "create directory"), nil
 			}
 
 			// Snapshot for undo
 			snapshotFile(path)
 
 			if err := atomicWrite(path, []byte(content)); err != nil {
-				return textResult(fmt.Sprintf("error writing file: %v", err)), nil
+				return toolWriteErr(path, err, "write file"), nil
 			}
 
 			// Re-record mtime so subsequent writes don't trigger false staleness.

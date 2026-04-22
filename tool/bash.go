@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 )
 
@@ -53,7 +54,7 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 		Execute: func(ctx context.Context, id string, args map[string]any) (*core.ToolResult, error) {
 			command, _ := args["command"].(string)
 			if command == "" {
-				return textResult("error: command is required"), nil
+				return errfmt.ToolErr(errfmt.ToolErrInvalidArgs, "command is required", "provide a shell command to execute"), nil
 			}
 
 			timeout := intArg(args, "timeout", cfg.DefaultTimeout)
@@ -98,12 +99,24 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 			}
 
 			if err != nil {
-				if cmdCtx.Err() == context.DeadlineExceeded {
-					b.WriteString(fmt.Sprintf("\n\ncommand timed out after %ds", timeout))
-				} else if exitErr, ok := err.(*exec.ExitError); ok {
-					b.WriteString(fmt.Sprintf("\n\nexit code: %d", exitErr.ExitCode()))
-				} else {
-					b.WriteString(fmt.Sprintf("\n\nerror: %v", err))
+				outputBody := b.String()
+				switch {
+				case cmdCtx.Err() == context.DeadlineExceeded:
+					return toolBashErr(errfmt.ToolErrTimeout,
+						fmt.Sprintf("command timed out after %ds", timeout),
+						"increase timeout or run a narrower command",
+						outputBody), nil
+				case isExitError(err):
+					exitErr := err.(*exec.ExitError)
+					return toolBashErr(errfmt.ToolErrExitNonzero,
+						fmt.Sprintf("exit code %d", exitErr.ExitCode()),
+						"inspect stderr — non-zero exit may be expected (e.g., grep with no matches)",
+						outputBody), nil
+				default:
+					return toolBashErr(errfmt.ToolErrIO,
+						fmt.Sprintf("command failed: %v", err),
+						"",
+						outputBody), nil
 				}
 			}
 
