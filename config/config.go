@@ -251,11 +251,27 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 		tmp.Close()
 		return fmt.Errorf("chmod temp: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
 	}
 	cleanup = false
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	// Fsync the parent directory to make the rename durable on power loss.
+	// Best-effort: if the dir cannot be opened, the rename already succeeded.
+	if dirFile, err := os.Open(dir); err == nil {
+		if syncErr := dirFile.Sync(); syncErr != nil {
+			dirFile.Close()
+			return fmt.Errorf("sync dir: %w", syncErr)
+		}
+		dirFile.Close()
+	}
+	return nil
 }
 
 // IntOr returns v if positive, otherwise fallback.
