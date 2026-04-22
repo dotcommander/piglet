@@ -59,6 +59,11 @@ const (
 	// ToolErrInternal — bug in the tool itself (panic recovered, invariant broken).
 	// Recovery: report; not user-actionable.
 	ToolErrInternal ToolErrorCode = "INTERNAL"
+
+	// ToolErrToolDisabled — tool has been disabled by the circuit breaker after
+	// too many consecutive errors.
+	// Recovery: fix the tool invocation or /clear to reset the session breaker state.
+	ToolErrToolDisabled ToolErrorCode = "TOOL_DISABLED"
 )
 
 // ToolErr builds a *core.ToolResult representing a coded tool error.

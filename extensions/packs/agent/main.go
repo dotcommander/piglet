@@ -10,6 +10,7 @@ import (
 	"github.com/dotcommander/piglet/extensions/rtk"
 	"github.com/dotcommander/piglet/extensions/safeguard"
 	"github.com/dotcommander/piglet/extensions/subagent"
+	"github.com/dotcommander/piglet/extensions/toolbreaker"
 	"github.com/dotcommander/piglet/sdk"
 )
 
@@ -23,5 +24,6 @@ func main() {
 	safety.Register(e, "subagent", subagent.Register)
 	safety.Register(e, "provider", provider.Register)
 	safety.Register(e, "loop", loop.Register)
+	safety.Register(e, "toolbreaker", toolbreaker.Register)
 	e.Run()
 }
