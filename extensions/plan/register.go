@@ -19,7 +19,7 @@ type planState struct {
 func Register(e *sdk.Extension) {
 	s := &planState{}
 
-	e.OnInit(func(x *sdk.Extension) {
+	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()
 		x.Log("debug", "[plan] OnInit start")
 

@@ -55,7 +55,7 @@ var repomapToolParams = map[string]any{
 func Register(e *sdk.Extension) {
 	s := new(initState)
 
-	e.OnInit(func(x *sdk.Extension) {
+	e.OnInitAppend(func(x *sdk.Extension) {
 		handleOnInit(x, s)
 	})
 

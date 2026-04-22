@@ -13,7 +13,7 @@ func Register(e *sdk.Extension) {
 	var cfg Config
 	var projectCWD string
 
-	e.OnInit(func(x *sdk.Extension) {
+	e.OnInitAppend(func(x *sdk.Extension) {
 		cfg = LoadConfig()
 		projectCWD = x.CWD()
 

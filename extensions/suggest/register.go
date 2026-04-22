@@ -16,7 +16,7 @@ func Register(e *sdk.Extension) {
 		cwd atomic.Value
 	)
 
-	e.OnInit(func(x *sdk.Extension) {
+	e.OnInitAppend(func(x *sdk.Extension) {
 		cwd.Store(x.CWD())
 		cfg := LoadConfig()
 		prompt := LoadPrompt()

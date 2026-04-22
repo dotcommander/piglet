@@ -42,7 +42,7 @@ func Register(e *sdk.Extension) {
 		"required": []string{"file", "line", "new_name"},
 	}
 
-	e.OnInit(func(x *sdk.Extension) {
+	e.OnInitAppend(func(x *sdk.Extension) {
 		start := time.Now()
 		x.Log("debug", "[lsp] OnInit start")
 
