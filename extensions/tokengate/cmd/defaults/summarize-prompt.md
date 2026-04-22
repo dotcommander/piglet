@@ -1,1 +1,0 @@
-Summarize this tool output concisely. Keep key facts, file paths, error messages, and actionable information. Remove verbose formatting, redundant content, and boilerplate. Output ONLY the summary, no preamble.
