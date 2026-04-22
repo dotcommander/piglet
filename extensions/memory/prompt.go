@@ -3,6 +3,7 @@ package memory
 import (
 	_ "embed"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -36,7 +37,15 @@ func BuildMemoryPrompt(store *Store) string {
 	// User facts first (full display)
 	if len(userFacts) > 0 {
 		b.WriteString("Current memories:\n")
-		total := 0
+
+		// Sort by importance desc, key asc — highest-importance facts survive cap trimming.
+		slices.SortFunc(userFacts, func(a, b Fact) int {
+			if a.Importance != b.Importance {
+				return b.Importance - a.Importance
+			}
+			return strings.Compare(a.Key, b.Key)
+		})
+
 		lines := make([]string, len(userFacts))
 		for i, f := range userFacts {
 			if f.Category != "" {
@@ -44,18 +53,21 @@ func BuildMemoryPrompt(store *Store) string {
 			} else {
 				lines[i] = "- " + f.Key + ": " + f.Value
 			}
-			total += len(lines[i]) + 1
 		}
 
-		// Trim oldest entries to fit cap
-		start := 0
+		// Walk forward until next line would exceed cap; drop remaining (lowest-importance) entries.
 		userCap := promptContentCap - 500 // reserve space for context section
-		for total > userCap && start < len(lines) {
-			total -= len(lines[start]) + 1
-			start++
+		end := len(lines)
+		total := 0
+		for i, l := range lines {
+			if total+len(l)+1 > userCap {
+				end = i
+				break
+			}
+			total += len(l) + 1
 		}
 
-		for _, l := range lines[start:] {
+		for _, l := range lines[:end] {
 			b.WriteString(l)
 			b.WriteByte('\n')
 		}
