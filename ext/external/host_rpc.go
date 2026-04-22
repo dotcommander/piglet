@@ -333,6 +333,22 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostActivateTool(msg)
 	case MethodHostSetToolFilter:
 		h.handleHostSetToolFilter(msg)
+	case MethodHostToggleStepMode:
+		h.handleHostToggleStepMode(msg)
+	case MethodHostRequestQuit:
+		h.handleHostRequestQuit(msg)
+	case MethodHostHasCompactor:
+		h.handleHostHasCompactor(msg)
+	case MethodHostTriggerCompact:
+		go h.handleHostTriggerCompact(msg) // may be slow (LLM compaction)
+	case MethodHostCommands:
+		h.handleHostCommands(msg)
+	case MethodHostToolDefs:
+		h.handleHostToolDefs(msg)
+	case MethodHostShortcuts:
+		h.handleHostShortcuts(msg)
+	case MethodHostPromptSections:
+		h.handleHostPromptSections(msg)
 	default:
 		h.respondError(*msg.ID, -32601, "method not found: "+msg.Method)
 	}

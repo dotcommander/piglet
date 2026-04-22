@@ -14,7 +14,6 @@ import (
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
-	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/provider"
 	"github.com/dotcommander/piglet/shell"
 	"github.com/dotcommander/piglet/tui"
@@ -311,7 +310,6 @@ func runInteractive(ctx context.Context, rt *runtime) error {
 			rt.prov = p
 		}
 
-		prompt.RegisterSelfKnowledge(app)
 		system := buildSystemPrompt(app, rt)
 		ag := buildAgent(app, rt, system)
 

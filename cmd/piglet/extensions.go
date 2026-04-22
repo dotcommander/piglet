@@ -11,7 +11,6 @@ import (
 	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/ext/external"
-	"github.com/dotcommander/piglet/prompt"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/tool"
 )
@@ -77,8 +76,6 @@ func setupApp(ctx context.Context, rt *runtime) (*ext.App, string, func()) {
 	registerBuiltins(app, rt)
 
 	extCleanup := loadExtensionsWithRetry(ctx, app, rt, autoInstallEnabled())
-
-	prompt.RegisterSelfKnowledge(app)
 
 	system := buildSystemPrompt(app, rt)
 

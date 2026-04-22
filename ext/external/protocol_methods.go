@@ -63,6 +63,14 @@ const (
 	MethodHostSubscribe               = "host/subscribe"
 	MethodHostActivateTool            = "host/activateTool"
 	MethodHostSetToolFilter           = "host/setToolFilter"
+	MethodHostToggleStepMode          = "host/toggleStepMode"
+	MethodHostRequestQuit             = "host/requestQuit"
+	MethodHostHasCompactor            = "host/hasCompactor"
+	MethodHostTriggerCompact          = "host/triggerCompact"
+	MethodHostCommands                = "host/commands"
+	MethodHostToolDefs                = "host/toolDefs"
+	MethodHostShortcuts               = "host/shortcuts"
+	MethodHostPromptSections          = "host/promptSections"
 	MethodHostEventBusEvent           = "eventBus/event" // host → extension notification
 	MethodRegisterInputTransformer    = "register/inputTransformer"
 	MethodInputTransform              = "inputTransformer/transform" // host → extension callback

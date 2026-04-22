@@ -39,10 +39,10 @@ tui/, cmd/  → anything (wiring layer)
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
 | Tools | 4 | `tool/` (read, write, edit, bash) | `RegisterTool` |
-| Commands | 7 | `command/` (help, clear, compact, step, update, upgrade, quit) | `RegisterCommand` |
+| Commands | 3 | `command/` (update, upgrade, mouse) | `RegisterCommand` |
 | Shortcuts | 0 | — (session/model shortcuts are in extensions/sessioncmd) | `RegisterShortcut` |
 | Status sections | 7 | `command/` | `RegisterStatusSection` |
-| Prompt sections | 1 | `prompt/` (selfknowledge only — projectdocs moved to extensions) | `RegisterPromptSection` |
+| Prompt sections | 0 | — (selfknowledge moved to pack-core) | `RegisterPromptSection` |
 
 **External** (consolidated packs — single Go binaries via JSON-RPC, source in `extensions/packs/`):
 
@@ -51,7 +51,7 @@ tui/, cmd/  → anything (wiring layer)
 | `pack-context` | memory, skill, gitcontext, behavior, projectdocs, prompts, session-tools, inbox, distill, recall, route | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
 | `pack-code` | lsp, repomap, sift, plan, suggest, filetools, toolsearch, fossil | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
 | `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
-| `pack-core` | admin, export, extensions-list, undo, scaffold, background, sessioncmd | 8 commands, 2 shortcuts |
+| `pack-core` | admin, export, extensions-list, undo, scaffold, background, sessioncmd, cmdcore (help, clear, step, compact, quit), selfknowledge | 13 commands, 2 shortcuts, 1 prompt section |
 | `pack-workflow` | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
 | `pack-cron` | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
@@ -74,12 +74,11 @@ All extensions map to these primitives — no special access:
 
 | Extension | Primitive | How | Where |
 |-----------|-----------|-----|-------|
-| `prompt/selfknowledge.go` | Inject | Prompt section with runtime facts | compiled-in |
-| `command/` | React | Commands respond to user slash input | compiled-in |
+| `command/` | React + Observe | update, upgrade, mouse commands + status sections + prompt-budget handler | compiled-in |
 | `pack-context` | Inject + React + Hook + Observe | Memory, skills, git context, behavior, prompts, session tools, sessioncmd (model/session/tree commands + shortcuts) | external pack |
 | `pack-code` | Inject + Intercept + React + Observe | LSP, repo map, sift, plan, suggest | external pack |
 | `pack-agent` | Inject + Intercept + React + Observe | Safeguard, RTK, autotitle, clipboard, subagent, provider, loop | external pack |
-| `pack-core` | React | Admin, export, extensions-list, undo, scaffold, background | external pack |
+| `pack-core` | Inject + React | help, clear, step, compact, quit commands + selfknowledge prompt section | external pack |
 | `pack-workflow` | Inject + React + Observe | Pipeline, bulk, webfetch, cache, usage, modelsdev | external pack |
 | `mcp` | Inject + React | Prompt section + dynamic tools bridged from MCP servers | external |
 

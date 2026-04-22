@@ -2,6 +2,7 @@ package external
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1304,4 +1305,186 @@ func TestNewHostInitialState(t *testing.T) {
 	assert.Empty(t, h.Shortcuts())
 	assert.Empty(t, h.MessageHooks())
 	assert.Nil(t, h.Compactor())
+}
+
+// ---------------------------------------------------------------------------
+// Phase-A host query/action protocol round-trips (A1–A7)
+// ---------------------------------------------------------------------------
+
+func TestHostToggleStepModeResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		on   bool
+		want bool
+	}{
+		{true, true},
+		{false, false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(fmt.Sprintf("on=%v", tt.on), func(t *testing.T) {
+			t.Parallel()
+			orig := map[string]any{"on": tt.on}
+			data, err := json.Marshal(orig)
+			require.NoError(t, err)
+			var decoded struct {
+				On bool `json:"on"`
+			}
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, tt.want, decoded.On)
+		})
+	}
+}
+
+func TestHostRequestQuitResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	// fire-and-forget: result is an empty object
+	orig := map[string]string{}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded map[string]string
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Empty(t, decoded)
+}
+
+func TestHostHasCompactorResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		present bool
+	}{
+		{true},
+		{false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(fmt.Sprintf("present=%v", tt.present), func(t *testing.T) {
+			t.Parallel()
+			orig := map[string]any{"present": tt.present}
+			data, err := json.Marshal(orig)
+			require.NoError(t, err)
+			var decoded struct {
+				Present bool `json:"present"`
+			}
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, tt.present, decoded.Present)
+		})
+	}
+}
+
+func TestHostTriggerCompactResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		before int
+		after  int
+	}{
+		{before: 20, after: 8},
+		{before: 0, after: 0},
+		{before: 5, after: 5},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(fmt.Sprintf("before=%d,after=%d", tt.before, tt.after), func(t *testing.T) {
+			t.Parallel()
+			orig := HostTriggerCompactResult{Before: tt.before, After: tt.after}
+			data, err := json.Marshal(orig)
+			require.NoError(t, err)
+			var decoded HostTriggerCompactResult
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, tt.before, decoded.Before)
+			assert.Equal(t, tt.after, decoded.After)
+		})
+	}
+}
+
+func TestHostCommandsResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostCommandsResult{
+		Commands: []HostCommandInfo{
+			{Name: "clear", Description: "Clear conversation"},
+			{Name: "help", Description: "Show help"},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostCommandsResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Commands, 2)
+	assert.Equal(t, "clear", decoded.Commands[0].Name)
+	assert.Equal(t, "help", decoded.Commands[1].Name)
+	assert.Equal(t, "Show help", decoded.Commands[1].Description)
+}
+
+func TestHostToolDefsResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostToolDefsResult{
+		Tools: []HostToolDefInfo{
+			{Name: "bash", Description: "Run a shell command"},
+			{Name: "read", Description: "Read a file"},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostToolDefsResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Tools, 2)
+	assert.Equal(t, "bash", decoded.Tools[0].Name)
+	assert.Equal(t, "Run a shell command", decoded.Tools[0].Description)
+}
+
+func TestHostShortcutsResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostShortcutsResult{
+		Shortcuts: map[string]HostShortcutInfo{
+			"ctrl+g": {Description: "Open file picker"},
+			"ctrl+v": {Description: "Paste image"},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostShortcutsResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Shortcuts, 2)
+	assert.Equal(t, "Open file picker", decoded.Shortcuts["ctrl+g"].Description)
+	assert.Equal(t, "Paste image", decoded.Shortcuts["ctrl+v"].Description)
+}
+
+func TestHostPromptSectionsResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := HostPromptSectionsResult{
+		Sections: []HostPromptSectionInfo{
+			{Title: "Current Capabilities", TokenHint: 800},
+			{Title: "Memory", TokenHint: 0},
+		},
+	}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded HostPromptSectionsResult
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Sections, 2)
+	assert.Equal(t, "Current Capabilities", decoded.Sections[0].Title)
+	assert.Equal(t, 800, decoded.Sections[0].TokenHint)
+	assert.Equal(t, "Memory", decoded.Sections[1].Title)
+	assert.Equal(t, 0, decoded.Sections[1].TokenHint)
+}
+
+func TestPhaseAMethodsUseHostPrefix(t *testing.T) {
+	t.Parallel()
+	methods := []string{
+		MethodHostToggleStepMode,
+		MethodHostRequestQuit,
+		MethodHostHasCompactor,
+		MethodHostTriggerCompact,
+		MethodHostCommands,
+		MethodHostToolDefs,
+		MethodHostShortcuts,
+		MethodHostPromptSections,
+	}
+	for _, m := range methods {
+		m := m
+		t.Run(m, func(t *testing.T) {
+			t.Parallel()
+			assert.NotEmpty(t, m)
+			assert.True(t, strings.HasPrefix(m, "host/"), "method %q must use host/ prefix", m)
+		})
+	}
 }
