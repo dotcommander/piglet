@@ -49,6 +49,7 @@ func (s *Session) replayEntry(entry Entry) {
 		if err := json.Unmarshal(entry.Data, &entries); err == nil {
 			n.compact = replayCompactEntries(entries)
 		}
+		n.tokensBefore = entry.TokensBefore
 	case entryTypeCustomMessage:
 		var cm CustomMessageData
 		if err := json.Unmarshal(entry.Data, &cm); err == nil {

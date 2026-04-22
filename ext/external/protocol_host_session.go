@@ -183,6 +183,7 @@ type WireTreeNode struct {
 	Depth        int    `json:"depth"`
 	Preview      string `json:"preview,omitempty"`
 	Label        string `json:"label,omitempty"`
+	TokensBefore int    `json:"tokensBefore,omitempty"` // tokens before compaction; only set on compact entries
 }
 
 // HostSessionFullTreeResult is the host's response to host/sessionFullTree.

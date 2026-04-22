@@ -25,7 +25,8 @@ func (s *Session) Append(msg core.Message) error {
 
 // AppendCompact writes a compact checkpoint at the current leaf. On context build,
 // all ancestor messages before this entry are replaced by the compacted messages.
-func (s *Session) AppendCompact(msgs []core.Message) error {
+// tokensBefore is the token count in context immediately before compaction (0 = unknown).
+func (s *Session) AppendCompact(msgs []core.Message, tokensBefore int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -46,7 +47,8 @@ func (s *Session) AppendCompact(msgs []core.Message) error {
 	compactMsgs := make([]core.Message, len(msgs))
 	copy(compactMsgs, msgs)
 
-	_, err = s.commitNode(entryTypeCompact, data, &node{typ: entryTypeCompact, compact: compactMsgs})
+	n := &node{typ: entryTypeCompact, compact: compactMsgs, tokensBefore: tokensBefore}
+	_, err = s.commitNode(entryTypeCompact, data, n)
 	return err
 }
 
@@ -135,11 +137,12 @@ func customMessageToCore(role, content string, ts time.Time) core.Message {
 func (s *Session) commitNode(typ string, data json.RawMessage, n *node) (string, error) {
 	id := generateEntryID()
 	entry := Entry{
-		Type:      typ,
-		ID:        id,
-		ParentID:  s.leafID,
-		Timestamp: time.Now(),
-		Data:      data,
+		Type:         typ,
+		ID:           id,
+		ParentID:     s.leafID,
+		Timestamp:    time.Now(),
+		Data:         data,
+		TokensBefore: n.tokensBefore, // zero for non-compact entries; omitempty keeps JSON clean
 	}
 	if err := s.withFileLock(func() error { return s.appendEntry(entry) }); err != nil {
 		return "", err

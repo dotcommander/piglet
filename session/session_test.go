@@ -327,7 +327,7 @@ func TestCompactRoundTrip(t *testing.T) {
 		&core.UserMessage{Content: "summary of 0-4", Timestamp: time.Now()},
 		&core.UserMessage{Content: "msg5", Timestamp: time.Now()},
 	}
-	require.NoError(t, s.AppendCompact(compacted))
+	require.NoError(t, s.AppendCompact(compacted, 0))
 
 	// Write 1 post-compact message
 	require.NoError(t, s.Append(&core.UserMessage{Content: "msg6", Timestamp: time.Now()}))
@@ -363,7 +363,7 @@ func TestCompactReplacesInMemoryMessages(t *testing.T) {
 	compacted := []core.Message{
 		&core.UserMessage{Content: "summary", Timestamp: time.Now()},
 	}
-	require.NoError(t, s.AppendCompact(compacted))
+	require.NoError(t, s.AppendCompact(compacted, 0))
 
 	msgs := s.Messages()
 	require.Len(t, msgs, 1)
@@ -386,7 +386,7 @@ func TestCompactScanSummary(t *testing.T) {
 		&core.UserMessage{Content: "s2", Timestamp: time.Now()},
 		&core.UserMessage{Content: "s3", Timestamp: time.Now()},
 	}
-	require.NoError(t, s.AppendCompact(compacted))
+	require.NoError(t, s.AppendCompact(compacted, 0))
 	require.NoError(t, s.Append(&core.UserMessage{Content: "post1", Timestamp: time.Now()}))
 	require.NoError(t, s.Append(&core.UserMessage{Content: "post2", Timestamp: time.Now()}))
 	require.NoError(t, s.Close())
@@ -510,7 +510,7 @@ func TestBranchWithCompaction(t *testing.T) {
 	// Compact
 	require.NoError(t, s.AppendCompact([]core.Message{
 		&core.UserMessage{Content: "summary", Timestamp: time.Now()},
-	}))
+	}, 0))
 
 	// Add post-compact messages
 	require.NoError(t, s.Append(&core.UserMessage{Content: "post1", Timestamp: time.Now()}))
@@ -947,14 +947,14 @@ func TestCompactMultiple(t *testing.T) {
 	}
 	require.NoError(t, s.AppendCompact([]core.Message{
 		&core.UserMessage{Content: "compact1", Timestamp: time.Now()},
-	}))
+	}, 0))
 
 	// Second batch + second compaction
 	require.NoError(t, s.Append(&core.UserMessage{Content: "b0", Timestamp: time.Now()}))
 	require.NoError(t, s.Append(&core.UserMessage{Content: "b1", Timestamp: time.Now()}))
 	require.NoError(t, s.AppendCompact([]core.Message{
 		&core.UserMessage{Content: "compact2", Timestamp: time.Now()},
-	}))
+	}, 0))
 
 	// Post-compact message
 	require.NoError(t, s.Append(&core.UserMessage{Content: "final", Timestamp: time.Now()}))

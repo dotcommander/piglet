@@ -73,6 +73,9 @@ func nodeLabel(node sdk.TreeNode) string {
 	case "tool_result":
 		return fmt.Sprintf("[tool] %s", ts)
 	case "compact":
+		if node.TokensBefore > 0 {
+			return fmt.Sprintf("[compact tokens=%d] %s", node.TokensBefore, ts)
+		}
 		return fmt.Sprintf("[compact] %s", ts)
 	case "branch_summary":
 		return fmt.Sprintf("[branch] %s", ts)

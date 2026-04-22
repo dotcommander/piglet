@@ -156,6 +156,7 @@ func (s *Session) FullTree() []TreeNode {
 			Depth:        depth,
 			Preview:      s.nodePreview(n),
 			Label:        s.labels[id],
+			TokensBefore: n.tokensBefore,
 		})
 		for _, kid := range children[id] {
 			dfs(kid, depth+1)

@@ -23,11 +23,12 @@ const (
 
 // Entry is a single line in the JSONL session file.
 type Entry struct {
-	Type      string          `json:"type"`               // "user", "assistant", "tool_result", "meta", "compact", "branch_summary"
-	ID        string          `json:"id,omitempty"`       // 8-char hex; empty for meta and legacy entries
-	ParentID  string          `json:"parentId,omitempty"` // parent entry ID; empty for first entry
-	Timestamp time.Time       `json:"ts"`
-	Data      json.RawMessage `json:"data"`
+	Type         string          `json:"type"`               // "user", "assistant", "tool_result", "meta", "compact", "branch_summary"
+	ID           string          `json:"id,omitempty"`       // 8-char hex; empty for meta and legacy entries
+	ParentID     string          `json:"parentId,omitempty"` // parent entry ID; empty for first entry
+	Timestamp    time.Time       `json:"ts"`
+	Data         json.RawMessage `json:"data"`
+	TokensBefore int             `json:"tokensBefore,omitempty"` // tokens in context before compaction; only set on compact entries
 }
 
 // BranchSummaryData holds the data payload for a branch_summary entry.
@@ -68,6 +69,7 @@ type TreeNode struct {
 	Depth        int
 	Preview      string // truncated content for user messages
 	Label        string // user-assigned bookmark label (empty if none)
+	TokensBefore int    // tokens in context before compaction; only set on compact entries (0 = absent)
 }
 
 // Meta holds session metadata.
@@ -95,11 +97,12 @@ type Summary struct {
 
 // node is an in-memory tree node.
 type node struct {
-	parentID string
-	typ      string
-	ts       time.Time
-	message  core.Message   // non-nil for user/assistant/tool_result
-	compact  []core.Message // non-nil for compact entries
+	parentID     string
+	typ          string
+	ts           time.Time
+	message      core.Message   // non-nil for user/assistant/tool_result
+	compact      []core.Message // non-nil for compact entries
+	tokensBefore int            // tokens before compaction; only non-zero for compact entries
 }
 
 // generateEntryID returns a random 8-character hex ID.

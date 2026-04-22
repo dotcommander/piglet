@@ -104,3 +104,19 @@ func TestNodeLabelAssistantTruncationBoundary(t *testing.T) {
 	got40 := nodeLabel(node40)
 	assert.NotContains(t, got40, "...")
 }
+
+func TestNodeLabel_CompactWithTokens(t *testing.T) {
+	t.Parallel()
+	node := sdk.TreeNode{Type: "compact", Timestamp: "2024-01-02T15:04:05Z", TokensBefore: 12345}
+	got := nodeLabel(node)
+	assert.Contains(t, got, "tokens=12345")
+	assert.Contains(t, got, "[compact")
+}
+
+func TestNodeLabel_CompactWithoutTokens(t *testing.T) {
+	t.Parallel()
+	node := sdk.TreeNode{Type: "compact", Timestamp: "2024-01-02T15:04:05Z", TokensBefore: 0}
+	got := nodeLabel(node)
+	assert.NotContains(t, got, "tokens=")
+	assert.Contains(t, got, "[compact]")
+}

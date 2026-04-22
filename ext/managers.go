@@ -28,6 +28,7 @@ type TreeNode struct {
 	Depth        int
 	Preview      string
 	Label        string
+	TokensBefore int // tokens in context before compaction; only set on compact entries (0 = absent)
 }
 
 // SessionSummary is the ext-layer view of a session.

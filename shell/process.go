@@ -37,13 +37,13 @@ func (s *Shell) ProcessEvent(evt core.Event) (done bool) {
 			return true
 		}
 	case core.EventCompact:
-		// Persist compacted state
+		// Persist compacted state, recording the token count before compaction.
 		s.mu.Lock()
 		sess := s.session
 		agent := s.agent
 		s.mu.Unlock()
 		if sess != nil && agent != nil {
-			_ = sess.AppendCompact(agent.Messages())
+			_ = sess.AppendCompact(agent.Messages(), e.TokensAtCompact)
 		}
 	}
 

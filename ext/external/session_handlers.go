@@ -177,6 +177,7 @@ func (h *Host) handleHostSessionFullTree(msg *Message) {
 			Depth:        n.Depth,
 			Preview:      n.Preview,
 			Label:        n.Label,
+			TokensBefore: n.TokensBefore,
 		}
 	}
 	h.respond(*msg.ID, HostSessionFullTreeResult{Nodes: wire})

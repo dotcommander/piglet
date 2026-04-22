@@ -136,6 +136,7 @@ type TreeNode struct {
 	Depth        int    `json:"depth"`
 	Preview      string `json:"preview,omitempty"`
 	Label        string `json:"label,omitempty"`
+	TokensBefore int    `json:"tokensBefore,omitempty"` // tokens before compaction; only set on compact entries (0 = absent)
 }
 
 // SessionFullTree returns every entry in the session for DAG rendering.

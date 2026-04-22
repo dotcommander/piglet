@@ -167,6 +167,7 @@ func (m *sessionMgr) FullTree() []ext.TreeNode {
 			Depth:        n.Depth,
 			Preview:      n.Preview,
 			Label:        n.Label,
+			TokensBefore: n.TokensBefore,
 		}
 	}
 	return out
