@@ -4,11 +4,14 @@
 package subagent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +19,12 @@ import (
 
 	"github.com/dotcommander/piglet/extensions/internal/safeexec"
 	sdk "github.com/dotcommander/piglet/sdk"
+)
+
+const (
+	defaultAbsoluteTimeout   = 30 * time.Minute
+	defaultInactivityTimeout = 5 * time.Minute
+	pollInterval             = 500 * time.Millisecond
 )
 
 // tmuxExtraEnv lists env vars beyond safeexec.DefaultEnvAllowlist that the
@@ -50,6 +59,14 @@ func Register(e *sdk.Extension) {
 				"task":  map[string]any{"type": "string", "description": "Task instructions for the agent"},
 				"model": map[string]any{"type": "string", "description": "Model override (e.g. --model anthropic/claude-haiku-4-5)"},
 				"split": map[string]any{"type": "string", "enum": []any{"horizontal", "vertical", "window"}, "description": "Tmux layout: horizontal split (default), vertical split, or new window"},
+				"absolute_timeout_ms": map[string]any{
+					"type":        "integer",
+					"description": "Hard wall-clock timeout in milliseconds (default 1800000 = 30m). Set <= 0 to disable.",
+				},
+				"inactivity_timeout_ms": map[string]any{
+					"type":        "integer",
+					"description": "Kill the agent if its tmux pane shows no output for this many milliseconds (default 300000 = 5m). Catches stalled agents that connect but freeze mid-task. Set <= 0 to disable.",
+				},
 			},
 			"required": []any{"task"},
 		},
@@ -67,6 +84,10 @@ func Register(e *sdk.Extension) {
 			if _, err := exec.LookPath("tmux"); err != nil {
 				return sdk.ErrorResult("tmux not found in PATH"), nil
 			}
+
+			// Parse timeout overrides — <= 0 means disabled.
+			absolute := durationFromMs(args, "absolute_timeout_ms", defaultAbsoluteTimeout)
+			inactivity := durationFromMs(args, "inactivity_timeout_ms", defaultInactivityTimeout)
 
 			// Create result directory
 			agentID := uuid.New().String()[:8]
@@ -93,16 +114,17 @@ func Register(e *sdk.Extension) {
 			// Wrap: run piglet, then hold pane open briefly so user can see result
 			shellCmd := fmt.Sprintf("%s; echo ''; echo '[agent %s complete — press enter to close]'; read", pigletCmd, agentID)
 
-			// Determine tmux split mode
+			// Determine tmux split mode. -P -F "#{pane_id}" causes split-window /
+			// new-window to print the new pane's id so we can query its activity.
 			split, _ := args["split"].(string)
 			var tmuxArgs []string
 			switch split {
 			case "vertical":
-				tmuxArgs = []string{"split-window", "-v", shellCmd}
+				tmuxArgs = []string{"split-window", "-v", "-P", "-F", "#{pane_id}", shellCmd}
 			case "window":
-				tmuxArgs = []string{"new-window", "-n", "agent-" + agentID, shellCmd}
+				tmuxArgs = []string{"new-window", "-n", "agent-" + agentID, "-P", "-F", "#{pane_id}", shellCmd}
 			default: // horizontal (default)
-				tmuxArgs = []string{"split-window", "-h", shellCmd}
+				tmuxArgs = []string{"split-window", "-h", "-P", "-F", "#{pane_id}", shellCmd}
 			}
 
 			// Spawn the tmux pane with a filtered environment. safeexec.FilterEnv
@@ -110,35 +132,41 @@ func Register(e *sdk.Extension) {
 			// allowlist. We append TMUX/TMUX_TMPDIR so the client can locate its
 			// server session, and *_API_KEY vars so auth.GetAPIKey env-fallback
 			// works in the child piglet process.
+			var spawnOut, spawnErr bytes.Buffer
 			cmd := exec.CommandContext(ctx, "tmux", tmuxArgs...)
 			cmd.Env = append(safeexec.FilterEnv(nil), tmuxExtraEnv...)
-			if out, err := cmd.CombinedOutput(); err != nil {
+			cmd.Stdout = &spawnOut
+			cmd.Stderr = &spawnErr
+			if err := cmd.Run(); err != nil {
 				_ = os.RemoveAll(tmpDir)
-				return sdk.ErrorResult(fmt.Sprintf("tmux spawn failed: %v: %s", err, string(out))), nil
+				return sdk.ToolErr(sdk.ToolErrInternal,
+					fmt.Sprintf("tmux spawn failed: %v", err),
+					strings.TrimSpace(spawnErr.String())), nil
+			}
+			paneID := strings.TrimSpace(spawnOut.String())
+			if paneID == "" {
+				_ = os.RemoveAll(tmpDir)
+				return sdk.ToolErr(sdk.ToolErrInternal,
+					"tmux did not return pane id",
+					"expected -P -F '#{pane_id}' to print a non-empty id"), nil
 			}
 
-			// Poll for result file (agent writes it on completion)
-			timeout := 5 * time.Minute
-			deadline := time.Now().Add(timeout)
-			pollInterval := 500 * time.Millisecond
+			// Poll for result file (agent writes it on completion).
+			// Two independent deadlines: absolute wall-clock and inactivity.
+			spawnedAt := time.Now()
 			timer := time.NewTimer(pollInterval)
 			defer timer.Stop()
 
 			for {
 				select {
 				case <-ctx.Done():
-					return sdk.ErrorResult("dispatch cancelled"), nil
+					return sdk.ToolErr("CANCELLED", "dispatch cancelled", ""), nil
 				case <-timer.C:
 				}
 
-				if time.Now().After(deadline) {
-					return sdk.TextResult(fmt.Sprintf("[agent %s timed out after %s — check tmux pane for status]", agentID, timeout)), nil
-				}
-
+				// Result ready? Normal completion path — unchanged.
 				if data, err := os.ReadFile(resultPath); err == nil {
-					// Clean up temp dir
 					_ = os.RemoveAll(tmpDir)
-
 					result := strings.TrimSpace(string(data))
 					if result == "" {
 						return sdk.TextResult(fmt.Sprintf("[agent %s completed with no output]", agentID)), nil
@@ -146,8 +174,96 @@ func Register(e *sdk.Extension) {
 					return sdk.TextResult(fmt.Sprintf("[agent %s]\n\n%s", agentID, result)), nil
 				}
 
+				// Absolute deadline.
+				if absolute > 0 && time.Since(spawnedAt) > absolute {
+					killPane(ctx, paneID)
+					_ = os.RemoveAll(tmpDir)
+					return sdk.ToolErr(sdk.ToolErrTimeout,
+						fmt.Sprintf("agent %s exceeded absolute timeout %s (pane %s killed)",
+							agentID, absolute, paneID),
+						"increase absolute_timeout_ms or narrow the task"), nil
+				}
+
+				// Inactivity deadline.
+				if inactivity > 0 {
+					last, err := queryPaneActivity(ctx, paneID)
+					if err == nil && paneStalled(time.Now(), last, inactivity) {
+						killPane(ctx, paneID)
+						_ = os.RemoveAll(tmpDir)
+						idle := time.Since(last).Round(time.Second)
+						return sdk.ToolErr(sdk.ToolErrTimeout,
+							fmt.Sprintf("agent %s idle for %s (pane %s killed, inactivity limit %s)",
+								agentID, idle, paneID, inactivity),
+							"agent produced no output — may be stalled on network or blocked on input"), nil
+					}
+					// err != nil → pane_last_activity query failed; don't trip on transient
+					// tmux-query errors. Fall through to next poll.
+				}
+
 				timer.Reset(pollInterval)
 			}
 		},
 	})
+}
+
+// queryPaneActivity runs `tmux display-message -p -t <paneID> "#{pane_last_activity}"`
+// and parses the unix-timestamp result.
+// Returns a zero time.Time and non-nil error if the tmux call fails or the
+// output is non-numeric.
+func queryPaneActivity(ctx context.Context, paneID string) (time.Time, error) {
+	out, err := exec.CommandContext(ctx, "tmux", "display-message", "-p", "-t", paneID, "#{pane_last_activity}").Output()
+	if err != nil {
+		return time.Time{}, err
+	}
+	s := strings.TrimSpace(string(out))
+	sec, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse pane_last_activity %q: %w", s, err)
+	}
+	if sec == 0 {
+		return time.Time{}, nil
+	}
+	return time.Unix(sec, 0), nil
+}
+
+// paneStalled reports whether lastActivity is older than limit relative to now.
+// A zero lastActivity (tmux reports 0 for panes with no output yet) is never
+// considered stalled — we wait for at least one output event before judging.
+func paneStalled(now, lastActivity time.Time, limit time.Duration) bool {
+	return !lastActivity.IsZero() && now.Sub(lastActivity) > limit
+}
+
+// killPane runs `tmux kill-pane -t <paneID>` and returns. Errors are ignored —
+// the pane may have exited on its own between the stall check and the kill.
+func killPane(ctx context.Context, paneID string) {
+	_ = exec.CommandContext(ctx, "tmux", "kill-pane", "-t", paneID).Run()
+}
+
+// durationFromMs reads an integer milliseconds field from the tool args map.
+// Missing, wrong-type, or NaN → fallback.
+// <= 0 → returns 0 (disabled sentinel — caller branches on this).
+// > 0 → returns the duration.
+func durationFromMs(args map[string]any, key string, fallback time.Duration) time.Duration {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return fallback
+	}
+	var ms int64
+	switch n := v.(type) {
+	case float64:
+		if math.IsNaN(n) {
+			return fallback
+		}
+		ms = int64(n)
+	case int:
+		ms = int64(n)
+	case int64:
+		ms = n
+	default:
+		return fallback
+	}
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
