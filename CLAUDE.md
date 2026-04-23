@@ -39,7 +39,7 @@ tui/, cmd/  → anything (wiring layer)
 | Kind | Count | Source | API |
 |------|-------|--------|-----|
 | Tools | 4 | `tool/` (read, write, edit, bash) | `RegisterTool` |
-| Commands | 3 | `command/` (update, upgrade, mouse) | `RegisterCommand` |
+| Commands | 1 | `command/` (mouse) | `RegisterCommand` |
 | Shortcuts | 0 | — (session/model shortcuts are in extensions/sessioncmd) | `RegisterShortcut` |
 | Status sections | 7 | `command/` | `RegisterStatusSection` |
 | Prompt sections | 0 | — (selfknowledge moved to pack-core) | `RegisterPromptSection` |
@@ -51,7 +51,7 @@ tui/, cmd/  → anything (wiring layer)
 | `pack-context` | memory, skill, gitcontext, behavior, projectdocs, prompts, session-tools, inbox, distill, recall, route | 6 tools, 6 commands, 5 prompt sections, 1 compactor, 3 event handlers, 1 message hook |
 | `pack-code` | lsp, repomap, sift, plan, suggest, filetools, toolsearch, fossil | 10 tools, 1 command, 4 prompt sections, 2 interceptors, 2 event handlers |
 | `pack-agent` | safeguard, rtk, autotitle, clipboard, subagent, provider, loop | 2 tools, 3 commands, 2 prompt sections, 2 interceptors, 1 shortcut, 1 event handler, stream providers |
-| `pack-core` | admin, export, extensions-list, undo, scaffold, background, sessioncmd, cmdcore (help, clear, step, compact, quit), selfknowledge | 13 commands, 2 shortcuts, 1 prompt section |
+| `pack-core` | admin, export, extensions-list, undo, scaffold, background, sessioncmd, cmdcore (help, clear, step, compact, quit), selfknowledge, selfupdate | 14 commands, 2 shortcuts, 1 prompt section |
 | `pack-workflow` | pipeline, bulk, webfetch, cache, usage, modelsdev | 7 tools, 3 commands, 3 prompt sections, 1 event handler |
 | `pack-cron` | cron | 4 tools, 1 command (8 subcommands), 1 event handler |
 | `mcp` | mcp | dynamic tools, 1 command, 1 prompt section |
@@ -74,7 +74,7 @@ All extensions map to these primitives — no special access:
 
 | Extension | Primitive | How | Where |
 |-----------|-----------|-----|-------|
-| `command/` | React + Observe | update, upgrade, mouse commands + status sections + prompt-budget handler | compiled-in |
+| `command/` | React + Observe | mouse command + status sections + prompt-budget handler | compiled-in |
 | `pack-context` | Inject + React + Hook + Observe | Memory, skills, git context, behavior, prompts, session tools, sessioncmd (model/session/tree commands + shortcuts) | external pack |
 | `pack-code` | Inject + Intercept + React + Observe | LSP, repo map, sift, plan, suggest | external pack |
 | `pack-agent` | Inject + Intercept + React + Observe | Safeguard, RTK, autotitle, clipboard, subagent, provider, loop | external pack |
@@ -207,11 +207,11 @@ just deploy-dry                # Preview deployment plan without executing
 
 The deploy recipe: checks working tree is clean, bumps patch version, runs full build+test, tags, pushes, creates GitHub release.
 
-**GitHub Release is mandatory**: `piglet update` self-update uses the GitHub Releases API (`/releases/latest`), NOT git tags. A tag without a release is invisible to self-update.
+**GitHub Release is mandatory**: The `/update` command in pack-core uses `git ls-remote` + the GitHub Releases API (`/releases/latest`). A tag without a release is invisible to the API fallback path.
 
 ### Update caching
 
-`piglet update` (remote mode) caches the last successful build's commit hash in `~/.config/piglet/extensions/.last-build-hash`. If the remote HEAD matches, it prints "Extensions already up to date" and skips the clone+build cycle. Local mode (`--local`) always rebuilds.
+The `/update` command (pack-core selfupdate extension) caches the last successful build's commit hash in `~/.config/piglet/extensions/.last-build-hash`. If the remote HEAD matches, it skips the clone+build cycle.
 
 ## Config
 

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/dotcommander/piglet/command"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/provider"
@@ -122,23 +121,11 @@ func parseFlags(args []string) (cliFlags, error) {
 	return f, nil
 }
 
-// handleSubcommands processes init/update subcommands.
+// handleSubcommands processes init subcommand.
 // Returns (true, nil) if a subcommand was handled, (false, nil) to continue.
 func handleSubcommands(args []string) (bool, error) {
 	if len(args) == 1 && args[0] == "init" {
 		return true, config.RunSetup(writeModelsYAML, provider.SetupDefaults())
-	}
-	if len(args) >= 1 && (args[0] == "update" || args[0] == "upgrade") {
-		settings, err := config.Load()
-		if err != nil {
-			return true, fmt.Errorf("config: %w", err)
-		}
-		// --extensions-only: called by the old binary after self-upgrade
-		// so the NEW binary's code handles extension installation.
-		if len(args) >= 2 && args[1] == "--extensions-only" {
-			return true, command.InstallOfficialExtensions(os.Stderr, settings)
-		}
-		return true, command.RunUpdate(os.Stderr, settings, resolveVersion())
 	}
 	return false, nil
 }

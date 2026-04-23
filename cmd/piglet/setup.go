@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/dotcommander/piglet/command/selfupdate"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext/external"
@@ -155,19 +153,6 @@ func loadRuntime(ctx context.Context, debugFlag bool, modelOverride, baseURLOver
 		ctxWin := config.IntOr(settings.LocalDefaults.ContextWindow, provider.LocalDefaultContextWindow())
 		maxTok := config.IntOr(settings.LocalDefaults.MaxTokens, provider.LocalDefaultMaxTokens())
 		registry.RegisterLocalServers(settings.LocalServers, ctxWin, maxTok)
-	}
-
-	if selfupdate.CheckStale() {
-		go func() {
-			uCtx, uCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer uCancel()
-			if rel, err := selfupdate.FetchLatestRelease(uCtx); err == nil {
-				_ = selfupdate.WriteCache(rel)
-			}
-		}()
-	}
-	if notice := selfupdate.UpdateNotice(resolveVersion()); notice != "" {
-		fmt.Fprintf(os.Stderr, "%s\n", notice)
 	}
 
 	model, err := resolveModel(registry, settings, modelOverride, baseURLOverride)

@@ -17,21 +17,10 @@ import (
 // The shortcuts parameter is reserved for future use and is currently ignored.
 func RegisterBuiltins(app *ext.App, shortcuts map[string]string, version string) {
 	_ = shortcuts // reserved for future shortcut customization
+	_ = version   // version no longer used by built-ins; passed by callers for compatibility
 	registerStatusSections(app)
 	registerPromptBudgetHandler(app)
 	registerMouse(app)
-	registerUpdate(app, version)
-	app.RegisterCommand(&ext.Command{
-		Name:        "upgrade",
-		Description: "Alias for /update",
-		Handler: func(args string, a *ext.App) error {
-			if cmd, ok := a.Commands()["update"]; ok {
-				return cmd.Handler(args, a)
-			}
-			a.ShowMessage("update command not found")
-			return nil
-		},
-	})
 }
 
 func registerStatusSections(app *ext.App) {

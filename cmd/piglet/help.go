@@ -25,8 +25,7 @@ func printHelp() {
 	p("  piglet \"fix the tests\"       Single-shot — print response and exit\n")
 	p("  cat f.go | piglet \"review\"   Piped context with prompt\n")
 	p("  echo \"hello\" | piglet        Piped input as prompt\n")
-	p("  piglet init                  First-time setup (config, models, API keys)\n")
-	p("  piglet update                Self-update and rebuild extensions\n\n")
+	p("  piglet init                  First-time setup (config, models, API keys)\n\n")
 
 	p("%s\n", heading.Render("FLAGS"))
 	p("      --local            Auto-detect local model server (scans common ports)\n")
@@ -50,9 +49,9 @@ func printHelp() {
 	p("  piglet --json \"list files\" | jq .       Machine-readable output\n\n")
 
 	p("%s\n", heading.Render("INTERACTIVE"))
-	p("  /update     Self-update             Ctrl+C  Stop / quit\n")
-	p("  /upgrade    Upgrade binary          Ctrl+P  Model selector\n")
-	p("  /mouse      Toggle mouse capture    Ctrl+S  Session picker\n")
+	p("  /mouse      Toggle mouse capture    Ctrl+C  Stop / quit\n")
+	p("                                      Ctrl+P  Model selector\n")
+	p("                                      Ctrl+S  Session picker\n")
 	p("                                      Ctrl+M  Toggle mouse\n")
 	p("                                      Ctrl+Z  Suspend\n\n")
 	p("  %s\n", dim.Render("More commands (/help, /clear, /step, /compact, /quit, /model, /session, etc.)"))
