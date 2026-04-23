@@ -50,11 +50,13 @@ func printHelp() {
 	p("  piglet --json \"list files\" | jq .       Machine-readable output\n\n")
 
 	p("%s\n", heading.Render("INTERACTIVE"))
-	p("  /help       All commands            Ctrl+C  Stop / quit\n")
-	p("  /model      Switch model            Ctrl+P  Model selector\n")
-	p("  /session    Switch session          Ctrl+S  Session picker\n")
-	p("  /update     Self-update             Ctrl+M  Toggle mouse\n")
-	p("  /mouse      Toggle mouse capture    Ctrl+Z  Suspend\n\n")
+	p("  /update     Self-update             Ctrl+C  Stop / quit\n")
+	p("  /upgrade    Upgrade binary          Ctrl+P  Model selector\n")
+	p("  /mouse      Toggle mouse capture    Ctrl+S  Session picker\n")
+	p("                                      Ctrl+M  Toggle mouse\n")
+	p("                                      Ctrl+Z  Suspend\n\n")
+	p("  %s\n", dim.Render("More commands (/help, /clear, /step, /compact, /quit, /model, /session, etc.)"))
+	p("  %s\n\n", dim.Render("become available after running `piglet` interactively — provided by installed extensions."))
 
 	p("%s  ~/.config/piglet/\n", heading.Render("CONFIG"))
 	p("  config.yaml    Settings             auth.json      API keys\n")
