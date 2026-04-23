@@ -69,6 +69,7 @@ const (
 	MethodHostSetToolFilter           = "host/setToolFilter"
 	MethodHostToggleStepMode          = "host/toggleStepMode"
 	MethodHostRequestQuit             = "host/requestQuit"
+	MethodHostAbort                   = "host/abort"
 	MethodHostHasCompactor            = "host/hasCompactor"
 	MethodHostTriggerCompact          = "host/triggerCompact"
 	MethodHostCommands                = "host/commands"

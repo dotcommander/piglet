@@ -228,6 +228,8 @@ func (h *Host) handleRequest(msg *Message) {
 		h.handleHostToggleStepMode(msg)
 	case MethodHostRequestQuit:
 		h.handleHostRequestQuit(msg)
+	case MethodHostAbort:
+		h.handleHostAbort(msg)
 	case MethodHostHasCompactor:
 		h.handleHostHasCompactor(msg)
 	case MethodHostTriggerCompact:

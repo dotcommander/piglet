@@ -19,6 +19,15 @@ func (e *Extension) RequestQuit(ctx context.Context) error {
 	return hostCallVoid(e, ctx, "host/requestQuit", struct{}{})
 }
 
+// Abort cancels the agent's current run silently and waits for acknowledgement.
+// No [Request interrupted] marker is inserted. Use for programmatic cancellation
+// where the LLM should not see a user-interruption artifact on resume.
+// For fire-and-forget cancellation, use the notification-based Abort() on the
+// Extension's notify surface instead.
+func (e *Extension) AbortSync(ctx context.Context) error {
+	return hostCallVoid(e, ctx, "host/abort", struct{}{})
+}
+
 // HasCompactor returns true if a compactor is currently registered with the host.
 func (e *Extension) HasCompactor(ctx context.Context) (bool, error) {
 	type resp struct {

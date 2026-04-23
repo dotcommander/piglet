@@ -1485,11 +1485,23 @@ func TestHostPromptSectionsResultRoundTrip(t *testing.T) {
 	assert.Equal(t, 0, decoded.Sections[1].TokenHint)
 }
 
+func TestHostAbortResultRoundTrip(t *testing.T) {
+	t.Parallel()
+	// no-args, empty result — same shape as host/requestQuit
+	orig := map[string]string{}
+	data, err := json.Marshal(orig)
+	require.NoError(t, err)
+	var decoded map[string]string
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Empty(t, decoded)
+}
+
 func TestPhaseAMethodsUseHostPrefix(t *testing.T) {
 	t.Parallel()
 	methods := []string{
 		MethodHostToggleStepMode,
 		MethodHostRequestQuit,
+		MethodHostAbort,
 		MethodHostHasCompactor,
 		MethodHostTriggerCompact,
 		MethodHostCommands,
