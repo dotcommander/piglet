@@ -131,7 +131,14 @@ func (m Model) handleAgentReady(msg AgentReadyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetCommands(sugs)
 	}
-	return m, m.notifyAndTick("Extensions loaded")
+	if m.shell != nil {
+		m.shell.DrainActions()
+	}
+	notifyCmd := m.notifyAndTick("Extensions loaded")
+	if bgCmd := m.applyShellNotifications(); bgCmd != nil {
+		return m, tea.Batch(notifyCmd, bgCmd)
+	}
+	return m, notifyCmd
 }
 
 // handleKeyPress processes keyboard input. Returns handled=true if the key
