@@ -60,7 +60,7 @@ func (s *Shell) drainActions() {
 					_ = old.Close()
 				}
 				if agent != nil {
-					agent.SetMessages(sess.Messages())
+					agent.SetMessages(repairMessageSequence(sess.Messages()))
 				}
 				s.notify(Notification{Kind: NotifySessionSwap, Action: act})
 			}

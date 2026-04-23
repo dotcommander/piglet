@@ -60,6 +60,11 @@ const (
 	// Recovery: report; not user-actionable.
 	ToolErrInternal ToolErrorCode = "INTERNAL"
 
+	// ToolErrInterrupted — tool execution did not complete because the session was
+	// interrupted (crash, kill -9) before the result was recorded.
+	// Recovery: the agent will synthesize a placeholder result; retry if needed.
+	ToolErrInterrupted ToolErrorCode = "TOOL_INTERRUPTED"
+
 	// ToolErrToolDisabled — tool has been disabled by the circuit breaker after
 	// too many consecutive errors.
 	// Recovery: fix the tool invocation or /clear to reset the session breaker state.
