@@ -124,8 +124,11 @@ func parseFlags(args []string) (cliFlags, error) {
 // handleSubcommands processes init subcommand.
 // Returns (true, nil) if a subcommand was handled, (false, nil) to continue.
 func handleSubcommands(args []string) (bool, error) {
-	if len(args) == 1 && args[0] == "init" {
+	switch {
+	case len(args) == 1 && args[0] == "init":
 		return true, config.RunSetup(writeModelsYAML, provider.SetupDefaults())
+	case len(args) == 1 && (args[0] == "update" || args[0] == "upgrade"):
+		return true, runUpdate()
 	}
 	return false, nil
 }
