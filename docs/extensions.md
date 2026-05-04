@@ -259,6 +259,6 @@ If you have an old extension binary that wasn't cleaned up, it may still registe
 
 ## Building Extensions
 
-For a complete guide to building your own extensions, see [Building Extensions](building-extensions.md).
-
-For guidance on when to use native extensions vs MCP servers, see [Extensions vs MCP](extensions-vs-mcp.md).
+- **[Building Extensions](building-extensions.md)** — Quick start, Go/TypeScript SDK, registration API, manifest format, runtime API
+- **[Advanced Patterns](building-extensions-advanced.md)** — Interceptor chains, shared state, performance, testing, case studies
+- **[Extensions vs MCP](extensions-vs-mcp.md)** — When to use native extensions vs MCP servers

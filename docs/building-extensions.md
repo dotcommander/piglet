@@ -549,6 +549,137 @@ The wire protocol is newline-delimited JSON-RPC 2.0 over file descriptors:
 
 For the full protocol specification, see [Protocol](protocol.md).
 
+## Safety Hard-Rules
+
+### Return ToolErr for recoverable errors
+
+Use `sdk.ToolErr` (not `sdk.ErrorResult`) when the LLM should adapt its behavior:
+
+```go
+return sdk.ToolErr(
+    sdk.ToolErrFileNotFound,
+    fmt.Sprintf("file not found: %s", path),
+    "use read tool to verify the path exists",
+), nil
+```
+
+The `[error:CODE]` prefix lets the LLM pattern-match and choose a recovery strategy. The `hint` tells it what to try next. Without a hint, the model can only guess.
+
+### Guard nil state in every Execute closure
+
+Tools registered before `OnInit` completes have nil state:
+
+```go
+Execute: func(_ context.Context, args map[string]any) (*sdk.ToolResult, error) {
+    if s.store == nil {
+        return sdk.ErrorResult("store not available"), nil
+    }
+    // ... normal execution
+},
+```
+
+### Always use OnInitAppend, never OnInit
+
+`OnInit` replaces previous hooks. In a pack with 10+ extensions, a replace silently breaks others. `OnInitAppend` chains safely.
+
+### Use context.Context in all async work
+
+Every subprocess, HTTP call, and long-running operation must accept and respect `context.Context`. This lets the host cancel tool execution when the user steers or the turn times out.
+
+### Never return (nil, err) for expected failures
+
+Tool errors go in the `ToolResult`, not the Go error channel:
+
+```go
+// WRONG — transport error, not tool error
+return nil, fmt.Errorf("file not found")
+
+// RIGHT — tool error visible to the LLM
+return sdk.ErrorResult("file not found: " + path), nil
+```
+
+### Numeric args arrive as float64
+
+JSON-RPC deserializes all numbers as `float64`. Always convert:
+
+```go
+if n, ok := args["count"].(float64); ok {
+    count := int(n)
+}
+```
+
+### Clone args before mutating in interceptors
+
+```go
+modified := maps.Clone(args)
+modified["command"] = rewritten
+return true, modified, nil
+```
+
+Mutating the input map directly corrupts the session replay.
+
+## Common Issues
+
+### Extension loads but tools never fire
+
+**Symptom:** `/extensions` shows the tool, but the LLM never calls it.
+
+**Cause:** The tool's `Description` may be empty or too vague. The LLM decides which tool to call based on the description.
+
+**Fix:** Write a specific description and add `PromptHint`:
+
+```go
+e.RegisterTool(sdk.ToolDef{
+    Name:        "my_tool",
+    Description: "Search Python files for a regex pattern and return matching lines with context",
+    PromptHint:  "Use my_tool when searching Python code for patterns",
+})
+```
+
+### Interceptor runs but doesn't block
+
+**Symptom:** Before hook returns `false`, but the tool still executes.
+
+**Cause:** Another interceptor with higher priority returns `true` after yours returns `false`. Wait — that can't happen. More likely: you're returning `(false, args, nil)` but there's a typo in the interceptor Name field causing it not to register.
+
+**Fix:** Check the interceptor is actually loaded with `/extensions`. Verify the Name is unique.
+
+### Panic crashes the entire pack
+
+**Symptom:** One extension panics during Register and the whole pack stops.
+
+**Cause:** The pack's `main.go` calls `safety.Register()` which wraps each call in panic recovery, but if you're running the extension standalone (not in a pack), there's no wrapper.
+
+**Fix:** Either run inside a pack (recommended) or add your own `defer recover()` in `Register()`.
+
+### OnInitAppend never fires
+
+**Symptom:** Tools are registered but return "not available" every time.
+
+**Cause:** The `initialize` handshake hasn't completed. This happens when the extension process starts but the JSON-RPC connection is broken.
+
+**Fix:** Check that FD 3/4 (or stdin/stdout) are properly connected. Run the extension manually to verify it starts and waits for input.
+
+### Extension works locally but fails when installed
+
+**Symptom:** Works in development, fails when installed to `~/.config/piglet/extensions/`.
+
+**Cause:** The `manifest.yaml` runtime path is wrong, or the binary doesn't have execute permission.
+
+**Fix:** Verify `manifest.yaml` points to the correct binary. Run `chmod +x` on the binary. Test manually:
+
+```bash
+cd ~/.config/piglet/extensions/my-extension && ./my-extension
+```
+
+The binary should start and wait for JSON-RPC input (no output, no exit).
+
+---
+
+## Going Deeper
+
+Once you've shipped a working extension, the [Advanced Patterns guide](building-extensions-advanced.md) covers interceptor chains, shared state patterns, performance optimization, testing strategies, and case studies of six production extensions.
+
 ## Examples
 
 Working examples in the source tree at [`examples/extensions/`](../examples/extensions/):
