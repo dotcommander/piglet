@@ -1,11 +1,12 @@
 package config_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"github.com/dotcommander/piglet/config"
 	"testing"
 
+	"github.com/dotcommander/piglet/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -211,4 +212,63 @@ func TestAuth_CommandValue_Failing(t *testing.T) {
 	require.NoError(t, a.SetKey("testprovider", "!false"))
 
 	assert.Equal(t, "", a.GetAPIKey("testprovider"))
+}
+
+// writeAuthFile writes a credentials map to path with exactly the given mode.
+// Explicit Chmod follows WriteFile because the umask filters WriteFile's perm
+// bits — a strict umask would otherwise mask 0644 down to 0600 and silently
+// invert the "permissive" test.
+func writeAuthFile(t *testing.T, path string, creds map[string]string, mode os.FileMode) {
+	t.Helper()
+	data, err := json.MarshalIndent(creds, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, data, mode))
+	require.NoError(t, os.Chmod(path, mode))
+}
+
+func TestAuth_CommandValue_PermissivePermsBlocked(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	writeAuthFile(t, path, map[string]string{"testprovider": "!echo leaked-key"}, 0644)
+
+	a := config.NewAuth(path)
+	assert.Equal(t, "", a.GetAPIKey("testprovider"))
+}
+
+func TestAuth_CommandValue_RestrictivePermsAllowed(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	writeAuthFile(t, path, map[string]string{"testprovider": "!echo safe-key"}, 0600)
+
+	a := config.NewAuth(path)
+	assert.Equal(t, "safe-key", a.GetAPIKey("testprovider"))
+}
+
+func TestAuth_CommandValue_InMemoryAlwaysAllowed(t *testing.T) {
+	t.Parallel()
+
+	a := config.NewAuth("")
+	require.NoError(t, a.SetKey("testprovider", "!echo inmem-key"))
+	// In-memory auth has no file to check; !command always allowed
+	assert.Equal(t, "inmem-key", a.GetAPIKey("testprovider"))
+}
+
+func TestAuth_CommandValue_LazyPermCheck(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// NewAuth when file doesn't exist yet — permChecked stays false
+	a := config.NewAuth(path)
+
+	// SetKey writes the file with 0600 via AtomicWrite
+	require.NoError(t, a.SetKey("testprovider", "!echo lazy-key"))
+
+	// resolveValue's lazy re-check should find the file with 0600 and allow the command
+	assert.Equal(t, "lazy-key", a.GetAPIKey("testprovider"))
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -115,6 +116,13 @@ func applyDefaults(s *Settings) {
 			"pack-core", "pack-agent", "pack-context", "pack-code", "pack-workflow", "pack-cron",
 			"mcp",
 		}
+	}
+
+	// MaxMessages floor: the agent loop needs at least 4 messages (system + 3 turns)
+	// for stable operation. Values 1-3 are silently clamped with a warning.
+	if s.Agent.MaxMessages > 0 && s.Agent.MaxMessages < 4 {
+		slog.Warn("agent.maxMessages below minimum, clamped to 4", "configured", s.Agent.MaxMessages)
+		s.Agent.MaxMessages = 4
 	}
 }
 
@@ -263,13 +271,17 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	// Fsync the parent directory to make the rename durable on power loss.
-	// Best-effort: if the dir cannot be opened, the rename already succeeded.
+	// Best-effort: the rename already succeeded, so a dir sync failure is not
+	// a data integrity issue — only a durability edge case on power loss.
+	// Log as warning rather than error so callers don't retry a successful write.
 	if dirFile, err := os.Open(dir); err == nil {
 		if syncErr := dirFile.Sync(); syncErr != nil {
+			_ = dirFile.Close()
+			slog.Warn("atomic write: directory sync failed (rename already succeeded)",
+				"dir", dir, "error", syncErr)
+		} else {
 			dirFile.Close()
-			return fmt.Errorf("sync dir: %w", syncErr)
 		}
-		dirFile.Close()
 	}
 	return nil
 }

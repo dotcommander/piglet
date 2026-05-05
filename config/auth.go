@@ -35,25 +35,33 @@ func NormalizeProvider(name string) string {
 	return n
 }
 
+// permGroupOtherMask flags any group/other rwx bits — auth.json must be 0600 or tighter.
+const permGroupOtherMask os.FileMode = 0o077
+
 // Auth manages API key resolution.
 // Priority: runtime overrides → stored credentials → environment variables → command values.
 type Auth struct {
-	mu          sync.RWMutex
-	path        string // empty = in-memory only
-	credentials map[string]string
-	runtime     map[string]string
+	mu             sync.RWMutex
+	path           string // empty = in-memory only
+	credentials    map[string]string
+	runtime        map[string]string
+	commandAllowed bool // true if auth.json has safe permissions (0600) or user opted in
+	permChecked    bool // true after first permission check
+	permWarnLogged bool // deduplicate permission warnings (guarded by mu)
 }
 
 // NewAuth creates an Auth that persists to the given path.
 // Pass "" for in-memory only (tests).
 func NewAuth(path string) *Auth {
 	a := &Auth{
-		path:        path,
-		credentials: make(map[string]string),
-		runtime:     make(map[string]string),
+		path:           path,
+		credentials:    make(map[string]string),
+		runtime:        make(map[string]string),
+		commandAllowed: true, // default true; checkFilePerms may restrict on disk-backed instances
 	}
 	if path != "" {
 		_ = a.load() // best effort
+		a.checkFilePerms()
 	}
 	return a
 }
@@ -87,7 +95,7 @@ func (a *Auth) GetAPIKey(provider string) string {
 
 	// Stored credential (may be a literal, env ref, or command)
 	if stored != "" {
-		return resolveValue(stored)
+		return a.resolveValue(stored)
 	}
 
 	// Environment variable: <PROVIDER>_API_KEY
@@ -158,6 +166,41 @@ func (a *Auth) load() error {
 	return json.Unmarshal(data, &a.credentials)
 }
 
+// checkFilePerms verifies auth.json has restrictive permissions (0600 or tighter).
+// If permissions are too permissive, !command credential helpers are disabled.
+// Called once at NewAuth and lazily from resolveValue if the file did not exist
+// at init time (e.g. created later by SetKey).
+func (a *Auth) checkFilePerms() {
+	if a.path == "" {
+		return
+	}
+
+	info, err := os.Stat(a.path)
+	if err != nil {
+		return // file doesn't exist yet; will be created with 0600 by save()
+	}
+
+	perm := info.Mode().Perm()
+	safe := perm&permGroupOtherMask == 0
+
+	a.mu.Lock()
+	a.commandAllowed = safe
+	a.permChecked = true
+	shouldWarn := !safe && !a.permWarnLogged
+	if shouldWarn {
+		a.permWarnLogged = true
+	}
+	a.mu.Unlock()
+
+	if shouldWarn {
+		slog.Warn("auth.json has permissive permissions — !command credential helpers disabled",
+			"path", a.path,
+			"mode", fmt.Sprintf("%04o", perm),
+			"hint", "chmod 600 "+a.path,
+		)
+	}
+}
+
 func (a *Auth) save() error {
 	if a.path == "" {
 		return nil
@@ -192,10 +235,10 @@ func envKeyCandidates(provider string) []string {
 }
 
 // resolveValue resolves a configured value that may be:
-//   - "!command" → execute shell command, use stdout
+//   - "!command" → execute shell command, use stdout (requires safe file permissions)
 //   - "$ENV_VAR" or "${ENV_VAR}" → resolve from environment
 //   - literal string
-func resolveValue(value string) string {
+func (a *Auth) resolveValue(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
@@ -207,10 +250,25 @@ func resolveValue(value string) string {
 		if cmd == "" {
 			return ""
 		}
-		// Security: The !command credential helper executes arbitrary shell commands
-		// specified by the user in auth.json. This is an intentional design choice
-		// (analogous to git's credential.helper) but means auth.json contents are
-		// trusted as code. The file permissions (0600) should be verified on read.
+
+		// Security gate: refuse to execute !command values if auth.json has
+		// permissive permissions. An attacker who can write to a group/world-readable
+		// auth.json achieves arbitrary code execution via this path.
+		// Re-check lazily: the file may have been created after NewAuth.
+		if !a.permChecked {
+			a.checkFilePerms()
+		}
+		a.mu.RLock()
+		allowed := a.commandAllowed
+		a.mu.RUnlock()
+		if !allowed {
+			slog.Warn("!command credential helper blocked — auth.json permissions too permissive",
+				"cmd", cmd,
+				"hint", "chmod 600 "+a.path,
+			)
+			return ""
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var c *exec.Cmd
