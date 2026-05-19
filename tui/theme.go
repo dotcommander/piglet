@@ -18,6 +18,11 @@ type Theme struct {
 	Background   color.Color
 	Foreground   color.Color
 	Border       color.Color
+	ToolRead     color.Color
+	ToolWrite    color.Color
+	ToolEdit     color.Color
+	ToolBash     color.Color
+	ToolGrep     color.Color
 	GlamourStyle string // glamour markdown style name (e.g. "dark", "light", "notty")
 }
 
@@ -33,6 +38,11 @@ func DefaultTheme() Theme {
 		Background:   lipgloss.Color("#1E1E2E"),
 		Foreground:   lipgloss.Color("#CDD6F4"),
 		Border:       lipgloss.Color("#45475A"),
+		ToolRead:     lipgloss.Color("#8aadf4"),
+		ToolWrite:    lipgloss.Color("#a6da95"),
+		ToolEdit:     lipgloss.Color("#eed49f"),
+		ToolBash:     lipgloss.Color("#f5bde6"),
+		ToolGrep:     lipgloss.Color("#91d7e3"),
 		GlamourStyle: "dark",
 	}
 }
@@ -52,6 +62,11 @@ type Styles struct {
 	Error          lipgloss.Style
 	Success        lipgloss.Style
 	Warning        lipgloss.Style
+	ToolRead       lipgloss.Style
+	ToolWrite      lipgloss.Style
+	ToolEdit       lipgloss.Style
+	ToolBash       lipgloss.Style
+	ToolGrep       lipgloss.Style
 	BorderColor    color.Color
 }
 
@@ -91,6 +106,16 @@ func NewStyles(t Theme) Styles {
 			Foreground(t.Success),
 		Warning: lipgloss.NewStyle().
 			Foreground(t.Warning),
+		ToolRead: lipgloss.NewStyle().
+			Foreground(t.ToolRead),
+		ToolWrite: lipgloss.NewStyle().
+			Foreground(t.ToolWrite),
+		ToolEdit: lipgloss.NewStyle().
+			Foreground(t.ToolEdit),
+		ToolBash: lipgloss.NewStyle().
+			Foreground(t.ToolBash),
+		ToolGrep: lipgloss.NewStyle().
+			Foreground(t.ToolGrep),
 		BorderColor: t.Border,
 	}
 }

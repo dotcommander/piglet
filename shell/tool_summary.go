@@ -8,14 +8,14 @@ import (
 // ToolSummary returns a concise display string for a tool call.
 // Format: "toolname: detail" or just "toolname" if no meaningful detail.
 func ToolSummary(toolName string, args map[string]any) string {
-	detail := toolDetail(toolName, args)
+	detail := ToolDetail(toolName, args)
 	if detail == "" {
 		return toolName
 	}
 	return toolName + ": " + detail
 }
 
-func toolDetail(toolName string, args map[string]any) string {
+func ToolDetail(toolName string, args map[string]any) string {
 	switch toolName {
 	case "bash":
 		return bashDetail(args)

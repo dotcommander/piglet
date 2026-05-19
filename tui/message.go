@@ -146,7 +146,12 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 			preview := truncateRunes(block.Thinking, 80)
 			b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
 		case core.ToolCall:
-			b.WriteString(v.styles.Muted.Render("▸ "+shell.ToolSummary(block.Name, block.Arguments)) + "\n")
+			node := CallNode{
+				Tool:   block.Name,
+				Arg:    shell.ToolDetail(block.Name, block.Arguments),
+				Status: StatusPending,
+			}
+			b.WriteString(RenderLine(node, v.styles, false, false, v.width) + "\n")
 		}
 	}
 
@@ -154,15 +159,6 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 }
 
 func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
-	var prefix string
-	if m.IsError {
-		prefix = v.styles.ToolError.Render("✗")
-	} else {
-		prefix = v.styles.Success.Render("✓")
-	}
-
-	name := v.styles.Muted.Render(m.ToolName)
-
 	var content string
 	for _, c := range m.Content {
 		if tc, ok := c.(core.TextContent); ok {
@@ -171,26 +167,31 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 		}
 	}
 
+	status := StatusOK
+	if m.IsError {
+		status = StatusFail
+	}
+
 	trimmed := strings.TrimSpace(content)
-
-	// Single-line: compact inline format
-	if !strings.Contains(trimmed, "\n") {
-		if trimmed == "" {
-			return prefix + " " + name + "\n"
-		}
-		return prefix + " " + name + "  " + v.styles.Muted.Render(trimmed) + "\n"
+	firstLine := trimmed
+	if i := strings.IndexByte(firstLine, '\n'); i >= 0 {
+		firstLine = firstLine[:i]
 	}
 
-	// Multi-line: truncate long output
-	lines := strings.Split(content, "\n")
-	if len(lines) > 10 {
-		content = strings.Join(lines[:5], "\n") +
-			v.styles.Muted.Render(
-				fmt.Sprintf("\n... (%d lines truncated)\n", len(lines)-10)) +
-			strings.Join(lines[len(lines)-5:], "\n")
+	meta := ""
+	if n := strings.Count(content, "\n"); n > 0 {
+		meta = fmt.Sprintf("%d lines", n+1)
+	} else if trimmed != "" {
+		meta = fmt.Sprintf("%d chars", len([]rune(trimmed)))
 	}
 
-	return prefix + " " + name + "\n" + v.styles.Muted.Render(content) + "\n"
+	node := CallNode{
+		Tool:   m.ToolName,
+		Arg:    firstLine,
+		Status: status,
+		Meta:   meta,
+	}
+	return RenderLine(node, v.styles, false, false, v.width) + "\n"
 }
 
 // streamCache holds cached glamour output during streaming to avoid re-rendering every tick.
