@@ -49,6 +49,11 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		m.activeToolID = ""
 		m.bashTail = ""
 		m.spinnerVerb = "thinking..."
+		// EventToolEnd.Result carries ToolResult.Details; cache diff metadata
+		// so renderToolResult can show it (ToolResultMessage has no Details).
+		if dm, ok := e.Result.(tool.DiffMeta); ok && e.ToolCallID != "" {
+			m.diffMeta[e.ToolCallID] = dm
+		}
 
 	case core.EventTurnEnd:
 		if e.Assistant != nil {

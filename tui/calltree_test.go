@@ -5,7 +5,31 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/dotcommander/piglet/tool"
 )
+
+func TestFormatDiffMeta(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		dm   tool.DiffMeta
+		want string
+	}{
+		{"typical edit", tool.DiffMeta{Added: 47, Removed: 8, Files: 1, Hunks: 3}, "+47 -8 · 1f 3h"},
+		{"new file", tool.DiffMeta{Added: 12, Removed: 0, Files: 1, Hunks: 1}, "+12 -0 · 1f 1h"},
+		{"zero", tool.DiffMeta{}, "+0 -0 · 0f 0h"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatDiffMeta(tc.dm); got != tc.want {
+				t.Errorf("formatDiffMeta(%+v) = %q, want %q", tc.dm, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestPadOrTruncate(t *testing.T) {
 	t.Parallel()

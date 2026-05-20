@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/shell"
+	"github.com/dotcommander/piglet/tool"
 )
 
 // MessageView renders conversation messages.
@@ -52,15 +53,17 @@ func (v *MessageView) SetWidth(w int) {
 	v.renderer = r
 }
 
-// RenderMessage renders a single message.
-func (v *MessageView) RenderMessage(msg core.Message) string {
+// RenderMessage renders a single message. diffMeta supplies per-ToolCallID
+// edit metadata (added/removed/files/hunks) keyed for tool-result rows;
+// nil is safe — callers without diff data pass nil.
+func (v *MessageView) RenderMessage(msg core.Message, diffMeta map[string]tool.DiffMeta) string {
 	switch m := msg.(type) {
 	case *core.UserMessage:
 		return v.renderUser(m)
 	case *core.AssistantMessage:
 		return v.renderAssistant(m)
 	case *core.ToolResultMessage:
-		return v.renderToolResult(m)
+		return v.renderToolResult(m, diffMeta)
 	default:
 		return ""
 	}
@@ -158,7 +161,7 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 	return b.String()
 }
 
-func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
+func (v *MessageView) renderToolResult(m *core.ToolResultMessage, diffMeta map[string]tool.DiffMeta) string {
 	var content string
 	for _, c := range m.Content {
 		if tc, ok := c.(core.TextContent); ok {
@@ -178,8 +181,11 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 		firstLine = firstLine[:i]
 	}
 
+	// Prefer diff metadata for edit/write rows; fall back to line/char count.
 	meta := ""
-	if n := strings.Count(content, "\n"); n > 0 {
+	if dm, ok := diffMeta[m.ToolCallID]; ok {
+		meta = formatDiffMeta(dm)
+	} else if n := strings.Count(content, "\n"); n > 0 {
 		meta = fmt.Sprintf("%d lines", n+1)
 	} else if trimmed != "" {
 		meta = fmt.Sprintf("%d chars", len([]rune(trimmed)))
@@ -192,6 +198,12 @@ func (v *MessageView) renderToolResult(m *core.ToolResultMessage) string {
 		Meta:   meta,
 	}
 	return RenderLine(node, v.styles, false, false, v.width) + "\n"
+}
+
+// formatDiffMeta renders a DiffMeta as the compact "+47 -8 · 1f 3h" form
+// shown in the call-tree meta column.
+func formatDiffMeta(dm tool.DiffMeta) string {
+	return fmt.Sprintf("+%d -%d · %df %dh", dm.Added, dm.Removed, dm.Files, dm.Hunks)
 }
 
 // streamCache holds cached glamour output during streaming to avoid re-rendering every tick.

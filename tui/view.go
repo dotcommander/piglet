@@ -150,7 +150,7 @@ func (m *Model) renderMessages() string {
 		if i < len(m.msgCache) && m.msgCache[i].set {
 			b.WriteString(m.msgCache[i].rendered)
 		} else {
-			rendered := m.msgView.RenderMessage(msg)
+			rendered := m.msgView.RenderMessage(msg, m.diffMeta)
 			if len(m.msgCache) <= i {
 				m.msgCache = append(m.msgCache, make([]cachedMsg, i+1-len(m.msgCache))...)
 			}

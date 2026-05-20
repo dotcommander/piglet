@@ -12,6 +12,7 @@ import (
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/session"
 	"github.com/dotcommander/piglet/shell"
+	"github.com/dotcommander/piglet/tool"
 )
 
 // Config configures the TUI app.
@@ -134,6 +135,11 @@ type Model struct {
 
 	// Extension widgets — keyed, last-write-wins per key, max 5 lines each
 	widgets map[string]widgetState
+
+	// Diff metadata cache keyed by ToolCallID. Populated from EventToolEnd
+	// (which carries ToolResult.Details) so renderToolResult can show
+	// "+N -N · Nf Nh" — core.ToolResultMessage does not carry Details.
+	diffMeta map[string]tool.DiffMeta
 }
 
 // New creates a TUI model.
@@ -187,6 +193,7 @@ func New(cfg Config) Model {
 		followOutput: true,
 		mouseEnabled: mouseOn,
 		widgets:      make(map[string]widgetState),
+		diffMeta:     make(map[string]tool.DiffMeta),
 		bashTailCh:   subscribeBashTail(cfg.App),
 	}
 	// Seed the status section. Empty text clears; non-empty renders.
