@@ -23,6 +23,22 @@ func TestConfigDir_XDGOverride(t *testing.T) {
 	assert.Equal(t, "/custom/config/piglet", dir)
 }
 
+func TestConfigPath_XDGOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+
+	path, err := ConfigPath("models.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("/custom/config", "piglet", "models.yaml"), path)
+}
+
+func TestExtensionPath_XDGOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+
+	path, err := ExtensionPath("provider", "provider.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("/custom/config", "piglet", "extensions", "provider", "provider.yaml"), path)
+}
+
 func TestConfigDir_DefaultsToHomeConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 
@@ -45,6 +61,20 @@ func TestLoadYAML_CreatesDefaultFile(t *testing.T) {
 	cfgPath := filepath.Join(tmp, "piglet", "test.yaml")
 	_, err := os.Stat(cfgPath)
 	require.NoError(t, err, "config file should have been created on disk")
+}
+
+func TestLoadYAMLExtWithPath_CreatesDefaultFileAndReturnsPath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	defaults := testConfig{Name: "default", Count: 42, Enabled: true}
+	result, path := LoadYAMLExtWithPath("provider", "provider.yaml", defaults)
+
+	assert.Equal(t, defaults, result)
+	wantPath := filepath.Join(tmp, "piglet", "extensions", "provider", "provider.yaml")
+	assert.Equal(t, wantPath, path)
+	_, err := os.Stat(wantPath)
+	require.NoError(t, err, "extension config file should have been created on disk")
 }
 
 func TestLoadYAML_ReadsExistingFile(t *testing.T) {

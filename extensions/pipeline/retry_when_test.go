@@ -36,9 +36,9 @@ echo "succeeded on attempt $count"
 				Name:    "flaky",
 				Run:     script,
 				Retries: 2,
-				// RetryDelay intentionally omitted: defaults() sets it to 5s
-				// but step succeeds on attempt 2, so only one 5s wait occurs.
-				Timeout: 10,
+				// Keep the test fast while still exercising retry sleep behavior.
+				RetryDelay: 1,
+				Timeout:    10,
 			},
 		},
 	}
@@ -60,11 +60,11 @@ func TestRetryExhausted(t *testing.T) {
 		Name: "exhaust-pipe",
 		Steps: []Step{
 			{
-				Name:    "always-fails",
-				Run:     "exit 1",
-				Retries: 2,
-				// RetryDelay omitted: defaults() sets 5s; 2 retries = ~10s total.
-				Timeout: 30,
+				Name:       "always-fails",
+				Run:        "exit 1",
+				Retries:    2,
+				RetryDelay: 1,
+				Timeout:    30,
 			},
 		},
 	}

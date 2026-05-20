@@ -54,10 +54,6 @@ func NewInputModel(styles Styles, commands []CommandSuggestion) InputModel {
 
 	ta.Focus()
 
-	km := ta.KeyMap
-	km.InsertNewline.SetKeys("alt+enter")
-	ta.KeyMap = km
-
 	return InputModel{
 		textarea: ta,
 		styles:   styles,
@@ -169,6 +165,8 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 				m.showing = false
 				return m, nil
 			}
+		case msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModAlt):
+			return m, nil
 		case msg.Code == tea.KeyUp:
 			if m.showing && m.selected > 0 {
 				m.selected--

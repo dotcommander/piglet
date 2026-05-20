@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,4 +97,16 @@ func TestHistory_RoundTrip(t *testing.T) {
 	m2.LoadHistory(path)
 	assert.Equal(t, m1.history, m2.history)
 	assert.Equal(t, 3, m2.histIdx)
+}
+
+func TestInput_AltEnterDoesNotInsertHiddenNewline(t *testing.T) {
+	t.Parallel()
+
+	m := NewInputModel(NewStyles(DefaultTheme()), nil)
+	m.SetValue("hello")
+
+	got, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt})
+	assert.Nil(t, cmd)
+	assert.Equal(t, "hello", got.Value())
+	assert.NotContains(t, got.Value(), "\n")
 }

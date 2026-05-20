@@ -2,6 +2,9 @@ package provider
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dotcommander/piglet/core"
@@ -367,6 +370,40 @@ func TestResolveKey_ShellCommandFailure(t *testing.T) {
 	t.Parallel()
 	_, err := resolveKey(context.Background(), "test-fail", "!false")
 	assert.Error(t, err)
+}
+
+func TestResolveKeyFromConfig_ShellCommandSafeConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "provider.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("overrides: {}\n"), 0o600))
+
+	key, err := resolveKeyFromConfig(context.Background(), "test-safe-config", "!echo safe-config-secret", path)
+	require.NoError(t, err)
+	assert.Equal(t, "safe-config-secret", key)
+}
+
+func TestResolveKeyFromConfig_ShellCommandPermissiveConfigBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits are not portable on windows")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "provider.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("overrides: {}\n"), 0o644))
+
+	key, err := resolveKeyFromConfig(context.Background(), "test-permissive-config", "!echo should-not-run", path)
+	assert.Error(t, err)
+	assert.Empty(t, key)
+}
+
+func TestResolveKeyFromConfig_ShellCommandMissingConfigBlocked(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "missing-provider.yaml")
+
+	key, err := resolveKeyFromConfig(context.Background(), "test-missing-config", "!echo should-not-run", path)
+	assert.Error(t, err)
+	assert.Empty(t, key)
 }
 
 func TestEnvVarPattern(t *testing.T) {
