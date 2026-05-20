@@ -26,6 +26,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Short-circuit help requests: -h, --help, or `help` subcommand.
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "-h", "--help", "-help", "help":
+			usage()
+			return
+		}
+	}
+
 	// Support both `lspq --json refs ...` and `lspq refs --json ...`.
 	// Parse a root-level flag set first, then hand off the remainder.
 	root := flag.NewFlagSet("lspq", flag.ContinueOnError)

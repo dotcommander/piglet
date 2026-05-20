@@ -1,0 +1,9 @@
+name: hello
+description: Minimal greeting pipeline — one echo step.
+steps:
+  - name: greet
+    run: echo "Hello, {param.target}!"
+params:
+  target:
+    default: world
+    description: Who to greet.

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dotcommander/piglet/core"
@@ -116,5 +117,30 @@ func TestSubscribeBashTail_NilApp(t *testing.T) {
 	}
 	if cmd := drainBashTail(nil); cmd != nil {
 		t.Error("drainBashTail(nil) should return nil Cmd")
+	}
+}
+
+func TestRenderActiveBashDoesNotDuplicateToolName(t *testing.T) {
+	t.Parallel()
+
+	styles := NewStyles(DefaultTheme())
+	m := Model{
+		styles:         styles,
+		msgView:        NewMessageView(styles, 80, "notty"),
+		width:          80,
+		activeTool:     "bash: go test ./...",
+		activeToolName: "bash",
+		activeToolArg:  "go test ./...",
+		bashTail:       "ok",
+		expandedTools:  make(map[string]bool),
+		diffMeta:       make(map[string]tool.DiffMeta),
+	}
+
+	out := m.renderMessages()
+	if strings.Contains(out, "bash: go test") {
+		t.Fatalf("active bash row duplicated summary:\n%s", out)
+	}
+	if !strings.Contains(out, "$ go test ./...") {
+		t.Fatalf("active bash row missing shell-style arg:\n%s", out)
 	}
 }

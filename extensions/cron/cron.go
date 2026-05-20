@@ -118,7 +118,7 @@ func executeTasks(ctx context.Context, tasks []taskRun, verbose bool) []taskResu
 			return nil // never cancel siblings on task failure
 		})
 	}
-	eg.Wait() //nolint:errcheck // always nil — goroutines never return non-nil
+	_ = eg.Wait() //nolint:errcheck,gosec // G104: always nil — goroutines never return non-nil
 
 	return collected
 }

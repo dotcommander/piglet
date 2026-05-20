@@ -19,12 +19,6 @@ type TurnData struct {
 	ToolResults []json.RawMessage `json:"ToolResults"`
 }
 
-// toolCall represents a tool call from an assistant message.
-type toolCall struct {
-	Name string         `json:"name"`
-	Args map[string]any `json:"args"`
-}
-
 // toolResult represents a tool result message.
 type toolResult struct {
 	ToolName   string `json:"tool_name"`
@@ -34,11 +28,6 @@ type toolResult struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-}
-
-// assistantMsg represents an assistant message (partial parse).
-type assistantMsg struct {
-	Content []json.RawMessage `json:"content"`
 }
 
 // Extractor writes structured facts from each turn to the memory store.

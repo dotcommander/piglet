@@ -208,6 +208,15 @@ pipeline list ./pipelines
 
 Lists all `.yaml`/`.yml` files in a directory with their names and descriptions.
 
+Sample fixtures live in `extensions/pipeline/testdata/pipelines/`. From the
+repo root you can try:
+
+```
+go run ./cmd/pipeline list ./extensions/pipeline/testdata/pipelines
+```
+
+which prints the bundled `hello`, `build-and-test`, and `each-loop` samples.
+
 ## Examples
 
 ```bash

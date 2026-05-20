@@ -76,7 +76,11 @@ func executeShell(ctx context.Context, task TaskConfig) ExecuteResult {
 		return ExecuteResult{Error: "shell action requires command"}
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", task.Command)
+	// Intentional: the "shell" action exists to run user-authored commands
+	// from schedules.yaml. The task config is the trust boundary; if a user
+	// can edit schedules.yaml they can already run arbitrary commands as
+	// themselves. See docs for the cron extension's threat model.
+	cmd := exec.CommandContext(ctx, "sh", "-c", task.Command) //nolint:gosec // G204: shell action is by design — user-authored commands from config
 	if task.WorkDir != "" {
 		cmd.Dir = task.WorkDir
 	}
@@ -91,7 +95,10 @@ func executePrompt(ctx context.Context, task TaskConfig) ExecuteResult {
 		return ExecuteResult{Error: "prompt action requires prompt"}
 	}
 
-	cmd := exec.CommandContext(ctx, "piglet", "--prompt", task.Prompt)
+	// Intentional: invokes the piglet binary on PATH with a config-supplied
+	// prompt. Same trust model as the shell action — schedules.yaml is the
+	// boundary.
+	cmd := exec.CommandContext(ctx, "piglet", "--prompt", task.Prompt) //nolint:gosec // G204: prompt action is by design — user-authored prompt from config
 	return runCommand(ctx, cmd)
 }
 
@@ -127,8 +134,8 @@ func executeWebhook(ctx context.Context, task TaskConfig) ExecuteResult {
 		return ExecuteResult{Error: fmt.Sprintf("request failed: %s", err)}
 	}
 	// Drain body so the TCP connection can be returned to the pool.
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body) //nolint:errcheck,gosec // G104: drain failure is non-fatal; connection will be closed below
+	_ = resp.Body.Close()                 //nolint:errcheck,gosec // G104: close error on response body is non-actionable
 
 	if resp.StatusCode >= 400 {
 		return ExecuteResult{Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}

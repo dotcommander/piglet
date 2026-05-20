@@ -249,7 +249,7 @@ func generatePlist(binPath string) string {
 		configDir = filepath.Join(home, ".config", "piglet")
 	}
 	logDir := filepath.Join(configDir, "logs")
-	os.MkdirAll(logDir, 0o755) //nolint:errcheck // best-effort log dir creation
+	_ = os.MkdirAll(logDir, 0o750) //nolint:errcheck,gosec // G104,G301: best-effort log dir creation
 
 	tmpl := template.Must(template.New("plist").Parse(plistTmpl))
 	var b strings.Builder

@@ -85,10 +85,12 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 
 			stdout := &boundedWriter{limit: cfg.MaxStdout}
 			stderr := &boundedWriter{limit: cfg.MaxStderr}
-			cmd.Stdout = &lineTailWriter{dst: stdout, onLine: bashTailEmitter(app, id)}
+			stdoutTail := &lineTailWriter{dst: stdout, onLine: bashTailEmitter(app, id)}
+			cmd.Stdout = stdoutTail
 			cmd.Stderr = stderr
 
 			err := cmd.Run()
+			stdoutTail.flushLine()
 
 			var b strings.Builder
 			if stdout.Len() > 0 {

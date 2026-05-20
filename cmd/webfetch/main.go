@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -42,9 +43,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if os.Args[1] == "search" {
+	switch os.Args[1] {
+	case "-h", "--help", "help":
+		usage()
+		return
+	case "search":
 		runSearch(os.Args[2:])
-	} else {
+	default:
 		runFetch(os.Args[1:])
 	}
 }
@@ -57,6 +62,9 @@ func runFetch(args []string) {
 	asJSON := fs.Bool("json", false, "output as JSON")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		os.Exit(1)
 	}
 
@@ -97,6 +105,9 @@ func runSearch(args []string) {
 	asJSON := fs.Bool("json", false, "output as JSON")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		os.Exit(1)
 	}
 

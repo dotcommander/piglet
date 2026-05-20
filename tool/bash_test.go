@@ -223,3 +223,39 @@ func TestBashTool_TailLineCapped(t *testing.T) {
 		t.Errorf("capped line length = %d, want %d", l, bashTailMaxLen)
 	}
 }
+
+func TestBashTool_StreamsFinalPartialTailLine(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp(t.TempDir())
+
+	var mu sync.Mutex
+	var got []string
+	app.Subscribe(BashTailTopic, func(data any) {
+		if evt, ok := data.(core.EventToolUpdate); ok {
+			line, _ := evt.Partial.(string)
+			mu.Lock()
+			got = append(got, line)
+			mu.Unlock()
+		}
+	})
+
+	tool := bashTool(app, BashConfig{}.withDefaults())
+	res, err := tool.Execute(context.Background(), "call-partial", map[string]any{
+		"command": "printf 'building'",
+	})
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if isErrorResult(res) {
+		t.Fatalf("expected success; got: %s", resultText(res))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 update, got %d: %#v", len(got), got)
+	}
+	if got[0] != "building" {
+		t.Fatalf("partial line = %q, want building", got[0])
+	}
+}

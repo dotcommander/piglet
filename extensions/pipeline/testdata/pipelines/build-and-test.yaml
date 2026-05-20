@@ -1,0 +1,14 @@
+name: build-and-test
+description: Build the binary, then run the test suite.
+params:
+  pkg:
+    default: ./...
+    description: Go package selector.
+steps:
+  - name: build
+    run: go build {param.pkg}
+    timeout: 120
+
+  - name: test
+    run: go test -count=1 {param.pkg}
+    timeout: 300

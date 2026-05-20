@@ -46,6 +46,9 @@ func main() {
 
 	for len(args) > 0 {
 		switch args[0] {
+		case "-h", "--help", "-help":
+			usage()
+			return
 		case "-dir", "--dir":
 			if len(args) < 2 {
 				fmt.Fprintln(os.Stderr, "memory: -dir requires an argument")

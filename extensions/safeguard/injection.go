@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
 )
 
 // injectionCheck is a single metacharacter injection validator.
@@ -211,10 +210,4 @@ func stripDoubleQuotes(s string) string {
 		}
 	}
 	return b.String()
-}
-
-// isAlphaOrUnderscore reports whether r is a valid shell variable character.
-// Unused but retained for potential future use.
-func isAlphaOrUnderscore(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }

@@ -110,18 +110,6 @@ func unmarshalResult(t *testing.T, msg rpcMessage, v any) {
 	}
 }
 
-// skipNotifications reads and discards messages until the next response (has ID, no method).
-func (h *testHarness) skipNotifications(t *testing.T) rpcMessage {
-	t.Helper()
-	for {
-		msg := h.readMessage(t)
-		if msg.ID != nil && msg.Method == "" {
-			return msg
-		}
-		// It's a notification or registration — skip it.
-	}
-}
-
 // ---------------------------------------------------------------------------
 // 1. Initialize handshake
 // ---------------------------------------------------------------------------

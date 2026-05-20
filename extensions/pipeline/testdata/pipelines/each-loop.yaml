@@ -1,0 +1,6 @@
+name: each-loop
+description: Iterate over a list of services with the each loop primitive.
+steps:
+  - name: ping-services
+    each: [auth, api, worker]
+    run: echo "checking {item}"

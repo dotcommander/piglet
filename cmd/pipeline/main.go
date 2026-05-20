@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -35,8 +36,28 @@ func (p *paramList) Set(v string) error {
 	return nil
 }
 
+func usage() {
+	fmt.Fprint(os.Stderr, `Usage:
+  pipeline [flags] <file.yaml>     run a pipeline file
+  pipeline list <directory>        list pipelines in a directory
+
+Flags:
+  -dry-run          preview without executing
+  -param key=value  parameter override (repeatable)
+  -json             output as JSON instead of human-readable
+  -q                quiet — errors and final status only
+
+Examples:
+  pipeline build.yaml
+  pipeline -dry-run -param env=prod deploy.yaml
+  pipeline -json release.yaml
+  pipeline list ./pipelines
+`)
+}
+
 func main() {
 	fs := flag.NewFlagSet("pipeline", flag.ContinueOnError)
+	fs.Usage = usage
 	dryRun := fs.Bool("dry-run", false, "preview without executing")
 	asJSON := fs.Bool("json", false, "output as JSON")
 	quiet := fs.Bool("q", false, "quiet — errors and final status only")
@@ -45,13 +66,15 @@ func main() {
 	fs.Var(&params, "param", "parameter override: key=value (repeatable)")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		os.Exit(2)
 	}
 
 	args := fs.Args()
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: pipeline [flags] <file.yaml>")
-		fmt.Fprintln(os.Stderr, "       pipeline list <directory>")
+		usage()
 		os.Exit(2)
 	}
 

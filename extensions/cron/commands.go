@@ -109,7 +109,9 @@ func handleCronTest(e *sdk.Extension, name string) error {
 
 	e.ShowMessage(fmt.Sprintf("Running task **%s**...", name))
 
-	cmd := exec.Command(bin, "run", "--verbose", "--task", name)
+	// Subprocess args constructed from pigletCronBin() (resolved at startup)
+	// and a task name from the validated config — not arbitrary user input.
+	cmd := exec.Command(bin, "run", "--verbose", "--task", name) //nolint:gosec // G204: controlled binary and config-validated task name
 	out, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(out))
 
@@ -185,21 +187,25 @@ func handleCronInstall(e *sdk.Extension) error {
 	path := plistPath()
 
 	// Ensure directory exists.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		e.ShowMessage("Error creating LaunchAgents dir: " + err.Error())
 		return nil
 	}
 
-	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(plist), 0o600); err != nil {
 		e.ShowMessage("Error writing plist: " + err.Error())
 		return nil
 	}
 
 	// Load the agent.
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	exec.Command("launchctl", "bootout", target, path).Run() //nolint:errcheck // may not be loaded yet
+	// bootout may fail if the agent is not loaded — that's the expected case
+	// on first install. We intentionally ignore the error and proceed.
+	_ = exec.Command("launchctl", "bootout", target, path).Run() //nolint:gosec,errcheck // G204: controlled args; expected to fail when not yet loaded
 
-	cmd := exec.Command("launchctl", "bootstrap", target, path)
+	// Bootstrap with controlled args: launchctl binary, fixed subcommand, and
+	// a path under the user's LaunchAgents dir.
+	cmd := exec.Command("launchctl", "bootstrap", target, path) //nolint:gosec // G204: controlled args; path is under user's LaunchAgents
 	if out, err := cmd.CombinedOutput(); err != nil {
 		e.ShowMessage(fmt.Sprintf("Error loading agent: %s\n%s", err, string(out)))
 		return nil
@@ -213,7 +219,9 @@ func handleCronUninstall(e *sdk.Extension) error {
 	path := plistPath()
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	exec.Command("launchctl", "bootout", target, path).Run() //nolint:errcheck // may not be loaded
+	// bootout failure is acceptable here — if the agent isn't loaded, the
+	// uninstall has effectively already happened for the launchd side.
+	_ = exec.Command("launchctl", "bootout", target, path).Run() //nolint:gosec,errcheck // G204: controlled args; expected to fail when not loaded
 
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		e.ShowMessage("Error removing plist: " + err.Error())

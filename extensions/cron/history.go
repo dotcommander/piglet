@@ -42,11 +42,12 @@ func AppendHistory(entry RunEntry) error {
 	}
 
 	// Ensure parent directory exists.
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		return fmt.Errorf("create history dir: %w", err)
 	}
 
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// Path resolved via xdg.ExtensionDir — trusted source, not user input.
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: path from trusted xdg config dir
 	if err != nil {
 		return fmt.Errorf("open history: %w", err)
 	}
@@ -71,7 +72,8 @@ func ReadHistory() ([]RunEntry, error) {
 		return nil, err
 	}
 
-	f, err := os.Open(p)
+	// Path resolved via xdg.ExtensionDir — trusted source, not user input.
+	f, err := os.Open(p) //nolint:gosec // G304: path from trusted xdg config dir
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -152,28 +154,35 @@ func RotateHistory() error {
 	}
 	tmp := p + ".tmp"
 
-	f, err := os.Create(tmp)
+	// Path resolved via xdg.ExtensionDir — trusted source, not user input.
+	f, err := os.Create(tmp) //nolint:gosec // G304: path from trusted xdg config dir
 	if err != nil {
 		return fmt.Errorf("create temp history: %w", err)
+	}
+	// Ensure the temp file is created with 0600 even if umask is permissive.
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("chmod temp history: %w", err)
 	}
 
 	for _, e := range entries {
 		data, err := json.Marshal(e)
 		if err != nil {
-			f.Close()
-			os.Remove(tmp)
+			_ = f.Close()
+			_ = os.Remove(tmp)
 			return fmt.Errorf("marshal entry: %w", err)
 		}
 		data = append(data, '\n')
 		if _, err := f.Write(data); err != nil {
-			f.Close()
-			os.Remove(tmp)
+			_ = f.Close()
+			_ = os.Remove(tmp)
 			return fmt.Errorf("write temp history: %w", err)
 		}
 	}
 
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("close temp history: %w", err)
 	}
 
