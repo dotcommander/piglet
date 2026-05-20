@@ -40,12 +40,16 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 	case core.EventToolStart:
 		summary := shell.ToolSummary(e.ToolName, e.Args)
 		m.activeTool = summary
+		m.activeToolName = e.ToolName
+		m.activeToolArg = shell.ToolDetail(e.ToolName, e.Args)
 		m.activeToolID = e.ToolCallID
 		m.bashTail = ""
 		m.spinnerVerb = "running " + summary + "..."
 
 	case core.EventToolEnd:
 		m.activeTool = ""
+		m.activeToolName = ""
+		m.activeToolArg = ""
 		m.activeToolID = ""
 		m.bashTail = ""
 		m.spinnerVerb = "thinking..."
@@ -75,6 +79,8 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		if m.shell != nil && m.shell.IsRunning() {
 			// Shell decided to hold back — update UI to show waiting state
 			m.activeTool = ""
+			m.activeToolName = ""
+			m.activeToolArg = ""
 			m.spinnerVerb = "waiting for background..."
 			m.refreshAndFollow()
 		} else {

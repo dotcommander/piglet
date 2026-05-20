@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/shell"
@@ -81,7 +82,6 @@ func (v *MessageView) separator() string {
 }
 
 func (v *MessageView) renderUser(m *core.UserMessage) string {
-	label := v.styles.UserMsg.Render("you")
 	content := m.Content
 	if content == "" && len(m.Blocks) > 0 {
 		var parts []string
@@ -97,12 +97,11 @@ func (v *MessageView) renderUser(m *core.UserMessage) string {
 		}
 		content = strings.Join(parts, "\n")
 	}
-	if content != "" {
-		if rendered, err := v.renderer.Render(content); err == nil {
-			content = rendered
-		}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
 	}
-	return label + "\n" + v.separator() + "\n" + content + "\n"
+	return v.styles.UserMsg.Render("> "+content) + "\n\n"
 }
 
 func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
@@ -127,9 +126,6 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
-	b.WriteString(v.separator() + "\n")
-
 	for _, c := range m.Content {
 		switch block := c.(type) {
 		case core.TextContent:
@@ -147,7 +143,7 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 			}
 		case core.ThinkingContent:
 			preview := truncateRunes(block.Thinking, 80)
-			b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
+			b.WriteString(v.styles.Thinking.Render("◦ "+preview) + "\n")
 		case core.ToolCall:
 			node := CallNode{
 				Tool:   block.Name,
@@ -162,42 +158,65 @@ func (v *MessageView) renderAssistant(m *core.AssistantMessage) string {
 }
 
 func (v *MessageView) renderToolResult(m *core.ToolResultMessage, diffMeta map[string]tool.DiffMeta) string {
-	var content string
-	for _, c := range m.Content {
-		if tc, ok := c.(core.TextContent); ok {
-			content = tc.Text
-			break
-		}
-	}
+	row := toolRowFromResult(m, nil, diffMeta)
+	return v.renderToolRow(row, false, false)
+}
 
-	status := StatusOK
-	if m.IsError {
-		status = StatusFail
-	}
-
-	trimmed := strings.TrimSpace(content)
-	firstLine := trimmed
-	if i := strings.IndexByte(firstLine, '\n'); i >= 0 {
-		firstLine = firstLine[:i]
-	}
-
-	// Prefer diff metadata for edit/write rows; fall back to line/char count.
-	meta := ""
-	if dm, ok := diffMeta[m.ToolCallID]; ok {
-		meta = formatDiffMeta(dm)
-	} else if n := strings.Count(content, "\n"); n > 0 {
-		meta = fmt.Sprintf("%d lines", n+1)
-	} else if trimmed != "" {
-		meta = fmt.Sprintf("%d chars", len([]rune(trimmed)))
-	}
-
+func (v *MessageView) renderToolRow(row toolRow, focused, expanded bool) string {
 	node := CallNode{
-		Tool:   m.ToolName,
-		Arg:    firstLine,
-		Status: status,
-		Meta:   meta,
+		ID:     row.ID,
+		Tool:   row.Tool,
+		Arg:    row.Arg,
+		Status: row.Status,
+		Meta:   row.Meta,
 	}
-	return RenderLine(node, v.styles, false, false, v.width) + "\n"
+	out := RenderLine(node, v.styles, focused, expanded, v.width) + "\n"
+	if expanded {
+		out += v.renderToolDetail(row.Content)
+	}
+	return out
+}
+
+func (v *MessageView) renderToolDetail(content string) string {
+	content = strings.TrimRight(content, "\n")
+	if content == "" {
+		content = "(no output)"
+	}
+	lines := strings.Split(content, "\n")
+	const maxDetailLines = 24
+	if len(lines) > maxDetailLines {
+		hidden := len(lines) - maxDetailLines
+		lines = append(lines[:maxDetailLines], fmt.Sprintf("... (%d lines hidden)", hidden))
+	}
+
+	var b strings.Builder
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(v.styles.Success.Render(line))
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(v.styles.ToolError.Render(line))
+		case strings.HasPrefix(line, "@@"):
+			b.WriteString(v.styles.ToolEdit.Render(line))
+		default:
+			b.WriteString(v.styles.Muted.Render(line))
+		}
+		b.WriteByte('\n')
+	}
+
+	w := v.width - 6
+	if w < 20 {
+		w = 20
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.Border{Left: "│"}).
+		BorderForeground(v.styles.BorderColor).
+		Foreground(lipgloss.Color("#6e738d")).
+		Padding(0, 1).
+		MarginLeft(3).
+		MarginBottom(1).
+		Width(w).
+		Render(b.String()) + "\n"
 }
 
 // formatDiffMeta renders a DiffMeta as the compact "+47 -8 · 1f 3h" form
@@ -219,8 +238,6 @@ type streamCache struct {
 // where incomplete syntax causes glamour to produce unstable output (flicker).
 func (v *MessageView) RenderStreaming(text string, thinking string, cache *streamCache) string {
 	var b strings.Builder
-	b.WriteString(v.styles.AssistantLabel.Render("piglet") + "\n")
-	b.WriteString(v.separator() + "\n")
 
 	if text == "" && thinking == "" {
 		b.WriteString(v.styles.Muted.Render("waiting...") + "\n")
@@ -229,7 +246,7 @@ func (v *MessageView) RenderStreaming(text string, thinking string, cache *strea
 
 	if thinking != "" {
 		preview := truncateRunes(thinking, 80)
-		b.WriteString(v.styles.Thinking.Render("thinking: "+preview) + "\n")
+		b.WriteString(v.styles.Thinking.Render("◦ "+preview) + "\n")
 	}
 
 	if text != "" {

@@ -70,8 +70,19 @@ func (s StatusBar) View() string {
 			right = s.spinnerView
 		}
 	}
-
 	pad := 2 // Footer padding (left + right)
+	if s.width >= 80 {
+		hints := s.styles.ToolRead.Render("alt+i") + s.styles.Muted.Render(" expand ") +
+			s.styles.ToolRead.Render("alt+k") + s.styles.Muted.Render(" cmd")
+		candidate := hints
+		if right != "" {
+			candidate = right + s.styles.Muted.Render("  ") + hints
+		}
+		if lipgloss.Width(left)+lipgloss.Width(candidate)+pad <= s.width {
+			right = candidate
+		}
+	}
+
 	gap := s.width - lipgloss.Width(left) - lipgloss.Width(right) - pad
 	if gap < 1 {
 		gap = 1

@@ -12,6 +12,8 @@ import (
 func (m *Model) stopStreaming() {
 	m.streaming = false
 	m.activeTool = ""
+	m.activeToolName = ""
+	m.activeToolArg = ""
 	m.spinnerVerb = ""
 	m.status.SetSpinnerView("")
 	m.streamCache = streamCache{}
@@ -23,7 +25,7 @@ func (m *Model) stopStreaming() {
 
 func (m *Model) layout() {
 	statusH := 1
-	inputH := 5 // border + 3 lines + border
+	inputH := 3 // border + 1 line + border
 	vpH := m.height - statusH - inputH - 2
 	if vpH < 3 {
 		vpH = 3

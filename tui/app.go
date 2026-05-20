@@ -6,7 +6,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/ext"
@@ -86,6 +85,8 @@ type Model struct {
 	streamText      *strings.Builder
 	streamThink     *strings.Builder
 	activeTool      string
+	activeToolName  string
+	activeToolArg   string
 	activeToolID    string             // ToolCallID of the in-flight tool (for live tail correlation)
 	bashTail        string             // latest stdout line from the running bash tool
 	bashTailCh      <-chan bashTailMsg // live bash stdout lines from the ext.App bus
@@ -140,173 +141,10 @@ type Model struct {
 	// (which carries ToolResult.Details) so renderToolResult can show
 	// "+N -N · Nf Nh" — core.ToolResultMessage does not carry Details.
 	diffMeta map[string]tool.DiffMeta
-}
 
-// New creates a TUI model.
-func New(cfg Config) Model {
-	styles := NewStyles(cfg.Theme)
-
-	var commands []CommandSuggestion
-	if cfg.Shell != nil {
-		for _, d := range cfg.Shell.CommandInfos() {
-			commands = append(commands, CommandSuggestion{Name: d.Name, Description: d.Description})
-		}
-	} else {
-		commands = commandSuggestions(cfg.App)
-	}
-
-	status := NewStatusBar(styles)
-	if cfg.App != nil {
-		status.SetRegistry(cfg.App.StatusSections())
-	}
-	if cfg.SetupFn != nil {
-		status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet (loading...)"))
-	} else {
-		status.Set(ext.StatusKeyApp, styles.Muted.Render("piglet"))
-	}
-	status.Set(ext.StatusKeyModel, styles.Muted.Render(cfg.Model.DisplayName()))
-
-	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
-	sp.Style = styles.Spinner
-
-	vp := viewport.New()
-	vp.MouseWheelDelta = 3
-	vp.Style = lipgloss.NewStyle()
-
-	mouseOn := true
-	if cfg.Settings != nil {
-		mouseOn = cfg.Settings.MouseCaptureEnabled()
-	}
-	m := Model{
-		cfg:          cfg,
-		shell:        cfg.Shell,
-		styles:       styles,
-		input:        NewInputModel(styles, commands),
-		viewport:     vp,
-		status:       status,
-		msgView:      NewMessageView(styles, 80, cfg.Theme.GlamourStyle),
-		overlays:     NewOverlayModel(styles),
-		spinner:      sp,
-		streamText:   &strings.Builder{},
-		streamThink:  &strings.Builder{},
-		focused:      true,
-		followOutput: true,
-		mouseEnabled: mouseOn,
-		widgets:      make(map[string]widgetState),
-		diffMeta:     make(map[string]tool.DiffMeta),
-		bashTailCh:   subscribeBashTail(cfg.App),
-	}
-	// Seed the status section. Empty text clears; non-empty renders.
-	if mouseOn {
-		status.Set(ext.StatusKeyMouse, styles.Muted.Render("mouse"))
-	}
-	if hp, err := config.HistoryPath(); err == nil {
-		m.input.LoadHistory(hp)
-	}
-	return m
-}
-
-// Init implements tea.Model.
-func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.input.textarea.Focus()}
-	if m.cfg.SetupFn != nil {
-		fn := m.cfg.SetupFn
-		cmds = append(cmds, func() tea.Msg { return fn() })
-	}
-	if c := drainBashTail(m.bashTailCh); c != nil {
-		cmds = append(cmds, c)
-	}
-	return tea.Batch(cmds...)
-}
-
-// Update implements tea.Model.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.layout()
-
-	case tea.KeyPressMsg:
-		if result, cmd, handled := m.handleKeyPress(msg); handled {
-			return result, cmd
-		}
-
-	case tea.ResumeMsg:
-		return m, m.input.textarea.Focus()
-
-	case tea.FocusMsg:
-		m.focused = true
-		return m, nil
-
-	case tea.BlurMsg:
-		m.focused = false
-		return m, nil
-
-	case spinner.TickMsg:
-		return m.handleSpinnerTick(msg)
-
-	case tea.MouseWheelMsg:
-		m.viewport, _ = m.viewport.Update(msg)
-		m.followOutput = m.viewport.AtBottom()
-		return m, nil
-
-	case eventMsg:
-		return m.handleEvent(msg.event, false)
-
-	case eventsBatchMsg:
-		return m.handleEventsBatch(msg)
-
-	case tickMsg:
-		if m.streaming {
-			m.refreshAndFollow()
-			cmds = append(cmds, tickCmd())
-		}
-
-	case ModalSelectMsg:
-		return m.handleModalSelect(msg)
-
-	case ModalCloseMsg:
-		m.pickerCallback = nil
-		return m, nil
-
-	case ModalAskCancelMsg:
-		return m.handleModalAskCancel()
-
-	case bgEventMsg:
-		return m.handleBgEvent(msg.event)
-
-	case notifyTickMsg:
-		return m.handleNotifyTick()
-
-	case asyncActionMsg:
-		return m.handleAsyncAction(msg)
-
-	case execDoneMsg:
-		if msg.err != nil {
-			cmds = append(cmds, m.notifyAndTick("editor: "+msg.err.Error()))
-		}
-		return m, tea.Batch(cmds...)
-
-	case AgentReadyMsg:
-		return m.handleAgentReady(msg)
-
-	case bashTailMsg:
-		// Stale lines from a finished call are ignored; always re-arm the drain.
-		if m.applyBashTail(msg) {
-			m.refreshAndFollow()
-		}
-		return m, drainBashTail(m.bashTailCh)
-	}
-
-	// Update input
-	var inputCmd tea.Cmd
-	m.input, inputCmd = m.input.Update(msg)
-	if inputCmd != nil {
-		cmds = append(cmds, inputCmd)
-	}
-
-	return m, tea.Batch(cmds...)
+	// Tool output row state.
+	focusedToolID string
+	expandedTools map[string]bool
+	toolFilter    string
+	modalAction   func(*Model, string) tea.Cmd
 }

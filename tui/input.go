@@ -45,7 +45,7 @@ type InputModel struct {
 func NewInputModel(styles Styles, commands []CommandSuggestion) InputModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (/ for commands)"
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
 
 	s := ta.Styles()

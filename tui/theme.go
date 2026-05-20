@@ -23,26 +23,28 @@ type Theme struct {
 	ToolEdit     color.Color
 	ToolBash     color.Color
 	ToolGrep     color.Color
+	ToolTask     color.Color
 	GlamourStyle string // glamour markdown style name (e.g. "dark", "light", "notty")
 }
 
 // DefaultTheme returns the built-in color theme.
 func DefaultTheme() Theme {
 	return Theme{
-		Primary:      lipgloss.Color("#7C3AED"),
-		Secondary:    lipgloss.Color("#06B6D4"),
-		Muted:        lipgloss.Color("#6B7280"),
-		Error:        lipgloss.Color("#EF4444"),
-		Success:      lipgloss.Color("#10B981"),
+		Primary:      lipgloss.Color("#8aadf4"),
+		Secondary:    lipgloss.Color("#91d7e3"),
+		Muted:        lipgloss.Color("#6e738d"),
+		Error:        lipgloss.Color("#ed8796"),
+		Success:      lipgloss.Color("#a6da95"),
 		Warning:      lipgloss.Color("#F59E0B"),
-		Background:   lipgloss.Color("#1E1E2E"),
-		Foreground:   lipgloss.Color("#CDD6F4"),
-		Border:       lipgloss.Color("#45475A"),
+		Background:   lipgloss.Color("#0d0e12"),
+		Foreground:   lipgloss.Color("#c9ccd3"),
+		Border:       lipgloss.Color("#1e2030"),
 		ToolRead:     lipgloss.Color("#8aadf4"),
 		ToolWrite:    lipgloss.Color("#a6da95"),
 		ToolEdit:     lipgloss.Color("#eed49f"),
 		ToolBash:     lipgloss.Color("#f5bde6"),
 		ToolGrep:     lipgloss.Color("#91d7e3"),
+		ToolTask:     lipgloss.Color("#c6a0f6"),
 		GlamourStyle: "dark",
 	}
 }
@@ -67,6 +69,7 @@ type Styles struct {
 	ToolEdit       lipgloss.Style
 	ToolBash       lipgloss.Style
 	ToolGrep       lipgloss.Style
+	ToolTask       lipgloss.Style
 	BorderColor    color.Color
 }
 
@@ -116,6 +119,8 @@ func NewStyles(t Theme) Styles {
 			Foreground(t.ToolBash),
 		ToolGrep: lipgloss.NewStyle().
 			Foreground(t.ToolGrep),
+		ToolTask: lipgloss.NewStyle().
+			Foreground(t.ToolTask),
 		BorderColor: t.Border,
 	}
 }

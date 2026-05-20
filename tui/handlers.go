@@ -66,6 +66,11 @@ func (m Model) handleModalAskCancel() (tea.Model, tea.Cmd) {
 // shell actions. Exactly one of askUserCallback or pickerCallback is set when the
 // modal is visible — modal is single-use per mount.
 func (m Model) handleModalSelect(msg ModalSelectMsg) (tea.Model, tea.Cmd) {
+	if m.modalAction != nil {
+		cb := m.modalAction
+		m.modalAction = nil
+		return m, cb(&m, msg.Item.ID)
+	}
 	if m.askUserCallback != nil {
 		cb := m.askUserCallback
 		m.askUserCallback = nil
@@ -193,6 +198,42 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt):
 		result, cmd := m.handleSubmit()
 		return result, cmd, true
+
+	case msg.Code == 'j' && msg.Mod.Contains(tea.ModAlt):
+		if m.moveToolFocus(1) {
+			m.refreshAndFollow()
+		}
+		return m, nil, true
+
+	case msg.Code == 'k' && msg.Mod.Contains(tea.ModAlt) && !msg.Mod.Contains(tea.ModShift):
+		return m.showToolPalette(), nil, true
+
+	case msg.Code == 'k' && msg.Mod.Contains(tea.ModAlt) && msg.Mod.Contains(tea.ModShift):
+		if m.moveToolFocus(-1) {
+			m.refreshAndFollow()
+		}
+		return m, nil, true
+
+	case msg.Code == 'i' && msg.Mod.Contains(tea.ModAlt) && msg.Mod.Contains(tea.ModShift):
+		if m.setAllToolsExpanded(true) {
+			m.refreshAndFollow()
+		}
+		return m, nil, true
+
+	case msg.Code == 'i' && msg.Mod.Contains(tea.ModAlt):
+		if m.toggleFocusedTool() {
+			m.refreshAndFollow()
+		}
+		return m, nil, true
+
+	case msg.Code == 'c' && msg.Mod.Contains(tea.ModAlt) && msg.Mod.Contains(tea.ModShift):
+		if m.setAllToolsExpanded(false) {
+			m.refreshAndFollow()
+		}
+		return m, nil, true
+
+	case msg.Code == 'f' && msg.Mod.Contains(tea.ModAlt):
+		return m.showToolFilter(), nil, true
 
 	case msg.Code == 'm' && msg.Mod.Contains(tea.ModCtrl):
 		// Delegate to /mouse so the toggle persists to config — single source of truth.

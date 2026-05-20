@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/dotcommander/piglet/core"
 	"github.com/dotcommander/piglet/shell"
 )
 
@@ -145,8 +146,18 @@ func (m *Model) refreshAndFollow() {
 
 func (m *Model) renderMessages() string {
 	var b strings.Builder
+	toolInfo := collectToolCallInfo(m.messages)
+	m.focusFirstToolRow()
 
 	for i, msg := range m.messages {
+		if tr, ok := msg.(*core.ToolResultMessage); ok {
+			row := toolRowFromResult(tr, toolInfo, m.diffMeta)
+			if m.toolFilter != "" && row.Tool != m.toolFilter {
+				continue
+			}
+			b.WriteString(m.msgView.renderToolRow(row, row.ID == m.focusedToolID, m.expandedTools[row.ID]))
+			continue
+		}
 		if i < len(m.msgCache) && m.msgCache[i].set {
 			b.WriteString(m.msgCache[i].rendered)
 		} else {
@@ -172,16 +183,33 @@ func (m *Model) renderMessages() string {
 	// Active tool indicator. A running bash command with captured stdout
 	// renders as a call-tree row so the dimmed live tail line shows under it.
 	if m.activeTool != "" {
+		toolName := m.activeToolName
+		if toolName == "" {
+			toolName = "bash"
+		}
+		arg := m.activeToolArg
+		if arg == "" {
+			arg = m.activeTool
+		}
+		if toolName == "bash" && arg != "" && !strings.HasPrefix(arg, "$ ") {
+			arg = "$ " + arg
+		}
 		if m.bashTail != "" {
 			node := CallNode{
-				Tool:     "bash",
-				Arg:      m.activeTool,
+				Tool:     toolName,
+				Arg:      arg,
 				Status:   StatusRunning,
 				TailLine: m.bashTail,
 			}
 			b.WriteString(RenderLine(node, m.styles, false, false, m.width) + "\n")
 		} else {
-			b.WriteString(m.styles.Muted.Render("▸ "+m.activeTool+"…") + "\n")
+			node := CallNode{
+				Tool:   toolName,
+				Arg:    arg,
+				Status: StatusRunning,
+				Meta:   "running",
+			}
+			b.WriteString(RenderLine(node, m.styles, false, false, m.width) + "\n")
 		}
 	}
 

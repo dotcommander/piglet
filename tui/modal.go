@@ -134,17 +134,18 @@ func (m ModalModel) View() string {
 
 	var b strings.Builder
 
-	// Title
-	b.WriteString(m.styles.Header.Render(m.title))
+	title := m.styles.ToolRead.Render(m.title)
+	hint := m.styles.Muted.Render("↑↓ navigate · ↵ run · esc")
+	gap := w - lipgloss.Width(title) - lipgloss.Width(hint) - 4
+	if gap < 1 {
+		gap = 1
+	}
+	b.WriteString(title + strings.Repeat(" ", gap) + hint)
 	b.WriteByte('\n')
-
-	// Filter
 	if m.filter != "" {
 		b.WriteString(m.styles.Muted.Render("filter: " + m.filter + "_"))
-	} else {
-		b.WriteString(m.styles.Muted.Render("filter: _"))
+		b.WriteByte('\n')
 	}
-	b.WriteByte('\n')
 	b.WriteByte('\n')
 
 	// Items
@@ -156,32 +157,58 @@ func (m ModalModel) View() string {
 	}
 
 	for i, item := range visible {
-		prefix := "  "
 		idx := scrollOff + i
+		icon := modalIcon(item.ID)
+		label := icon + "  " + item.Label
+		if item.Desc != "" {
+			label += m.styles.Muted.Render("  " + item.Desc)
+		}
 
 		if idx == m.cursor {
-			prefix = "> "
+			line := lipgloss.NewStyle().
+				Background(m.styles.BorderColor).
+				Width(w - 4).
+				Render(" " + label)
+			b.WriteString(line + "\n")
+			continue
 		}
-
-		label := item.Label
+		b.WriteString(" " + m.styles.Muted.Render(icon) + "  " + item.Label)
 		if item.Desc != "" {
-			label += m.styles.Muted.Render(" — " + item.Desc)
+			b.WriteString(m.styles.Muted.Render("  " + item.Desc))
 		}
-		b.WriteString(prefix + label + "\n")
+		b.WriteByte('\n')
 	}
 
 	// Help
-	b.WriteByte('\n')
-	b.WriteString(m.styles.Muted.Render("move: up/down | select: enter | close: esc | filter: type"))
+	if len(m.filtered) == 0 {
+		b.WriteString(m.styles.Muted.Render(" no matches"))
+	}
 
 	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.styles.BorderColor).
-		Padding(1, 2).
+		Padding(1, 2, 1, 2).
 		Width(w)
 
 	// Return just the bordered box — compositeOverlay handles placement.
 	return box.Render(b.String())
+}
+
+func modalIcon(id string) string {
+	switch id {
+	case "toggle":
+		return "▾"
+	case "expand-all":
+		return "▿"
+	case "collapse-all":
+		return "⊟"
+	case "filter":
+		return "⌕"
+	case "clear-filter":
+		return "×"
+	default:
+		return "·"
+	}
 }
 
 func (m *ModalModel) applyFilter() {

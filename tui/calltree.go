@@ -45,8 +45,10 @@ func toolStyle(tool string, styles Styles) lipgloss.Style {
 		return styles.ToolGrep
 	case "write":
 		return styles.ToolWrite
-	case "edit", "task":
+	case "edit":
 		return styles.ToolEdit
+	case "task":
+		return styles.ToolTask
 	case "bash":
 		return styles.ToolBash
 	default:
@@ -143,7 +145,7 @@ func RenderLine(node CallNode, styles Styles, focused, expanded bool, width int)
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, glyphCell, toolCell, argCell, metaCell)
 	if focused {
-		row = lipgloss.NewStyle().Background(styles.BorderColor).Render(row)
+		row = lipgloss.NewStyle().Width(width).Background(styles.BorderColor).Render(row)
 	}
 	return row
 }
