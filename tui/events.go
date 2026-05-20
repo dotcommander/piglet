@@ -12,6 +12,7 @@ import (
 	"github.com/dotcommander/piglet/errfmt"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/shell"
+	"github.com/dotcommander/piglet/tool"
 )
 
 // handleEvent processes a single agent event. When batch is true, the caller
@@ -39,10 +40,14 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 	case core.EventToolStart:
 		summary := shell.ToolSummary(e.ToolName, e.Args)
 		m.activeTool = summary
+		m.activeToolID = e.ToolCallID
+		m.bashTail = ""
 		m.spinnerVerb = "running " + summary + "..."
 
 	case core.EventToolEnd:
 		m.activeTool = ""
+		m.activeToolID = ""
+		m.bashTail = ""
 		m.spinnerVerb = "thinking..."
 
 	case core.EventTurnEnd:
@@ -120,6 +125,62 @@ func (m Model) handleEvent(evt core.Event, batch bool) (tea.Model, tea.Cmd) {
 		return m, pollEvents(m.eventCh)
 	}
 	return m, actionCmd
+}
+
+// bashTailMsg carries a live stdout line from a running bash tool, delivered
+// via the ext.App bus and converted into a Bubble Tea message so state
+// updates happen on the model's goroutine.
+type bashTailMsg struct {
+	callID string
+	line   string
+}
+
+// subscribeBashTail registers a callback on the bash tool's tail-line bus
+// topic and returns the channel its lines arrive on. The callback runs on the
+// bash tool's goroutine and forwards each line through a buffered channel; a
+// long-lived tea.Cmd (drainBashTail) delivers them to the model one at a
+// time. Returns nil when app is nil (e.g. tests without an ext.App).
+func subscribeBashTail(app *ext.App) <-chan bashTailMsg {
+	if app == nil {
+		return nil
+	}
+	// Buffered so a burst of lines never blocks the publishing tool; if the
+	// TUI falls behind, newest lines are dropped (live tail tolerates loss).
+	ch := make(chan bashTailMsg, 64)
+	app.Subscribe(tool.BashTailTopic, func(data any) {
+		evt, ok := data.(core.EventToolUpdate)
+		if !ok {
+			return
+		}
+		line, _ := evt.Partial.(string)
+		select {
+		case ch <- bashTailMsg{callID: evt.ToolCallID, line: line}:
+		default: // drop when the TUI is behind — freshest line wins next tick
+		}
+	})
+	return ch
+}
+
+// drainBashTail returns the Cmd that waits for the next bash tail line on the
+// shared channel. Re-issued after each bashTailMsg to keep the subscription
+// alive for the life of the program.
+func drainBashTail(ch <-chan bashTailMsg) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg { return <-ch }
+}
+
+// applyBashTail records a live bash stdout line if it belongs to the
+// currently in-flight tool call. Returns true when state changed (caller
+// should refresh). The activeToolID gate is the correlation invariant:
+// lines from a finished or unrelated call are dropped.
+func (m *Model) applyBashTail(msg bashTailMsg) bool {
+	if msg.callID == "" || msg.callID != m.activeToolID {
+		return false
+	}
+	m.bashTail = msg.line
+	return true
 }
 
 // systemNote creates a synthetic assistant message for status/error display.

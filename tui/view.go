@@ -169,9 +169,20 @@ func (m *Model) renderMessages() string {
 		b.WriteString(m.msgView.RenderStreaming(m.streamText.String(), m.streamThink.String(), &m.streamCache))
 	}
 
-	// Active tool indicator
+	// Active tool indicator. A running bash command with captured stdout
+	// renders as a call-tree row so the dimmed live tail line shows under it.
 	if m.activeTool != "" {
-		b.WriteString(m.styles.Muted.Render("▸ "+m.activeTool+"…") + "\n")
+		if m.bashTail != "" {
+			node := CallNode{
+				Tool:     "bash",
+				Arg:      m.activeTool,
+				Status:   StatusRunning,
+				TailLine: m.bashTail,
+			}
+			b.WriteString(RenderLine(node, m.styles, false, false, m.width) + "\n")
+		} else {
+			b.WriteString(m.styles.Muted.Render("▸ "+m.activeTool+"…") + "\n")
+		}
 	}
 
 	return b.String()

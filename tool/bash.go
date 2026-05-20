@@ -13,6 +13,15 @@ import (
 	"github.com/dotcommander/piglet/ext"
 )
 
+// BashTailTopic is the ext.App bus topic on which the bash tool publishes
+// live stdout tail lines as core.EventToolUpdate values. The TUI subscribes
+// to render a dimmed tail line under the running bash row.
+const BashTailTopic = "bash.tail"
+
+// bashTailMaxLen caps the retained partial line length so a single very long
+// line cannot blow up the live tail display.
+const bashTailMaxLen = 80
+
 // BashConfig holds configurable limits for the bash tool. Zero values use defaults.
 type BashConfig struct {
 	DefaultTimeout int // seconds, default 30
@@ -76,7 +85,7 @@ func bashTool(app *ext.App, cfg BashConfig) *ext.ToolDef {
 
 			stdout := &boundedWriter{limit: cfg.MaxStdout}
 			stderr := &boundedWriter{limit: cfg.MaxStderr}
-			cmd.Stdout = stdout
+			cmd.Stdout = &lineTailWriter{dst: stdout, onLine: bashTailEmitter(app, id)}
 			cmd.Stderr = stderr
 
 			err := cmd.Run()
@@ -179,4 +188,30 @@ func classifyExitCode(command string, code int) (string, bool) {
 		return "", true
 	}
 	return "", true
+}
+
+// bashTailEmitter returns an onLine callback that publishes each stdout line
+// as a core.EventToolUpdate on the ext.App bus. The partial is capped at
+// bashTailMaxLen runes. Returns nil when app is nil so the tool stays usable
+// in tests that construct it without a bus.
+func bashTailEmitter(app *ext.App, callID string) func(string) {
+	if app == nil {
+		return nil
+	}
+	return func(line string) {
+		app.Publish(BashTailTopic, core.EventToolUpdate{
+			ToolCallID: callID,
+			ToolName:   "bash",
+			Partial:    capTail(line),
+		})
+	}
+}
+
+// capTail trims a line to the last bashTailMaxLen runes for live display.
+func capTail(s string) string {
+	r := []rune(s)
+	if len(r) <= bashTailMaxLen {
+		return s
+	}
+	return string(r[len(r)-bashTailMaxLen:])
 }

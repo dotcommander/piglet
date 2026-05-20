@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dotcommander/piglet/core"
@@ -132,5 +133,93 @@ func TestBashTool_FalseIsError(t *testing.T) {
 	}
 	if !isErrorResult(res) {
 		t.Fatalf("expected error result for unclassified exit 1; got: %s", resultText(res))
+	}
+}
+
+// TestBashTool_StreamsTailLines verifies the bash tool publishes one
+// EventToolUpdate per stdout line on the BashTailTopic bus topic as the
+// command produces output.
+func TestBashTool_StreamsTailLines(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp(t.TempDir())
+
+	var mu sync.Mutex
+	var got []core.EventToolUpdate
+	app.Subscribe(BashTailTopic, func(data any) {
+		evt, ok := data.(core.EventToolUpdate)
+		if !ok {
+			return
+		}
+		mu.Lock()
+		got = append(got, evt)
+		mu.Unlock()
+	})
+
+	tool := bashTool(app, BashConfig{}.withDefaults())
+	res, err := tool.Execute(context.Background(), "call-99", map[string]any{
+		"command": "printf 'alpha\\nbeta\\ngamma\\n'",
+	})
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if isErrorResult(res) {
+		t.Fatalf("expected success; got: %s", resultText(res))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 3 {
+		t.Fatalf("expected 3 EventToolUpdate, got %d: %#v", len(got), got)
+	}
+	wantLines := []string{"alpha", "beta", "gamma"}
+	for i, e := range got {
+		if e.ToolCallID != "call-99" {
+			t.Errorf("update %d: ToolCallID = %q, want call-99", i, e.ToolCallID)
+		}
+		if e.ToolName != "bash" {
+			t.Errorf("update %d: ToolName = %q, want bash", i, e.ToolName)
+		}
+		if line, _ := e.Partial.(string); line != wantLines[i] {
+			t.Errorf("update %d: Partial = %q, want %q", i, line, wantLines[i])
+		}
+	}
+}
+
+// TestBashTool_TailLineCapped verifies a very long stdout line is trimmed to
+// the last bashTailMaxLen runes before publishing.
+func TestBashTool_TailLineCapped(t *testing.T) {
+	t.Parallel()
+	app := ext.NewApp(t.TempDir())
+
+	var mu sync.Mutex
+	var got []string
+	app.Subscribe(BashTailTopic, func(data any) {
+		if evt, ok := data.(core.EventToolUpdate); ok {
+			line, _ := evt.Partial.(string)
+			mu.Lock()
+			got = append(got, line)
+			mu.Unlock()
+		}
+	})
+
+	tool := bashTool(app, BashConfig{}.withDefaults())
+	// 200 'x' characters on one line — well over the 80-rune cap.
+	res, err := tool.Execute(context.Background(), "call-cap", map[string]any{
+		"command": "printf 'x%.0s' $(seq 1 200); printf '\\n'",
+	})
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if isErrorResult(res) {
+		t.Fatalf("expected success; got: %s", resultText(res))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(got))
+	}
+	if l := len([]rune(got[0])); l != bashTailMaxLen {
+		t.Errorf("capped line length = %d, want %d", l, bashTailMaxLen)
 	}
 }

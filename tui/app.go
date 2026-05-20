@@ -85,6 +85,9 @@ type Model struct {
 	streamText      *strings.Builder
 	streamThink     *strings.Builder
 	activeTool      string
+	activeToolID    string             // ToolCallID of the in-flight tool (for live tail correlation)
+	bashTail        string             // latest stdout line from the running bash tool
+	bashTailCh      <-chan bashTailMsg // live bash stdout lines from the ext.App bus
 	spinnerVerb     string
 	totalIn         int
 	totalOut        int
@@ -184,6 +187,7 @@ func New(cfg Config) Model {
 		followOutput: true,
 		mouseEnabled: mouseOn,
 		widgets:      make(map[string]widgetState),
+		bashTailCh:   subscribeBashTail(cfg.App),
 	}
 	// Seed the status section. Empty text clears; non-empty renders.
 	if mouseOn {
@@ -201,6 +205,9 @@ func (m Model) Init() tea.Cmd {
 	if m.cfg.SetupFn != nil {
 		fn := m.cfg.SetupFn
 		cmds = append(cmds, func() tea.Msg { return fn() })
+	}
+	if c := drainBashTail(m.bashTailCh); c != nil {
+		cmds = append(cmds, c)
 	}
 	return tea.Batch(cmds...)
 }
@@ -278,6 +285,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AgentReadyMsg:
 		return m.handleAgentReady(msg)
+
+	case bashTailMsg:
+		// Stale lines from a finished call are ignored; always re-arm the drain.
+		if m.applyBashTail(msg) {
+			m.refreshAndFollow()
+		}
+		return m, drainBashTail(m.bashTailCh)
 	}
 
 	// Update input

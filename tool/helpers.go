@@ -24,13 +24,6 @@ func textResult(text string) *core.ToolResult {
 // Argument extraction (JSON numbers decode as float64)
 // ---------------------------------------------------------------------------
 
-func stringArg(args map[string]any, key, fallback string) string {
-	if v, ok := args[key].(string); ok && v != "" {
-		return v
-	}
-	return fallback
-}
-
 func intArg(args map[string]any, key string, fallback int) int {
 	switch v := args[key].(type) {
 	case float64:
@@ -40,13 +33,6 @@ func intArg(args map[string]any, key string, fallback int) int {
 	default:
 		return fallback
 	}
-}
-
-func boolArg(args map[string]any, key string, fallback bool) bool {
-	if v, ok := args[key].(bool); ok {
-		return v
-	}
-	return fallback
 }
 
 func requirePath(args map[string]any, cwd string) (string, *core.ToolResult) {
@@ -70,19 +56,6 @@ func resolvePath(cwd, path string) string {
 
 func atomicWrite(path string, data []byte) error {
 	return config.AtomicWrite(path, data, 0644)
-}
-
-// ---------------------------------------------------------------------------
-// Directory filtering — shared by find and grep (via walk)
-// ---------------------------------------------------------------------------
-
-func shouldSkipDir(name string) bool {
-	switch name {
-	case ".git", "node_modules", "vendor", ".next", "__pycache__", ".cache", "dist", "build":
-		return true
-	default:
-		return strings.HasPrefix(name, ".")
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +85,41 @@ func (w *boundedWriter) Write(p []byte) (int, error) {
 func (w *boundedWriter) String() string  { return w.buf.String() }
 func (w *boundedWriter) Len() int        { return w.buf.Len() }
 func (w *boundedWriter) Truncated() bool { return w.buf.Len() >= w.limit }
+
+// lineTailWriter wraps an io.Writer (the bounded capture sink) and invokes
+// onLine with each completed newline-terminated line as it streams through.
+// It is the streaming tap for the bash tool's live tail line — the wrapped
+// writer still receives every byte, so capture semantics are unchanged.
+//
+// Not safe for concurrent Write calls; exec.Cmd serializes writes per stream.
+type lineTailWriter struct {
+	dst     interface{ Write([]byte) (int, error) }
+	onLine  func(string)
+	pending strings.Builder
+}
+
+func (w *lineTailWriter) Write(p []byte) (int, error) {
+	n, err := w.dst.Write(p)
+	// Tap regardless of how many bytes dst kept — the live tail must see
+	// output even after the bounded sink is full.
+	for _, b := range p {
+		if b == '\n' {
+			w.flushLine()
+			continue
+		}
+		w.pending.WriteByte(b)
+	}
+	return n, err
+}
+
+// flushLine emits the buffered partial line if non-empty, then resets it.
+func (w *lineTailWriter) flushLine() {
+	line := strings.TrimRight(w.pending.String(), "\r")
+	w.pending.Reset()
+	if line != "" && w.onLine != nil {
+		w.onLine(line)
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Display formatting
