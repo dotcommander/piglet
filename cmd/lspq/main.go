@@ -26,24 +26,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Short-circuit help requests: -h, --help, or `help` subcommand.
-	for _, a := range os.Args[1:] {
-		switch a {
-		case "-h", "--help", "-help", "help":
-			usage()
-			return
-		}
-	}
-
 	// Support both `lspq --json refs ...` and `lspq refs --json ...`.
 	// Parse a root-level flag set first, then hand off the remainder.
 	root := flag.NewFlagSet("lspq", flag.ContinueOnError)
 	jsonFlag := root.Bool("json", false, "Output JSON instead of human-readable text")
 	root.SetOutput(os.Stderr)
+	root.Usage = usage
 	// Ignore errors — we want unrecognised flags to fall through to the
 	// sub-command flag set so that `-to` and `-col` are still accepted.
-	_ = root.Parse(os.Args[1:])
+	if err := root.Parse(os.Args[1:]); err == flag.ErrHelp {
+		return
+	}
 	remaining := root.Args()
+
+	if isGlobalHelp(os.Args[1:], remaining) {
+		usage()
+		return
+	}
 
 	if len(remaining) < 1 {
 		usage()
@@ -85,6 +84,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func isGlobalHelp(args, remaining []string) bool {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "-help":
+			return true
+		}
+	}
+	return len(remaining) > 0 && remaining[0] == "help"
 }
 
 // runParams bundles invocation inputs parsed from flags + argv.

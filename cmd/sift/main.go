@@ -5,9 +5,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"os"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/dotcommander/piglet/extensions/sift"
 )
 
@@ -45,7 +45,7 @@ func main() {
 		cfg.Compression.CollapseRepeatedLines = 0
 	}
 
-	input, err := io.ReadAll(os.Stdin)
+	input, err := cliutil.ReadAllLimit(os.Stdin, cliutil.DefaultMaxStdinBytes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sift: %v\n", err)
 		os.Exit(1)

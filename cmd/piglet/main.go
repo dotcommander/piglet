@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/dotcommander/piglet/config"
 	"github.com/dotcommander/piglet/ext"
 	"github.com/dotcommander/piglet/provider"
@@ -142,19 +143,28 @@ func readStdin(promptArgs []string) (userPrompt string, stdinPiped bool, err err
 	}
 	if info.Mode()&os.ModeCharDevice == 0 {
 		stdinPiped = true
-		data, readErr := io.ReadAll(os.Stdin)
-		if readErr != nil {
-			return userPrompt, stdinPiped, readErr
-		}
-		if piped := strings.TrimSpace(string(data)); piped != "" {
-			if userPrompt == "" {
-				userPrompt = piped
-			} else {
-				userPrompt = userPrompt + "\n\n" + piped
-			}
+		userPrompt, err = readStdinFrom(promptArgs, os.Stdin)
+		if err != nil {
+			return userPrompt, stdinPiped, err
 		}
 	}
 	return userPrompt, stdinPiped, nil
+}
+
+func readStdinFrom(promptArgs []string, stdin io.Reader) (string, error) {
+	userPrompt := strings.Join(promptArgs, " ")
+	data, err := cliutil.ReadAllLimit(stdin, cliutil.DefaultMaxStdinBytes)
+	if err != nil {
+		return userPrompt, err
+	}
+	if piped := strings.TrimSpace(string(data)); piped != "" {
+		if userPrompt == "" {
+			userPrompt = piped
+		} else {
+			userPrompt = userPrompt + "\n\n" + piped
+		}
+	}
+	return userPrompt, nil
 }
 
 // resolveLocalModel handles --local scanning and auto-probe for local servers.
