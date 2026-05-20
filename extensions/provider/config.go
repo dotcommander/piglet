@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -9,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dotcommander/piglet/extensions/internal/xdg"
 	"github.com/dotcommander/piglet/core"
+	"github.com/dotcommander/piglet/extensions/internal/xdg"
 )
 
 // keyCache stores resolved key_command results for the process lifetime.
@@ -21,6 +23,8 @@ var keyCache sync.Map
 // envVarPattern matches strings that look like environment variable names:
 // all uppercase letters, digits, and underscores, starting with a letter or underscore.
 var envVarPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]+$`)
+
+const permGroupOtherMask os.FileMode = 0o077
 
 // providerConfig is loaded from ~/.config/piglet/extensions/provider/provider.yaml.
 // It supports three pi-mono-inspired capabilities:
@@ -103,7 +107,12 @@ func defaultProviderConfig() providerConfig {
 }
 
 func loadProviderConfig() providerConfig {
-	return xdg.LoadYAMLExt("provider", "provider.yaml", defaultProviderConfig())
+	cfg, _ := loadProviderConfigWithPath()
+	return cfg
+}
+
+func loadProviderConfigWithPath() (providerConfig, string) {
+	return xdg.LoadYAMLExtWithPath("provider", "provider.yaml", defaultProviderConfig())
 }
 
 // applyOverrides modifies the model in-place based on provider overrides
@@ -183,6 +192,10 @@ func resolveKeyCommand(cfg providerConfig, provider string) string {
 // re-executing expensive credential lookups (1Password, macOS Keychain)
 // on every stream request.
 func resolveKey(ctx context.Context, provider, value string) (string, error) {
+	return resolveKeyFromConfig(ctx, provider, value, "")
+}
+
+func resolveKeyFromConfig(ctx context.Context, provider, value, configPath string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil
@@ -190,6 +203,9 @@ func resolveKey(ctx context.Context, provider, value string) (string, error) {
 
 	// Shell command: "!command args..."
 	if strings.HasPrefix(value, "!") {
+		if err := allowKeyCommand(configPath); err != nil {
+			return "", err
+		}
 		return execKeyCommandCached(ctx, provider, value[1:])
 	}
 
@@ -200,6 +216,26 @@ func resolveKey(ctx context.Context, provider, value string) (string, error) {
 
 	// Literal value
 	return value, nil
+}
+
+func allowKeyCommand(configPath string) error {
+	if configPath == "" {
+		return nil
+	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		return fmt.Errorf("provider key command disabled: cannot verify %s permissions: %w", configPath, err)
+	}
+	perm := info.Mode().Perm()
+	if perm&permGroupOtherMask == 0 {
+		return nil
+	}
+	slog.Warn("provider key_command blocked — provider.yaml permissions too permissive",
+		"path", configPath,
+		"mode", fmt.Sprintf("%04o", perm),
+		"hint", "chmod 600 "+configPath,
+	)
+	return fmt.Errorf("provider key command disabled: %s has permissive permissions %04o", configPath, perm)
 }
 
 // execKeyCommandCached runs a shell command with process-lifetime caching.

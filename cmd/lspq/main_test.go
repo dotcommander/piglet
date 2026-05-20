@@ -211,3 +211,28 @@ func TestResolveURIToRel(t *testing.T) {
 		})
 	}
 }
+
+func TestIsGlobalHelp(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		args      []string
+		remaining []string
+		want      bool
+	}{
+		{name: "root help flag", args: []string{"--help"}, remaining: nil, want: true},
+		{name: "help command", args: []string{"help"}, remaining: []string{"help"}, want: true},
+		{name: "json help command", args: []string{"--json", "help"}, remaining: []string{"help"}, want: true},
+		{name: "symbol named help", args: []string{"hover", "main.go", "42", "help"}, remaining: []string{"hover", "main.go", "42", "help"}, want: false},
+		{name: "subcommand help flag handled by subcommand parser", args: []string{"refs", "-h"}, remaining: []string{"refs", "-h"}, want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isGlobalHelp(tt.args, tt.remaining))
+		})
+	}
+}

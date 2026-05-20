@@ -24,6 +24,15 @@ func ConfigDir() (string, error) {
 	return filepath.Join(dir, "piglet"), nil
 }
 
+// ConfigPath returns the path to a file in the piglet config directory.
+func ConfigPath(filename string) (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filename), nil
+}
+
 // ExtensionDir returns the namespaced config directory for the given extension:
 // ~/.config/piglet/extensions/<name>/. Does not create the directory.
 func ExtensionDir(name string) (string, error) {
@@ -32,4 +41,14 @@ func ExtensionDir(name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "extensions", name), nil
+}
+
+// ExtensionPath returns the path to a file in an extension's namespaced config
+// directory. It does not create the directory or file.
+func ExtensionPath(name, filename string) (string, error) {
+	dir, err := ExtensionDir(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filename), nil
 }

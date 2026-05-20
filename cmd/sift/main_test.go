@@ -7,11 +7,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/dotcommander/piglet/cmd/internal/cliutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,6 +59,22 @@ func TestSift_EmptyStdin_ExitsZeroNoOutput(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stdout)
 	assert.Empty(t, stderr)
+}
+
+func TestSift_TooLargeStdin_ExitsNonZero(t *testing.T) {
+	t.Parallel()
+	input := strings.Repeat("x", int(cliutil.DefaultMaxStdinBytes)+1)
+
+	stdout, stderr, code := runSift(t, input)
+	assert.NotEqual(t, 0, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, cliutil.ErrInputTooLarge.Error())
+}
+
+func TestSift_ReadAllLimitErrorShape(t *testing.T) {
+	t.Parallel()
+	_, err := cliutil.ReadAllLimit(strings.NewReader("abc"), 2)
+	assert.True(t, errors.Is(err, cliutil.ErrInputTooLarge))
 }
 
 func TestSift_SmallInput_PassesThrough(t *testing.T) {

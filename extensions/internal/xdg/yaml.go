@@ -35,9 +35,17 @@ func LoadYAML[T any](filename string, defaults T) T {
 // If found at old location, migrates to new location.
 // If neither exists, returns defaults.
 func LoadYAMLExt[T any](extName, filename string, defaults T) T {
+	cfg, _ := LoadYAMLExtWithPath(extName, filename, defaults)
+	return cfg
+}
+
+// LoadYAMLExtWithPath reads a YAML config like LoadYAMLExt and also returns
+// the path that was read or created. The returned path is the namespaced path
+// after a successful migration from the legacy flat location.
+func LoadYAMLExtWithPath[T any](extName, filename string, defaults T) (T, string) {
 	extDir, err := ExtensionDir(extName)
 	if err != nil {
-		return defaults
+		return defaults, ""
 	}
 	newPath := filepath.Join(extDir, filename)
 
@@ -45,7 +53,7 @@ func LoadYAMLExt[T any](extName, filename string, defaults T) T {
 	if data, err := os.ReadFile(newPath); err == nil {
 		var cfg T
 		if err := yaml.Unmarshal(data, &cfg); err == nil {
-			return cfg
+			return cfg, newPath
 		}
 		// Corrupt file at new location — fall through to flat fallback
 	}
@@ -53,7 +61,7 @@ func LoadYAMLExt[T any](extName, filename string, defaults T) T {
 	// Fallback: read flat location directly (no create side effect)
 	dir, err := ConfigDir()
 	if err != nil {
-		return createDefaultYAML(extDir, newPath, defaults)
+		return createDefaultYAML(extDir, newPath, defaults), newPath
 	}
 	flatPath := filepath.Join(dir, filename)
 	if data, err := os.ReadFile(flatPath); err == nil {
@@ -65,12 +73,12 @@ func LoadYAMLExt[T any](extName, filename string, defaults T) T {
 					_ = WriteFileAtomic(newPath, migrated)
 				}
 			}
-			return cfg
+			return cfg, newPath
 		}
 		// Flat file also corrupt — fall through to defaults
 	}
 
-	return createDefaultYAML(extDir, newPath, defaults)
+	return createDefaultYAML(extDir, newPath, defaults), newPath
 }
 
 func createDefaultYAML[T any](extDir, path string, defaults T) T {

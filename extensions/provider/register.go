@@ -14,7 +14,7 @@ import (
 // RegisterProvider sends notifications immediately, so calls are deferred to
 // OnInitAppend to ensure the RPC pipe (FD 4) is open.
 func Register(e *sdk.Extension) {
-	cfg := loadProviderConfig()
+	cfg, cfgPath := loadProviderConfigWithPath()
 
 	e.OnInitAppend(func(e *sdk.Extension) {
 		e.RegisterProvider("openai")
@@ -46,7 +46,7 @@ func Register(e *sdk.Extension) {
 		// Shell command results are cached for the process lifetime.
 		if key == "" {
 			if cmd := resolveKeyCommand(cfg, model.Provider); cmd != "" {
-				resolved, resolveErr := resolveKey(ctx, model.Provider, cmd)
+				resolved, resolveErr := resolveKeyFromConfig(ctx, model.Provider, cmd, cfgPath)
 				if resolveErr != nil {
 					return nil, fmt.Errorf("key resolution for %q failed: %w", model.Provider, resolveErr)
 				}
