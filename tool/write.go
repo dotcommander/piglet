@@ -43,6 +43,9 @@ func writeTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 				return toolWriteErr(path, err, "create directory"), nil
 			}
 
+			// Capture prior content for diff metadata; missing file diffs from "".
+			before, _ := os.ReadFile(path)
+
 			// Snapshot for undo
 			snapshotFile(path)
 
@@ -55,7 +58,9 @@ func writeTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 				ft.RecordRead(path, info.ModTime())
 			}
 
-			return textResult(fmt.Sprintf("wrote %d bytes to %s", len(content), path)), nil
+			res := textResult(fmt.Sprintf("wrote %d bytes to %s", len(content), path))
+			res.Details = computeDiffMeta(string(before), content)
+			return res, nil
 		},
 		PromptHint: "Write content to a file",
 	}

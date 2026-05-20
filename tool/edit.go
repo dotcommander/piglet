@@ -85,7 +85,9 @@ func editTool(app *ext.App, ft *fileTracker) *ext.ToolDef {
 				ft.RecordRead(path, info.ModTime())
 			}
 
-			return textResult(fmt.Sprintf("edited %s", path)), nil
+			res := textResult(fmt.Sprintf("edited %s", path))
+			res.Details = computeDiffMeta(content, updated)
+			return res, nil
 		},
 		PromptHint:   "Edit files with search/replace",
 		PromptGuides: []string{"old_text must match exactly one occurrence in the file"},
